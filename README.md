@@ -1,167 +1,263 @@
-# GestiMarket — Logiciel de gestion de supermarché et de boutiques
+# GestiMarket
 
-Application de bureau **hors-ligne** (Windows, Linux, macOS) construite avec **Tauri 2**, **Rust**, **SQLite** et **React/TypeScript**.
-Elle couvre la caisse, le catalogue, le stock, les achats, les clients et le crédit, les sessions de caisse, les rapports et la traçabilité.
+Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, supermarchés, grossistes, pharmacies, quincailleries, etc. Interface 100 % française, fonctionnement **hors ligne** (base SQLite locale), multi-postes sur le réseau du magasin, utilisable sur PC, tablette et téléphone.
+
+- Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
+- Base de données : **SQLite** (intégrée, aucune installation)
+- Version actuelle : **0.7.0**
+- Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
+
+> État des tests : 26 tests automatiques Rust, parcours réels sous navigateur (taille téléphone, tablette, PC). L'installateur Windows est compilé depuis Linux (MinGW) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par l'analyseur Dart (`dart analyze`) mais n'a pas été essayé sur un vrai téléphone. La détection de la route local / Internet et le test de l'adresse publique (0.7.1) sont écrits mais attendent leur première compilation et leurs tests.
 
 ---
 
-## 1. Fonctionnalités (version 0.2)
+## Sommaire
 
-### Nouveautés 0.4
-| Module | Contenu |
+1. [Fonctionnalités](#fonctionnalités)
+2. [Rôles et sécurité](#rôles-et-sécurité)
+3. [Installation et utilisation](#installation-et-utilisation)
+4. [Multi-postes, tablettes et téléphones](#multi-postes-tablettes-et-téléphones)
+5. [Application mobile (FlutterFlow + Supabase)](#application-mobile-flutterflow--supabase)
+6. [Développement](#développement)
+7. [Architecture](#architecture)
+8. [Base de données](#base-de-données)
+9. [Interface RPC](#interface-rpc)
+10. [Feuille de route](#feuille-de-route)
+
+---
+
+## Fonctionnalités
+
+### Vente (caisse)
+- Scan à la douchette, **à la caméra** (téléphone, tablette, webcam) ou saisie manuelle d'un code au pavé numérique ; syntaxe `3*code` pour la quantité.
+- Navigation dans les catégories par fil d'Ariane, produits avec photo, emplacement et stock.
+- **Conditionnements** : vendre au carton, au sac ou au pack (1 carton = 12 bouteilles) avec code-barres et prix propres ; le stock est décompté en unités de base.
+- Remises, tickets en attente, client associé, vente à crédit (plafond par client), points de fidélité.
+- **Paiements** : espèces (monnaie rendue, pavé numérique), **Orange Money / Sarali** (numéro marchand ou QR code, ID de transaction obligatoire et unique), autre mobile money, carte, crédit ; paiement partiel multi-moyens.
+- Ticket imprimable, écran client.
+- **Suivi des collègues** : voir en direct le ticket des autres caisses et **reprendre un client** sans tout ressaisir.
+
+### Catalogue
+- **Code-barres obligatoire** (EAN ou QR) : généré automatiquement si absent ; étiquettes imprimables en code-barres ou QR code.
+- Champs : désignation, référence interne, marque, catégorie, unité, prix d'achat et de vente TTC, TVA, stock, seuil d'alerte, fournisseur, péremption, photo, emplacement, statut.
+- **Catégories en arbre sans limite de niveaux** (catégorie → sous-catégorie → famille…), déplacement, masquage, couleur et photo, import / export CSV, détection des catégories vides et des produits sans catégorie.
+- **Catalogue prédéfini** de 32 catégories avec leurs sous-catégories (+ menu restaurant), chargeable à la carte sans doublon.
+- **11 types de commerce** (boutique, commerce général, supermarché, supérette, grossiste, pharmacie, vêtements et chaussures, quincaillerie, électronique, boutique spécialisée, restaurant) : l'interface s'adapte (péremption, marque, référence, conditionnements, quantités décimales, services).
+- Familles d'unités (poids, volume, longueur, conditionnement, boissons, matériaux, tissus…).
+- Import de produits depuis Excel / CSV.
+
+### Magasin
+- **Emplacements** : bloc (A à Z), étage, rangée ; plan du magasin ; recherche « Où est le produit ? » (Ctrl + K).
+- Stock : ajustements, inventaire, historique des mouvements.
+- Achats / réceptions avec coût moyen pondéré, fournisseurs.
+- Clients : dettes, règlements, relevé de compte.
+
+### Pilotage
+- Tableau de bord administrateur (chiffre d'affaires, marge, alertes de stock et de péremption, créances).
+- **Tableau de bord du caissier** : statistiques de sa session (ventes, panier moyen, espèces attendues, répartition par moyen de paiement, ventes par heure, meilleurs articles).
+- Sessions de caisse : fond de caisse, entrées / sorties d'espèces, clôture avec calcul de l'écart ; clôture forcée par l'administrateur.
+- Rapports de ventes, suivi des paiements mobiles, journal d'activité complet.
+
+### Personnalisation
+- Logo, nom du commerce, couleur du thème, style du menu, thème clair / sombre ; thème par défaut sinon.
+- Aide contextuelle (bouton « ? ») sur chaque écran et chaque action importante.
+
+---
+
+## Rôles et sécurité
+
+| Rôle | Droits |
 |---|---|
-| **3 rôles** | **Caissier / caissière** : la vente (caisse, clients, ses ventes, sa session). **Gestionnaire** : les produits (ajout, modification, suppression), catégories, emplacements, stock, achats, fournisseurs. **Administrateur** : contrôle total (tableau de bord, rapports, utilisateurs, paramètres et réglages, annulations). Droits vérifiés côté serveur. |
-| **Code PIN** | Chaque utilisateur crée son PIN (4 à 6 chiffres) à la 1ʳᵉ connexion. **Connexion rapide** : on touche son nom puis on tape son PIN. **Chaque action critique est confirmée par PIN** : annulation de vente (administrateur), changement de prix, archivage, import, ajustement de stock (gestionnaire), clôture de caisse et mouvements d'espèces, utilisateurs et paramètres (administrateur). En caisse : retrait d'article, baisse de quantité, ticket vidé, remises (niveau réglable). Un responsable peut autoriser sur place avec son propre PIN (tracé au journal). Blocage 1 min après 5 erreurs ; PIN chiffrés (Argon2). |
-| **Personnalisation** | Logo, nom et **couleur du thème** du magasin (9 couleurs prêtes ou couleur personnalisée), style du menu (sombre, couleur du thème, clair), thème clair/sombre par défaut. Sans réglage, le thème GestiMarket par défaut est conservé. Logo et nom en haut du menu. |
-| **Design premium** | Police Inter intégrée (hors ligne), menu latéral repliable (replié par défaut pour les caissiers), écran de connexion à l'image du magasin, cartes et boutons retravaillés, pavé numérique tactile pour l'encaissement. |
-| **Paramètres en onglets** | Commerce · Apparence · Orange Money · Ventes & ticket · Sécurité & PIN · Réseau & écran client · Sauvegarde. |
+| **Caissier / caissière** | **Seul rôle qui vend** : caisse, clients, ses ventes, sa session de caisse, son tableau de bord |
+| **Gestionnaire** | Produits (ajout, modification, suppression), catégories, emplacements, stock, achats, fournisseurs. Ne vend pas |
+| **Administrateur** | Contrôle total : tableau de bord, rapports, utilisateurs, paramètres, annulations, clôture forcée d'une caisse. Ne vend pas |
 
-### Nouveautés 0.3
-| Module | Contenu |
+- **Séparation des rôles** : les administrateurs et gestionnaires n'ouvrent pas de caisse. En cas de fuite de leur mot de passe, personne ne peut encaisser avec leurs droits élevés. La règle est appliquée côté serveur.
+- **Code PIN** pour chaque utilisateur (haché Argon2) : connexion rapide et **confirmation de toute action critique** (annulation de vente, remise, suppression d'article, changement de prix, archivage, ajustement de stock, clôture de caisse, paramètres, changement de réseau…). Un responsable peut valider l'action d'un autre ; c'est tracé.
+- Blocage temporaire après 5 PIN erronés.
+- Mots de passe hachés Argon2 ; sessions réseau par jeton avec expiration.
+- Journal d'activité de toutes les opérations sensibles.
+- Montants stockés en **unités mineures entières** (pas d'erreur d'arrondi) ; prix relus en base à chaque vente (le client ne fixe jamais un prix).
+
+---
+
+## Installation et utilisation
+
+### Utilisateur final (Windows)
+1. Lancer `GestiMarket_x.y.z_x64-setup.exe`, ou décompresser la version portable (`gestimarket.exe` + `WebView2Loader.dll`).
+2. **Première configuration** : nom du commerce, devise, compte administrateur, type de commerce (avec création des catégories recommandées), puis code PIN.
+3. Créer au moins un **compte caissier** (menu Utilisateurs) : seul un caissier peut vendre.
+4. Chaque utilisateur définit son code PIN à sa première connexion.
+
+Les données sont dans le dossier de données de l'application (`gestimarket.db`). Une **sauvegarde automatique quotidienne** peut être activée vers une clé USB, un disque externe ou un dossier synchronisé (Paramètres → Sauvegarde).
+
+### Raccourcis en caisse
+`F2` recherche · `F4` client · `F8` tickets en attente · `F9` encaisser · `Ctrl + K` où est le produit ?
+
+---
+
+## Multi-postes, tablettes et téléphones
+
+Trois modes, réglables depuis **Poste & réseau** sur chaque PC :
+
+| Mode | Rôle |
 |---|---|
-| **Écran client** | Le client voit ses articles (avec photos), les prix, le total, le montant reçu, la monnaie à rendre et le QR code Orange Money / Sarali, **avant de payer**. Sur un 2ᵉ écran branché à la caisse (bouton « Écran client », plein écran automatique), ou sur une **TV, un projecteur ou un autre PC** via un navigateur (adresse indiquée dans Paramètres → Écran client). |
-| **Catégories → sous-catégories → produits** | Deux niveaux (ex. Boissons › Jus, Eaux). En caisse, une 2ᵉ rangée de filtres affiche les sous-catégories. Import Excel avec colonne « Sous-catégorie » ou « Catégorie > Sous-catégorie ». |
-| **Blocs de A à Z** | Les blocs se nomment par lettre (A, B, C…) ; création en série (ex. blocs A à F × étages 1–3 × rangées 1–10). |
-| **Aide intégrée** | Bouton **Aide** sur chaque écran (à quoi sert l'écran, comment faire, astuces) et petits boutons **?** à côté des actions et réglages importants. |
-| **Multi-postes en réseau local** | Trois modes : **poste unique**, **poste serveur** (garde la base et la partage en Wi-Fi ou câble Ethernet), **poste client** (travaille sur la base du serveur). Le serveur sert aussi l'application aux **navigateurs** du réseau : tablettes, téléphones (Android, iPhone) et TV. Sessions sécurisées par jeton, mêmes droits que sur le poste serveur. |
+| **Poste unique** | Tout est sur ce PC |
+| **Poste serveur** | Garde la base et la partage sur le réseau (Wi-Fi, câble, ou point d'accès d'un téléphone) |
+| **Poste client** | Travaille sur la base du serveur |
 
-#### Mettre en place plusieurs caisses
-1. Sur le PC qui restera allumé (bureau / caisse principale) : **Paramètres → Réseau multi-postes → Poste serveur**, puis « Enregistrer et redémarrer ». Notez l'adresse affichée (ex. `http://192.168.1.10:7878`). Autorisez GestiMarket dans le pare-feu Windows si demandé.
-2. Sur chaque autre caisse : installez GestiMarket, puis au premier écran « Se connecter au poste serveur » (ou depuis l'écran de connexion → « modifier »), choisissez **Poste client**, saisissez l'adresse, « Tester », puis « Enregistrer et redémarrer ».
-3. Donnez un nom à chaque poste (Caisse 1, Caisse 2…) : chaque écran client affiche le panier de sa caisse.
-4. Tablette / téléphone / TV : ouvrez l'adresse du serveur dans le navigateur.
+- Le serveur écoute en **HTTP sur le port 7878** et en **HTTPS sur le port 7879** (certificat auto-signé généré automatiquement ; indispensable pour la caméra en direct sur téléphone).
+- **Tablettes et téléphones** : ouvrir l'adresse du serveur dans le navigateur (ou scanner le QR code affiché dans Paramètres → Réseau). L'interface s'adapte à l'écran : barre du haut, onglets du bas selon le rôle, feuilles plein écran, caisse avec barre « Ticket / Encaisser ». Installable sur l'écran d'accueil.
+- **Postes connectés** : le serveur liste chaque appareil (nom du poste, nom de l'appareil, IP, utilisateur, synchronisé ou non, dernier signal) ; un voyant dans le menu indique « Serveur actif », « Synchronisé » ou « Serveur injoignable ».
+- **Écran client** (2ᵉ écran, TV, projecteur, tablette) : disponible sur tous les postes ; affiche articles, total, montant reçu, monnaie, QR Orange Money.
+- Pare-feu Windows : autoriser les ports 7878 et 7879 si une alerte s'affiche.
 
-### Nouveautés 0.2
-| Module | Contenu |
-|---|---|
-| **Photos** | Photo de chaque produit et de chaque catégorie, logo du commerce (menu + tickets). Les images sont redimensionnées automatiquement et stockées dans la base : elles sont donc incluses dans les sauvegardes. |
-| **Emplacements (Bloc / Étage / Rangée)** | Création d'un bloc complet en un clic (ex. Bloc 2, étages 1 à 3, rangées 1 à 10), plan visuel du magasin, rangement des produits (fiche produit, plan, sélection multiple, import), fiche de rayon imprimable. |
-| **Localiser un produit** | Recherche par nom, catégorie ou code-barres scanné ; affichage en grand du **Bloc · Étage · Rangée** et mise en évidence sur le plan. Accessible partout avec **Ctrl + K**, y compris pour les caissiers. |
-| **Orange Money / Sarali** | En caisse : QR code marchand affiché au client (photo de l'autocollant officiel ou contenu texte), numéro marchand, saisie ou **scan** de l'ID de transaction et du numéro du client. Un même ID ne peut jamais être réutilisé (anti-fraude). Écran **Paiements mobiles** pour le rapprochement avec le relevé de l'opérateur (export Excel). |
-| **Paiements multiples** | Une vente peut être réglée en plusieurs fois : Orange Money + espèces, carte + espèces, etc. La monnaie n'est rendue que sur les espèces ; le reste peut aller au crédit client. |
-| **Tickets en attente** | Mettre un ticket de côté (client qui a oublié un article) et le reprendre plus tard (**F8**). |
-| **Étiquettes** | Impression d'étiquettes code-barres (planche A4 de 24) ou d'étiquettes de rayon (prix + code-barres + emplacement). |
-| **Import Excel / CSV** | Import ou mise à jour du catalogue (code-barres, désignation, catégorie, prix, stock, seuil, bloc / étage / rangée, péremption), avec modèle à télécharger et aperçu avant import. |
-| **Péremption** | Date de péremption par produit et par lot reçu, alertes au tableau de bord et dans le stock (délai paramétrable). |
-| **Sauvegarde automatique** | Une copie par jour dans le dossier choisi (clé USB, disque externe, dossier synchronisé), rotation des anciennes copies. |
-| **Nouveau design** | Interface repensée (vignettes photo en caisse, cartes de catégories, plan interactif) et **mode sombre**. |
+---
 
-### Fonctionnalités de base
-| Module | Contenu |
-|---|---|
-| **Caisse (point de vente)** | Scan de code-barres (douchette USB), recherche, filtres par catégorie, syntaxe `3*code` pour la quantité, produits au poids (kg), remise par ligne et sur le ticket, client associé, calcul de la monnaie, reste à crédit, impression du ticket (58 ou 80 mm). Raccourcis : **F2** recherche, **F4** client, **F8** tickets en attente, **F9** encaissement, **Ctrl+K** localiser un produit. |
-| **Sessions de caisse** | Ouverture avec fond de caisse, entrées/sorties d'espèces, clôture avec comptage et calcul de l'écart, détail par moyen de paiement (dont Orange Money). |
-| **Produits** | Code-barres EAN (saisi, scanné ou généré), catégories, fournisseur, unité, prix d'achat/vente TTC, TVA, marge, seuil d'alerte, archivage, export. |
-| **Stock & inventaire** | Valorisation, alertes de rupture et de péremption, ajustements d'inventaire, pertes/casse, retours, historique des mouvements. |
-| **Achats / réceptions** | Entrée en stock, coût moyen pondéré (CMUP), mise à jour des prix de vente, dates de péremption par lot. |
-| **Clients** | Plafond de crédit, dettes, règlements (espèces, Orange Money avec ID de transaction…), relevé de compte, points de fidélité. |
-| **Ventes, rapports, journal** | Historique (recherche par n° de ticket, client ou ID de transaction), annulation avec motif, rapports par période / jour / moyen de paiement / catégorie / caissier / produit, journal d'activité. |
-| **Utilisateurs & rôles** | Administrateur, Gérant, Caissier ; droits vérifiés côté Rust ; mots de passe Argon2. |
+## Application mobile (FlutterFlow + Supabase)
 
-> **À propos d'Orange Money / Sarali** : la confirmation automatique en temps réel nécessite un accès à l'API marchande de
-> l'opérateur (contrat et identifiants fournis par Orange) et une connexion Internet. La version actuelle fonctionne
-> **sans Internet** : le client paie par QR code ou numéro marchand, le caissier enregistre l'ID de transaction (saisi ou
-> scanné), et le rapprochement se fait avec le relevé. L'architecture (table `sale_payments`, références uniques) est prête
-> pour brancher l'API dès que vous disposez des accès.
+Au lieu de développer deux applications natives, l'application mobile (iOS / Android) est une simple **WebView FlutterFlow** qui ouvre GestiMarket à l'adresse du poste serveur.
 
-## 2. Architecture
+```
+Poste serveur ──(toutes les 30 s)──► Supabase : gm_publish_server(code, secret, actif, adresses)
+Application FlutterFlow ─(démarrage)► Supabase : gm_get_server(code) → { active, url, … }
+Application FlutterFlow ──► WebView(url)  ──► GestiMarket
+```
+
+- Réglage : **Paramètres → Réseau & mobile** (URL du projet Supabase, clé publique `anon`, bouton « Publier maintenant »). Le code du commerce (`GM-XXXXXX`) et son QR code sont créés automatiquement.
+- À la fermeture du serveur, l'état « arrêté » est publié immédiatement.
+- Sécurité : la table n'est pas lisible directement ; seul le poste qui a créé le code peut le mettre à jour (secret haché). N'utiliser **jamais** la clé `service_role`.
+- Les adresses publiées sont celles du réseau local ; pour joindre le magasin depuis **un autre réseau** (4G, autre Wi-Fi), renseignez l'**adresse publique** (voir ci-dessous).
+- Un widget FlutterFlow fournit en plus un **scanner natif** de codes-barres ; la page le détecte automatiquement (canal JavaScript `GestiMarketNative`).
+
+### Accès depuis Internet (tunnel Cloudflare)
+
+Chaque magasin garde son PC serveur ; un **tunnel Cloudflare** lui donne une adresse publique fixe en HTTPS (ex. `https://eden.mondomaine.com`), sans redirection de port. `cloudflared` est installé en service Windows (démarrage automatique) et relie `https://eden.mondomaine.com` à `http://localhost:7878`. L'adresse est saisie dans **Paramètres → Réseau & mobile → Adresse publique** et publiée dans Supabase (`public_url`). Il faut un domaine géré par Cloudflare, un sous-domaine par magasin. Protégez l'adresse avec Cloudflare Access et des PIN solides : une caisse est exposée sur Internet.
+
+### Réseau local ou Internet : indication de la route
+
+- Le serveur détecte la route de chaque appareil : les requêtes qui arrivent par le tunnel (en-têtes Cloudflare, depuis 127.0.0.1) sont « **Internet** » et gardent leur vraie adresse IP ; les autres sont « **Réseau local** ».
+- **Poste & réseau** affiche un badge de route pour chaque appareil connecté et pour ce poste ; la pastille de connexion indique « Synchronisé · Réseau local » ou « Synchronisé · Internet ».
+- Sur le poste serveur, le test de l'adresse publique (`/api/ping`, toutes les 30 s) indique « Réseau local disponible », « Internet disponible » ou « indisponible », et « Les deux routes sont actives ».
+- Le widget FlutterFlow `GestiMarketWebView` (paramètres `shopCode`, `supabaseUrl`, `supabaseKey`) choisit le **réseau local d'abord**, sinon Internet, et se **reconnecte seul** quand le PC serveur redémarre (pages 502/530 du tunnel, coupures). Voir `supabase/APPLICATION_MOBILE.md`, section 5.
+
+Guide complet : [`supabase/APPLICATION_MOBILE.md`](supabase/APPLICATION_MOBILE.md) · script SQL : [`supabase/gestimarket_mobile.sql`](supabase/gestimarket_mobile.sql) · widget : [`supabase/flutterflow/gestimarket_webview.dart`](supabase/flutterflow/gestimarket_webview.dart)
+
+---
+
+## Développement
+
+### Prérequis
+- Node.js 20+ et npm
+- Rust stable
+- Linux : dépendances Tauri (`webkit2gtk-4.1`, `libsoup-3.0`, etc. — voir la documentation Tauri 2)
+
+### Commandes
+
+```bash
+npm install                 # dépendances front
+npm run dev                 # interface seule (navigateur, port 1420)
+npx tauri dev               # application complète en développement
+npm run typecheck           # vérification TypeScript
+npm run test:rust           # tests Rust (logique métier)
+npx tauri build             # build de production de la plateforme courante
+```
+
+### Build Windows depuis Linux (MinGW)
+
+```bash
+rustup target add x86_64-pc-windows-gnu
+npx tauri build --target x86_64-pc-windows-gnu --bundles nsis
+# Résultat : src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/GestiMarket_<version>_x64-setup.exe
+# Version portable : gestimarket.exe + WebView2Loader.dll (dossier release/)
+```
+
+Pour changer de version : `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`.
+
+### Tester le mode serveur dans un navigateur
+Lancer l'application en mode serveur (`network.json` : `{"mode":"server","poste_name":"Caisse 1","port":7878,"server_url":""}` dans le dossier de données), puis ouvrir `https://127.0.0.1:7879` (accepter le certificat). La caméra en direct exige https.
+
+---
+
+## Architecture
 
 ```
 gestimarket/
-├── src/                      # Frontend React + TypeScript
-│   ├── api.ts                # Appels typés vers les commandes Rust (invoke)
-│   ├── types.ts              # Types partagés (miroir des structures Rust)
-│   ├── context/AppContext.tsx# Utilisateur, paramètres, notifications, confirmations
-│   ├── components/           # Layout, modales, sélecteur de produit, détail de vente…
-│   ├── lib/                  # Formatage (devise, dates), tickets, export CSV
-│   └── pages/                # Un fichier par écran
-└── src-tauri/                # Backend Rust
-    ├── migrations/           # Schéma SQLite versionné (PRAGMA user_version)
-    └── src/
-        ├── lib.rs            # Démarrage Tauri, base de données, enregistrement des commandes
-        ├── commands.rs       # Commandes exposées au frontend + contrôle des droits
-        ├── state.rs          # Connexion SQLite + utilisateur connecté
-        ├── db.rs             # Ouverture, migrations, utilitaires SQL
-        ├── error.rs          # Erreurs traduites en messages français
-        └── services/         # Logique métier (ventes, stock, caisse, rapports…) + tests
+├── src/                      Interface React + TypeScript
+│   ├── pages/                Un fichier par écran (Pos, Products, Categories, Poste, Settings…)
+│   ├── components/           Composants partagés (PinPad, CameraScanner, Layout, BusinessType…)
+│   ├── lib/                  transport.ts (RPC local / réseau), presence.ts, scanner.ts, native.ts,
+│   │                         format.ts, help.ts (textes d'aide), display.ts, csv.ts, receipt.ts
+│   ├── context/AppContext    Session, thème, marque, toasts, PIN, fonctions activées
+│   ├── api.ts, types.ts      Façade typée des opérations métier
+│   └── styles.css            Design (variables CSS, thème, responsive mobile)
+├── src-tauri/
+│   ├── src/
+│   │   ├── rpc.rs            Point d'entrée unique : dispatch(commande, droits, PIN)
+│   │   ├── services/         Logique métier : catalog, sales, cash, stock, purchases, partners,
+│   │   │                     reports, settings, templates (catalogue + types de commerce),
+│   │   │                     users, auth, audit, backup, media, locations
+│   │   ├── network.rs        Serveur HTTP / HTTPS (axum), certificat auto-signé, ressources
+│   │   ├── live.rs           Présence des postes et tickets en cours (mémoire)
+│   │   ├── cloud.rs          Publication de l'adresse du serveur sur Supabase
+│   │   ├── state.rs          Session, rôles, jetons réseau, anti force brute du PIN
+│   │   ├── db.rs             Ouverture SQLite et migrations
+│   │   └── commands.rs       Commandes Tauri propres au PC (fichiers, réseau, fenêtres, écran client)
+│   ├── migrations/           001 à 005 (versionnées par PRAGMA user_version)
+│   └── data/catalogue_fr.txt Catalogue prédéfini de catégories
+└── supabase/                 Kit application mobile (SQL, guide, widget FlutterFlow)
 ```
 
-**Choix techniques importants**
+### Principes
+- **Un seul point d'entrée métier** : `rpc::dispatch`. L'application de bureau (commande Tauri `rpc`) et les postes réseau (`POST /rpc/{commande}`) passent par le même code, avec les mêmes contrôles de droits et de PIN.
+- **Le front ne décide jamais** des prix, des droits ni des stocks : tout est revérifié côté Rust.
+- **Hors ligne d'abord** : tout fonctionne sans Internet ; Supabase n'est utilisé que pour publier l'adresse du serveur.
+- **Images en base** (photos produits, logo), servies par le protocole `media://` en local et `/media/{id}` sur le réseau.
+- **Transport** : `lib/transport.ts` choisit automatiquement l'appel local (Tauri), l'appel réseau (poste client) ou le navigateur (tablette, téléphone).
 
-- **Hors-ligne d'abord** : base SQLite locale (mode WAL), aucune connexion Internet nécessaire.
-- **Montants en entiers** dans la plus petite unité de la devise (pas d'erreurs d'arrondi des flottants).
-- **Transactions** : une vente (lignes, stock, crédit, fidélité) est enregistrée entièrement ou pas du tout.
-- **Prix relus en base** au moment de la vente : le frontend ne fixe jamais les prix.
-- **Logique métier testée** : `cargo test` exécute des scénarios complets sur une base en mémoire.
+### Bibliothèques principales
+Tauri 2, rusqlite (SQLite intégré), argon2, axum + tower-http, axum-server (HTTPS rustls), rcgen, ureq, chrono · React 19, react-router (HashRouter), recharts, lucide-react, qrcode, jsbarcode, @zxing/library.
 
-## 3. Installation pour le développement
+---
 
-### Prérequis
-- [Node.js 20+](https://nodejs.org) et [Rust](https://rustup.rs) (stable)
-- **Windows** : « Microsoft C++ Build Tools » et WebView2 (déjà présent sur Windows 10/11)
-- **Linux** : `sudo apt install libwebkit2gtk-4.1-dev build-essential libssl-dev libayatana-appindicator3-dev librsvg2-dev`
-- Détails : https://v2.tauri.app/start/prerequisites/
+## Base de données
 
-### Commandes
-```bash
-npm install            # dépendances JavaScript
-npm run tauri dev      # lance l'application en mode développement (rechargement à chaud)
-npm run test:rust      # tests de la logique métier
-npm run typecheck      # vérification TypeScript
-npm run tauri build    # crée l'installateur (.msi / .exe sous Windows, .deb / .AppImage sous Linux)
-```
+SQLite, migrations versionnées (`PRAGMA user_version`, clés étrangères vérifiées après chaque migration).
 
-Au premier lancement, un assistant demande le nom du commerce, la devise et crée le compte administrateur.
+| Migration | Contenu |
+|---|---|
+| 001 | Utilisateurs, catégories, produits, clients, fournisseurs, ventes, achats, stock, sessions de caisse, paramètres, journal |
+| 002 | Médias (photos), emplacements (bloc / étage / rangée), paiements multiples, Orange Money |
+| 003 | Catégories hiérarchiques (parent, ordre) |
+| 004 | Code PIN des utilisateurs |
+| 005 | Catalogue v2 : catégories actives, marque, référence, conditionnements, quantités en unités de base |
 
-### Compiler l'installateur Windows depuis Linux (MinGW)
-```bash
-sudo apt install nsis gcc-mingw-w64-x86-64
-rustup target add x86_64-pc-windows-gnu
-npx tauri build --target x86_64-pc-windows-gnu --bundles nsis
-# → src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/GestiMarket_<version>_x64-setup.exe
-```
+Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix TTC, dates locales.
 
-### Générer les installateurs sans machine Windows
-Le workflow GitHub Actions `.github/workflows/build.yml` lance les tests à chaque push et, lorsqu'on pousse un tag
-(`git tag v0.1.0 && git push --tags`), produit les installateurs Windows, Linux et macOS dans un brouillon de release.
+---
 
-## 4. Données et sauvegarde
+## Interface RPC
 
-La base `gestimarket.db` se trouve dans le dossier de données de l'application :
-- Windows : `%APPDATA%\com.gestimarket.app\`
-- Linux : `~/.local/share/com.gestimarket.app/`
-- macOS : `~/Library/Application Support/com.gestimarket.app/`
+Les commandes sont appelées par `POST /rpc/{commande}` (corps JSON, en-tête `Authorization: Bearer <jeton>`) ou par la commande Tauri `rpc`. Réponse : `{ "ok": … }` ou `{ "error": "message en français" }`.
 
-Utilisez **Paramètres → Sauvegarder maintenant** (sauvegarde cohérente même pendant l'utilisation) et conservez les copies
-sur un support externe. Pour restaurer : fermer l'application, supprimer `gestimarket.db-wal` et `gestimarket.db-shm`
-s'ils existent, puis remplacer `gestimarket.db` par la sauvegarde.
+Familles de commandes : authentification et PIN · utilisateurs · paramètres · catégories et catalogue · produits (dont `scan_code`) · emplacements · stock · achats · clients · ventes · sessions de caisse (`cashier_stats`, `force_close_cash_session`) · rapports · postes (`poste_heartbeat`, `list_postes`) · tickets partagés (`live_cart_update`, `live_carts`, `live_cart_take`) · application mobile (`cloud_status`, `cloud_publish_now`) · écran client (`display_update`, `display_state`).
 
-## 5. Matériel compatible
+Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, administrateur) ; les actions critiques exigent en plus un PIN.
 
-- **Douchette code-barres USB** (mode clavier) : fonctionne directement dans la caisse et les réceptions.
-- **Imprimante ticket thermique** 58/80 mm : installer son pilote Windows, puis l'imprimer via « Imprimer le ticket ».
-- **Tiroir-caisse** : se connecte généralement à l'imprimante ticket (ouverture à l'impression, réglage du pilote).
+---
 
-## 6. Feuille de route proposée
+## Feuille de route
 
-1. Confirmation automatique Orange Money via l'API marchande (dès obtention des identifiants auprès d'Orange).
-2. Impression directe ESC/POS (sans boîte de dialogue) et ouverture du tiroir-caisse.
-3. Retours partiels / avoirs, factures A4 et devis.
-4. Promotions (prix barrés, 2+1, happy hour).
-5. **Synchronisation cloud Supabase** entre boutiques situées sur des réseaux différents (voir ci-dessous).
-6. Bons de commande fournisseurs générés depuis les alertes de stock.
-7. Mises à jour automatiques (plugin `tauri-plugin-updater`).
-8. Indicateurs avancés (rotation des stocks, analyse ABC, saisonnalité) et export PDF.
-
-## 7. Étapes suivantes prévues : Supabase et applications mobiles
-
-**Synchronisation cloud (Supabase)** pour des boutiques sur des réseaux différents :
-- chaque boutique garde sa base locale (fonctionne sans Internet) ;
-- un journal des modifications (ventes, stocks, produits, clients) est envoyé vers Supabase dès que la connexion revient ;
-- le catalogue et les prix peuvent être gérés au siège et redescendus dans chaque boutique ;
-- rapports consolidés multi-boutiques.
-Nécessite un projet Supabase (compte et choix de la région) : à créer avec le propriétaire.
-
-**Applications mobiles Android / iOS** :
-- dès aujourd'hui : tablettes et téléphones utilisent GestiMarket dans le navigateur, connectés au poste serveur du magasin (Wi-Fi) ;
-- ensuite : applications installables (Tauri 2 mobile) pour l'inventaire avec la caméra comme lecteur de code-barres, la consultation des stocks et des rapports à distance (via Supabase).
+- [x] Caisse, stock, achats, clients, rapports, Orange Money / Sarali
+- [x] Photos, emplacements, écran client, multi-postes (serveur / client)
+- [x] Rôles, codes PIN, journal d'activité, personnalisation
+- [x] Codes-barres / QR obligatoires, scanner caméra, conditionnements
+- [x] Types de commerce, catalogue prédéfini, catégories illimitées
+- [x] Version téléphone / tablette, tableau de bord caissier, vente réservée aux caissiers
+- [x] Postes connectés, reprise de client entre caissiers, publication Supabase
+- [x] Accès Internet par tunnel Cloudflare, route local / Internet indiquée, widget FlutterFlow tout-en-un
+- [ ] Application mobile FlutterFlow (WebView) à construire et tester sur de vrais téléphones
+- [ ] Test sur vrai PC Windows et vrais téléphones
+- [ ] Synchronisation de données entre magasins distants (Supabase) : hors périmètre actuel
+- [ ] Conversion libre entre unités (kg ↔ g…)
+- [ ] Module réglementaire pharmacie (médicaments sur ordonnance)
