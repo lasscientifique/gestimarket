@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions de la fenêtre principale et de l'écran client",
+  "windows": [
+    "main",
+    "display"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}

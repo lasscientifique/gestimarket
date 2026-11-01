@@ -1,0 +1,689 @@
+# Catalogue général GestiMarket : catégorie / sous-catégorie / famille (2 espaces par niveau).
+Alimentation générale et épicerie
+  Produits alimentaires de base
+    Riz
+    Mil, sorgho, maïs
+    Fonio
+    Farine de blé
+    Farine de maïs
+    Sucre
+    Sel
+    Pâtes alimentaires
+    Couscous
+    Semoule
+    Haricots et niébé
+    Lentilles
+    Pois chiches
+  Huiles et matières grasses
+    Huile végétale
+    Huile de palme
+    Huile d'arachide
+    Huile d'olive
+    Beurre
+    Margarine
+    Graisse alimentaire
+  Conserves et produits conditionnés
+    Conserves de poisson
+    Conserves de viande
+    Tomates concentrées
+    Légumes en conserve
+    Fruits en conserve
+    Lait concentré
+    Mayonnaise
+    Moutarde
+    Ketchup
+    Sauces alimentaires
+  Épices et condiments
+    Poivre
+    Piment
+    Gingembre
+    Ail
+    Oignon en poudre
+    Cube bouillon
+    Épices mélangées
+    Vinaigre
+    Assaisonnements
+Boissons
+  Boissons non alcoolisées
+    Eau minérale
+    Eau gazeuse
+    Jus de fruits
+    Sodas
+    Boissons énergisantes
+    Boissons maltées
+    Thé glacé
+    Lait aromatisé
+    Sirop
+    Boissons locales
+  Boissons chaudes
+    Café
+    Thé
+    Cacao
+    Chocolat en poudre
+    Infusions
+  Boissons alcoolisées
+    Bières
+    Vins
+    Champagnes
+    Spiritueux
+    Liqueurs
+    Boissons traditionnelles
+Produits laitiers et œufs
+  Lait en poudre
+  Lait liquide
+  Lait UHT
+  Lait fermenté
+  Yaourts
+  Fromages
+  Crème fraîche
+  Beurre
+  Œufs de poule
+  Œufs de caille
+  Desserts lactés
+Boulangerie et pâtisserie
+  Pain
+  Baguettes
+  Pain de mie
+  Croissants
+  Brioches
+  Gâteaux
+  Biscuits
+  Tartes
+  Donuts
+  Madeleines
+  Pâtisseries emballées
+  Produits de boulangerie surgelés
+Fruits et légumes
+  Fruits frais
+    Mangue
+    Banane
+    Orange
+    Pomme
+    Ananas
+    Papaye
+    Pastèque
+    Citron
+    Avocat
+    Raisin
+  Légumes frais
+    Tomate
+    Oignon
+    Pomme de terre
+    Carotte
+    Chou
+    Aubergine
+    Concombre
+    Poivron
+    Salade
+    Gombo
+    Manioc
+    Patate douce
+  Produits transformés
+    Fruits secs
+    Légumes secs
+    Fruits surgelés
+    Légumes surgelés
+    Fruits découpés
+    Purées de légumes
+Viandes, poissons et volailles
+  Viande de bœuf
+  Viande de mouton
+  Viande de chèvre
+  Viande de porc
+  Poulet
+  Dinde
+  Canard
+  Poisson frais
+  Poisson fumé
+  Poisson séché
+  Poisson congelé
+  Crevettes
+  Crabes
+  Saucisses
+  Charcuterie
+  Viandes transformées
+Produits surgelés
+  Viandes surgelées
+  Poissons surgelés
+  Fruits de mer
+  Légumes surgelés
+  Frites surgelées
+  Poulets surgelés
+  Glaces
+  Crèmes glacées
+  Plats préparés
+  Pizzas surgelées
+Confiserie et snacks
+  Bonbons
+  Chocolats
+  Chewing-gums
+  Sucettes
+  Biscuits salés
+  Chips
+  Cacahuètes
+  Noix de cajou
+  Pop-corn
+  Barres céréalières
+  Fruits secs
+  Snacks emballés
+Hygiène corporelle et beauté
+  Hygiène corporelle
+    Savons
+    Gels douche
+    Shampoings
+    Après-shampoings
+    Dentifrices
+    Brosses à dents
+    Déodorants
+    Parfums
+    Crèmes corporelles
+    Laits hydratants
+  Soins du visage
+    Crèmes visage
+    Nettoyants
+    Sérums
+    Masques
+    Lotions
+    Produits solaires
+  Maquillage
+    Fonds de teint
+    Poudres
+    Rouges à lèvres
+    Mascara
+    Eyeliners
+    Vernis à ongles
+    Accessoires de maquillage
+  Soins capillaires
+    Huiles capillaires
+    Crèmes coiffantes
+    Gels
+    Colorations
+    Mèches
+    Perruques
+    Extensions
+    Accessoires cheveux
+  Rasage et soins masculins
+    Rasoirs
+    Lames
+    Mousse à raser
+    Après-rasage
+    Produits pour barbe
+Entretien et nettoyage
+  Eau de javel
+  Détergents
+  Lessives en poudre
+  Lessives liquides
+  Savons de lessive
+  Liquides vaisselle
+  Nettoyants sols
+  Désinfectants
+  Nettoyants vitres
+  Désodorisants
+  Insecticides ménagers
+  Désodorisants d'intérieur
+  Éponges
+  Brosses
+  Serpillières
+  Balais
+  Pelles
+  Sacs-poubelle
+Bébé et puériculture
+  Couches
+  Lingettes
+  Lait infantile
+  Céréales infantiles
+  Petits pots
+  Biberons
+  Tétines
+  Sucettes
+  Produits de toilette bébé
+  Crèmes bébé
+  Vêtements bébé
+  Chaussures bébé
+  Jouets bébé
+  Poussettes
+  Porte-bébés
+  Accessoires de puériculture
+Pharmacie et parapharmacie
+  Médicaments sans ordonnance
+  Premiers soins
+  Pansements
+  Compresses
+  Bandages
+  Antiseptiques
+  Thermomètres
+  Tensiomètres
+  Matériel médical
+  Vitamines et compléments
+  Produits dermatologiques
+  Produits d'hygiène médicale
+  Produits orthopédiques
+Vêtements et habillement
+  Vêtements homme
+    Chemises
+    T-shirts
+    Pantalons
+    Jeans
+    Costumes
+    Vestes
+    Shorts
+    Sous-vêtements
+  Vêtements femme
+    Robes
+    Jupes
+    Blouses
+    Chemisiers
+    Pantalons
+    Jeans
+    Leggings
+    Ensembles
+    Lingerie
+    Voiles et foulards
+  Vêtements enfant
+    Vêtements bébé
+    Vêtements garçon
+    Vêtements fille
+    Uniformes scolaires
+    Pyjamas
+  Vêtements traditionnels
+    Bazin
+    Wax
+    Bogolan
+    Boubous
+    Tissus traditionnels
+    Tenues de cérémonie
+  Vêtements professionnels
+    Uniformes
+    Tenues de travail
+    Blouses
+    Combinaisons
+    Gilets de sécurité
+Chaussures et maroquinerie
+  Chaussures homme
+  Chaussures femme
+  Chaussures enfant
+  Chaussures de sport
+  Sandales
+  Claquettes
+  Bottes
+  Chaussures de sécurité
+  Sacs à main
+  Sacs à dos
+  Portefeuilles
+  Ceintures
+  Valises
+  Porte-documents
+Accessoires de mode et bijoux
+  Montres
+  Lunettes
+  Bijoux
+  Bagues
+  Bracelets
+  Colliers
+  Boucles d'oreilles
+  Casquettes
+  Chapeaux
+  Écharpes
+  Foulards
+  Cravates
+  Ceintures
+  Accessoires de cheveux
+Électronique et informatique
+  Téléphones et accessoires
+    Smartphones
+    Téléphones classiques
+    Chargeurs
+    Câbles USB
+    Écouteurs
+    Casques
+    Batteries externes
+    Coques
+    Protections écran
+    Cartes mémoire
+  Informatique
+    Ordinateurs portables
+    Ordinateurs de bureau
+    Tablettes
+    Écrans
+    Claviers
+    Souris
+    Imprimantes
+    Scanners
+    Disques durs
+    SSD
+    Clés USB
+    Routeurs
+    Switchs réseau
+    Onduleurs
+    Composants informatiques
+  Électronique grand public
+    Téléviseurs
+    Décodeurs
+    Appareils photo
+    Caméras
+    Enceintes
+    Haut-parleurs
+    Projecteurs
+    Consoles de jeux
+    Manettes
+    Accessoires audio
+Électroménager
+  Réfrigérateurs
+  Congélateurs
+  Climatiseurs
+  Ventilateurs
+  Téléviseurs
+  Machines à laver
+  Fours
+  Micro-ondes
+  Mixeurs
+  Blenders
+  Bouilloires
+  Fers à repasser
+  Aspirateurs
+  Cuisinières
+  Gazinières
+  Chauffe-eau
+  Distributeurs d'eau
+Maison et décoration
+  Mobilier
+    Lits
+    Matelas
+    Canapés
+    Fauteuils
+    Tables
+    Chaises
+    Armoires
+    Étagères
+    Bureaux
+  Cuisine et vaisselle
+    Assiettes
+    Verres
+    Tasses
+    Casseroles
+    Marmites
+    Poêles
+    Couverts
+    Plateaux
+    Ustensiles de cuisine
+    Boîtes alimentaires
+  Décoration
+    Rideaux
+    Tapis
+    Cadres
+    Miroirs
+    Tableaux
+    Vases
+    Luminaires
+    Objets décoratifs
+  Literie
+    Draps
+    Couvertures
+    Oreillers
+    Taies
+    Couettes
+    Moustiquaires
+    Serviettes
+Quincaillerie et bricolage
+  Outillage
+    Marteaux
+    Tournevis
+    Pinces
+    Clés
+    Scies
+    Perceuses
+    Meuleuses
+    Postes à souder
+    Mètres
+    Niveaux
+  Visserie et fixation
+    Vis
+    Boulons
+    Écrous
+    Rondelles
+    Clous
+    Chevilles
+    Charnières
+    Cadenas
+    Serrures
+  Plomberie
+    Tuyaux PVC
+    Tuyaux PPR
+    Robinets
+    Raccords
+    Vannes
+    Joints
+    Siphons
+    Pompes à eau
+    Accessoires sanitaires
+  Électricité
+    Câbles électriques
+    Prises
+    Interrupteurs
+    Disjoncteurs
+    Fusibles
+    Tableaux électriques
+    Ampoules
+    Douilles
+    Gaines
+    Lampes
+  Peinture
+    Peintures
+    Vernis
+    Diluants
+    Solvants
+    Pinceaux
+    Rouleaux
+    Spatules
+Matériaux de construction
+  Ciment
+  Sable
+  Gravier
+  Fer à béton
+  Briques
+  Parpaings
+  Carrelage
+  Faïence
+  Marbre
+  Granit
+  Tôles
+  Profilés métalliques
+  Bois de construction
+  Planches
+  Contreplaqués
+  Plâtre
+  Chaux
+  Matériaux d'étanchéité
+  Matériaux d'isolation
+  Portes
+  Fenêtres
+  Vitres
+Automobile, moto et accessoires
+  Pneus
+  Chambres à air
+  Batteries
+  Huiles moteur
+  Lubrifiants
+  Filtres
+  Bougies
+  Plaquettes de frein
+  Disques de frein
+  Amortisseurs
+  Rétroviseurs
+  Ampoules automobiles
+  Accessoires de carrosserie
+  Casques moto
+  Pièces de moto
+  Pièces automobiles
+  Produits de lavage
+  Accessoires de sécurité
+Agriculture et élevage
+  Semences
+  Engrais
+  Compost
+  Matériel agricole
+  Houes
+  Pelles
+  Arrosoirs
+  Pulvérisateurs
+  Motopompes
+  Tracteurs et accessoires
+  Aliments pour bétail
+  Aliments pour volailles
+  Aliments pour poissons
+  Matériel d'élevage
+  Abreuvoirs
+  Mangeoires
+  Accessoires vétérinaires
+Fournitures scolaires et bureautiques
+  Fournitures scolaires
+    Cahiers
+    Stylos
+    Crayons
+    Gommes
+    Règles
+    Compas
+    Cartables
+    Trousses
+    Feuilles
+    Livres scolaires
+  Bureautique
+    Papier A4
+    Papier A3
+    Classeurs
+    Chemises
+    Agrafeuses
+    Perforatrices
+    Encre
+    Toners
+    Tampons
+    Calculatrices
+    Fournitures d'archivage
+Jouets, loisirs et divertissement
+  Jouets éducatifs
+  Poupées
+  Voitures miniatures
+  Jeux de construction
+  Jeux de société
+  Ballons
+  Jeux électroniques
+  Jeux vidéo
+  Jeux de plein air
+  Instruments de musique
+  Accessoires musicaux
+  Matériel de dessin
+Sports et fitness
+  Ballons de football
+  Ballons de basketball
+  Ballons de volleyball
+  Maillots
+  Chaussures de sport
+  Tenues de sport
+  Haltères
+  Bancs de musculation
+  Tapis de sport
+  Cordes à sauter
+  Accessoires de fitness
+  Équipements de protection
+Jardinage et extérieur
+  Plantes
+  Fleurs
+  Pots
+  Terreau
+  Engrais
+  Graines
+  Tuyaux d'arrosage
+  Arrosoirs
+  Tondeuses
+  Sécateurs
+  Mobilier de jardin
+  Éclairage extérieur
+  Barbecues
+  Accessoires de piscine
+Énergie et équipements solaires
+  Panneaux solaires
+  Batteries solaires
+  Régulateurs
+  Onduleurs
+  Convertisseurs
+  Groupes électrogènes
+  Lampes solaires
+  Kits solaires
+  Câbles solaires
+  Connecteurs
+  Disjoncteurs DC
+  Accessoires photovoltaïques
+Articles de voyage et bagagerie
+  Valises
+  Sacs de voyage
+  Sacs à dos
+  Trousses
+  Oreillers de voyage
+  Adaptateurs électriques
+  Gourdes
+  Accessoires de voyage
+  Articles de camping
+  Tentes
+  Lampes de camping
+Articles religieux et culturels
+  Tapis de prière
+  Chapelets
+  Corans
+  Livres religieux
+  Voiles de prière
+  Bibles
+  Objets religieux
+  Encens
+  Objets culturels
+  Artisanat local
+  Objets traditionnels
+Tabac et accessoires réglementés
+  Cigarettes
+  Cigares
+  Tabac
+  Accessoires autorisés
+  Articles pour fumeurs
+Services et prestations commerciales
+  Réparation informatique
+  Réparation téléphonique
+  Réparation électronique
+  Installation électrique
+  Installation plomberie
+  Installation climatisation
+  Impression et photocopie
+  Photographie
+  Livraison
+  Transport
+  Installation de logiciels
+  Maintenance
+  Prestations diverses
+Autres produits
+  Produits divers
+  Produits non classés
+  Nouveaux produits
+  Produits personnalisés
+  Produits saisonniers
+  Produits sur commande
+Menu restaurant et pâtisserie
+  Petit-déjeuner
+  Entrées
+  Plats
+    Plats locaux
+    Grillades
+    Poissons
+    Volailles
+    Plats végétariens
+  Accompagnements
+  Fast-food
+    Burgers
+    Sandwichs
+    Pizzas
+    Chawarmas
+  Desserts
+  Pâtisseries
+    Gâteaux
+    Viennoiseries
+    Gâteaux d'anniversaire sur commande
+  Boissons fraîches
+  Boissons chaudes
+  Formules et menus

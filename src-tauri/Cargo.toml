@@ -1,0 +1,47 @@
+[package]
+name = "gestimarket"
+version = "0.7.0"
+description = "GestiMarket — logiciel de gestion de supermarché et de boutiques"
+authors = ["GestiMarket"]
+edition = "2021"
+rust-version = "1.89"
+
+[lib]
+name = "gestimarket_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled", "backup"] }
+argon2 = "0.5"
+password-hash = { version = "0.5", features = ["getrandom"] }
+chrono = "0.4"
+thiserror = "2"
+base64 = "0.22"
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
+axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+
+# Le hachage Argon2 est très lent sans optimisation : on optimise ces dépendances même en debug.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
