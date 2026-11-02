@@ -54,7 +54,17 @@ pub const DEFAULTS: &[(&str, &str)] = &[
 ];
 
 /// Clés internes, non modifiables depuis l'écran des paramètres.
-const INTERNAL: &[&str] = &["barcode_seq", "last_auto_backup", "supabase_secret"];
+const INTERNAL: &[&str] = &[
+    "barcode_seq",
+    "last_auto_backup",
+    "supabase_secret",
+    // Licence et compte boutique (voir license.rs) : lus par « license_status », jamais par l'écran des paramètres.
+    "license_file",
+    "license_clock",
+    "account_email",
+    "account_store_code",
+    "account_store_name",
+];
 
 pub fn get_all(conn: &Connection) -> AppResult<BTreeMap<String, String>> {
     let mut map: BTreeMap<String, String> =

@@ -1,0 +1,325 @@
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { BadgeCheck, Check, Copy, CreditCard, FileUp, RefreshCw, Store, X } from "lucide-react";
+import { api } from "../api";
+import { errorMessage, useApp } from "../context/AppContext";
+import { Badge, Modal, PageHeader } from "../components/ui";
+import { AccountForm } from "../components/AccountForm";
+import { isRemote, isTauri } from "../lib/transport";
+import { FEATURE_LABELS, fcfa, isoDateTime, refreshLicense, setLicense, useLicense } from "../lib/license";
+import type { AccountLinkResult, AccountOptions, LicenseFeature, PlanCode } from "../types";
+
+const FEATURES = Object.keys(FEATURE_LABELS) as LicenseFeature[];
+const METHODS = [
+  { code: "orange_money", label: "Orange Money" },
+  { code: "moov_money", label: "Moov Money" },
+  { code: "virement", label: "Virement bancaire" },
+  { code: "especes", label: "Espèces (remis à Eden Dev)" },
+  { code: "autre", label: "Autre" },
+];
+
+/** Abonnement de la boutique : formule, licence de ce PC, compte Eden Dev et paiement. */
+export default function LicencePage() {
+  const { toast } = useApp();
+  const lic = useLicense();
+  const [options, setOptions] = useState<AccountOptions | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  // Le compte et le paiement se gèrent sur le PC qui détient la base (poste serveur ou poste unique).
+  const onThisPc = isTauri && !isRemote();
+
+  useEffect(() => {
+    if (onThisPc) api.accountOptions().then(setOptions).catch(() => undefined);
+  }, [onThisPc]);
+
+  const sync = async () => {
+    setBusy(true);
+    try {
+      const s = await api.licenseSync();
+      setLicense(s);
+      toast.success(s.read_only ? "Vérification faite : aucune licence active pour l'instant." : `Licence à jour : ${s.plan_label}.`);
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+      refreshLicense();
+    }
+  };
+
+  const importFile = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".gml,.json,application/json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const s = await api.licenseImport(await file.text());
+        setLicense(s);
+        toast.success(`Licence installée : ${s.plan_label}, jusqu'au ${isoDateTime(s.expires_at)}.`);
+      } catch (e) {
+        toast.error(e);
+      }
+    };
+    input.click();
+  };
+
+  const linked = (r: AccountLinkResult) => {
+    setAccountOpen(false);
+    toast.success(`Ce PC est relié à la boutique ${r.store?.name ?? ""} (${r.store?.code ?? ""}).`);
+    if (r.sync_error) toast.error(`Licence pas encore téléchargée : ${r.sync_error}`);
+    refreshLicense();
+  };
+
+  if (!lic) {
+    return (
+      <div className="page narrow">
+        <PageHeader title="Abonnement & licence" />
+        <p className="muted">Chargement…</p>
+      </div>
+    );
+  }
+
+  const linkedAccount = !!lic.account.store_code;
+  return (
+    <div className="page narrow">
+      <PageHeader
+        title="Abonnement & licence"
+        subtitle="Formule de la boutique, licence de ce PC et compte Eden Dev. Aucune donnée commerciale n'est envoyée à Eden Dev."
+        actions={
+          onThisPc && (
+            <>
+              <button className="btn" onClick={importFile}><FileUp size={16} /> Importer un fichier</button>
+              <button className="btn btn-primary" onClick={sync} disabled={busy}><RefreshCw size={16} /> {busy ? "Vérification…" : "Vérifier maintenant"}</button>
+            </>
+          )
+        }
+      />
+
+      <div className="card">
+        <h3 className="card-title">
+          <BadgeCheck size={18} /> Formule {lic.plan_label}
+          <Badge tone={lic.read_only ? "danger" : lic.level === "warning" ? "warning" : "success"}>
+            {lic.phase === "expired" ? "expirée" : lic.read_only ? "lecture seule" : "active"}
+          </Badge>
+        </h3>
+        <div className={`alert ${lic.read_only || lic.level === "danger" ? "alert-danger" : lic.level === "warning" ? "alert-warning" : "alert-success"}`}>
+          {lic.warning && lic.warning !== lic.message ? `${lic.message} ${lic.warning}` : lic.message}
+        </div>
+        {lic.clock_warning && <div className="alert alert-warning">{lic.clock_warning}</div>}
+        {lic.load_error && <div className="alert alert-danger">Licence enregistrée refusée : {lic.load_error}</div>}
+        <div className="licence-grid">
+          <div>
+            <span className="muted small">Boutique</span>
+            <strong>{lic.store_name || lic.account.store_name || "—"}</strong>
+            <span className="small">{lic.store_code || lic.account.store_code}</span>
+          </div>
+          <div>
+            <span className="muted small">Valable jusqu'au</span>
+            <strong>{isoDateTime(lic.expires_at)}</strong>
+            {lic.days_left !== null && lic.phase === "active" && <span className="small">{lic.days_left} jour(s) restant(s)</span>}
+          </div>
+          <div>
+            <span className="muted small">Postes connectés</span>
+            <strong>{lic.postes_used ?? "—"} / {lic.max_postes}</strong>
+            <span className="small">PC, téléphones et tablettes</span>
+          </div>
+          <div>
+            <span className="muted small">Identifiant de ce PC</span>
+            <strong className="mono">{lic.pc_id || "—"}</strong>
+            {lic.pc_id && (
+              <button className="link-btn small" onClick={() => navigator.clipboard?.writeText(lic.pc_id).then(() => toast.info("Identifiant copié."))}>
+                <Copy size={13} /> Copier
+              </button>
+            )}
+          </div>
+        </div>
+        <ul className="feature-list">
+          {FEATURES.map((f) => {
+            const on = lic.features.includes(f);
+            return (
+              <li key={f} className={on ? "on" : "off"}>
+                {on ? <Check size={15} /> : <X size={15} />} {FEATURE_LABELS[f]}
+              </li>
+            );
+          })}
+        </ul>
+        <p className="muted small">
+          {lic.last_sync ? `Dernière vérification auprès d'Eden Dev : ${lic.last_sync}.` : "Pas encore vérifiée auprès d'Eden Dev."}
+          {lic.last_sync_error ? ` Dernière erreur : ${lic.last_sync_error}` : ""}
+          {lic.remote_status === "none" && " Aucun abonnement en cours chez Eden Dev."}
+          {lic.remote_status === "suspended" && " Boutique suspendue par Eden Dev."}
+          {" "}La licence est vérifiée sur ce PC, même sans Internet ; elle se met à jour toute seule après un paiement.
+        </p>
+      </div>
+
+      {!onThisPc ? (
+        <div className="alert alert-info">
+          Le compte boutique, le paiement et l'import de licence se font sur le PC serveur de la boutique (menu Abonnement & licence).
+        </div>
+      ) : (
+        <>
+          <div className="card">
+            <h3 className="card-title"><Store size={18} /> Compte boutique Eden Dev</h3>
+            {linkedAccount ? (
+              <>
+                <p>
+                  Ce PC est relié à <strong>{lic.account.store_name}</strong> ({lic.account.store_code}), compte <strong>{lic.account.email}</strong>.
+                </p>
+                <button className="btn" onClick={() => setAccountOpen(true)}>Changer de boutique ou de compte</button>
+              </>
+            ) : (
+              <>
+                <p className="muted">
+                  Créez le compte de la boutique (essai gratuit) ou connectez-vous à votre compte pour relier ce PC. Internet est nécessaire
+                  pour cette étape ; ensuite la licence fonctionne aussi hors ligne.
+                </p>
+                <AccountForm onLinked={linked} />
+              </>
+            )}
+          </div>
+
+          {linkedAccount && options && <PaymentCard options={options} />}
+        </>
+      )}
+
+      {options && <PlansCard options={options} current={lic.plan} />}
+
+      {accountOpen && (
+        <Modal title="Compte boutique" onClose={() => setAccountOpen(false)} width={720}>
+          <AccountForm onLinked={linked} startWith="login" />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/** Déclaration d'un paiement : Eden Dev le valide, puis la licence se met à jour automatiquement. */
+function PaymentCard({ options }: { options: AccountOptions }) {
+  const { toast } = useApp();
+  const plans = options.plans.filter((p) => p.code !== "free");
+  const [plan, setPlan] = useState<PlanCode>(plans.find((p) => p.code === "pro")?.code ?? plans[0]?.code ?? "starter");
+  const [months, setMonths] = useState(1);
+  const [method, setMethod] = useState("orange_money");
+  const [reference, setReference] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  const price = plans.find((p) => p.code === plan)?.price_month ?? 0;
+  const amount = useMemo(() => price * months, [price, months]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await api.accountDeclarePayment({ password, plan, months, method, reference, payer_phone: phone });
+      setDone(
+        `Paiement déclaré : ${r.plan_label}, ${r.months} mois, ${fcfa(r.amount)}. Eden Dev va le vérifier ; dès sa validation, la licence de ce PC se met à jour toute seule (ou cliquez sur « Vérifier maintenant »).`,
+      );
+      setReference("");
+      setPassword("");
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card" onSubmit={submit}>
+      <h3 className="card-title"><CreditCard size={18} /> Payer ou renouveler l'abonnement</h3>
+      <p className="muted">{options.payment_instructions}</p>
+      <div className="form-grid">
+        <label className="field">
+          <span className="field-label">Formule</span>
+          <select value={plan} onChange={(e) => setPlan(e.target.value as PlanCode)}>
+            {plans.map((p) => (
+              <option key={p.code} value={p.code}>{p.label} — {fcfa(p.price_month)} / mois</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Durée</span>
+          <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>
+            <option value={1}>1 mois</option>
+            <option value={3}>3 mois</option>
+            <option value={6}>6 mois</option>
+          </select>
+        </label>
+        <div className="field span-2">
+          <span className="field-label">Montant à payer</span>
+          <strong className="licence-amount">{fcfa(amount)}</strong>
+          <span className="muted small">Un renouvellement prolonge la période en cours ; il commence à sa fin.</span>
+        </div>
+        <label className="field">
+          <span className="field-label">Moyen de paiement</span>
+          <select value={method} onChange={(e) => setMethod(e.target.value)}>
+            {METHODS.map((m) => (
+              <option key={m.code} value={m.code}>{m.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Référence de la transaction *</span>
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Reçue par SMS" />
+        </label>
+        <label className="field">
+          <span className="field-label">Numéro qui a payé</span>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+        </label>
+        <label className="field">
+          <span className="field-label">Mot de passe du compte boutique *</span>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        </label>
+      </div>
+      {done && <div className="alert alert-success">{done}</div>}
+      <div className="row-end">
+        <button className="btn btn-primary" disabled={busy || reference.trim().length < 4 || !password}>
+          {busy ? "Envoi…" : "Déclarer le paiement"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function PlansCard({ options, current }: { options: AccountOptions; current: PlanCode }) {
+  return (
+    <div className="card">
+      <h3 className="card-title"><BadgeCheck size={18} /> Les formules</h3>
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Fonction</th>
+              {options.plans.map((p) => (
+                <th key={p.code} className={p.code === current ? "plan-current" : ""}>{p.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Prix par mois</td>
+              {options.plans.map((p) => (
+                <td key={p.code}>{p.price_month ? fcfa(p.price_month) : "Gratuit"}</td>
+              ))}
+            </tr>
+            <tr>
+              <td>Postes simultanés</td>
+              {options.plans.map((p) => (
+                <td key={p.code}>{p.code === "business" ? `${p.max_postes} (selon contrat)` : p.max_postes}</td>
+              ))}
+            </tr>
+            {FEATURES.map((f) => (
+              <tr key={f}>
+                <td>{FEATURE_LABELS[f]}</td>
+                {options.plans.map((p) => (
+                  <td key={p.code}>{p.features.includes(f) ? <Check size={16} className="ok" /> : <X size={16} className="ko" />}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

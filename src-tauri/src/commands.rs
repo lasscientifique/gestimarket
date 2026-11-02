@@ -86,6 +86,9 @@ pub async fn save_network_config(
     pin: Option<String>,
 ) -> AppResult<()> {
     let current = net.get();
+    if config.mode == "server" && current.mode != "server" && !crate::license::allows("server") {
+        return invalid("Le mode serveur (autres PC, téléphones, tablettes) est inclus à partir de la formule PRO : voir « Abonnement & licence ».");
+    }
     let fresh = crate::services::auth::needs_setup(&state.conn())?;
     if current.mode != "client" && !fresh {
         let is_admin = state.user(&Origin::Local).map(|u| u.is_admin()).unwrap_or(false);
@@ -145,6 +148,9 @@ pub async fn toggle_customer_display(app: AppHandle, monitor: Option<usize>, pos
     if let Some(w) = app.get_webview_window("display") {
         w.close().map_err(internal)?;
         return Ok(false);
+    }
+    if !crate::license::allows("customer_display") {
+        return invalid("L'écran client est inclus à partir de la formule PRO : voir « Abonnement & licence ».");
     }
     let monitors = app.available_monitors().map_err(internal)?;
     let primary = app.primary_monitor().map_err(internal)?.and_then(|m| m.name().cloned());

@@ -212,13 +212,23 @@ async fn rpc_handler(
         .and_then(|s| s.strip_prefix("Bearer "))
         .map(String::from);
     let mut args: Value = if body.is_empty() { Value::Null } else { serde_json::from_slice(&body).unwrap_or(Value::Null) };
-    // Adresse IP de l'appareil (liste des postes connectés).
-    if cmd == "poste_heartbeat" {
-        if let Value::Object(m) = &mut args {
-            let (ip, route) = client_route(&addr, &headers);
-            m.insert("__ip".into(), Value::String(ip));
-            m.insert("__route".into(), Value::String(route.into()));
+    let (ip, route) = client_route(&addr, &headers);
+    // Autres appareils et accès par Internet : selon la formule. Ce PC lui-même (127.0.0.1 hors tunnel)
+    // n'est pas un poste client.
+    let this_pc = route == "local" && addr.ip().to_canonical().is_loopback();
+    if !this_pc {
+        if let Err(msg) = crate::license::remote_allowed(route) {
+            return Json(json!({ "error": msg })).into_response();
         }
+    }
+    // Adresse IP et route de l'appareil (postes connectés, anti force brute, restrictions Internet).
+    // Elles remplacent toujours celles qu'un appareil enverrait lui-même.
+    if args.is_null() {
+        args = json!({});
+    }
+    if let Value::Object(m) = &mut args {
+        m.insert("__ip".into(), Value::String(ip));
+        m.insert("__route".into(), Value::String(route.into()));
     }
     let result = tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
@@ -232,19 +242,30 @@ async fn rpc_handler(
     }
 }
 
-async fn media_handler(State(app): State<AppHandle>, Path(id): Path<String>) -> Response {
+/// Photos (produits, logo, QR code). Depuis Internet, une session est exigée (`?t=<jeton>`).
+async fn media_handler(
+    State(app): State<AppHandle>,
+    Path(id): Path<String>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
     let id: i64 = id.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let (_, route) = client_route(&addr, &headers);
+    let token = query.get("t").cloned();
     let found = tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let found = crate::services::media::get(&state.conn(), id).ok().flatten();
-        found
+        if route == "internet" && state.user(&Origin::Remote(token)).is_none() {
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        crate::services::media::get(&state.conn(), id).ok().flatten().ok_or(StatusCode::NOT_FOUND)
     })
     .await
-    .ok()
-    .flatten();
+    .unwrap_or(Err(StatusCode::INTERNAL_SERVER_ERROR));
     match found {
-        Some((mime, data)) => ([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "public, max-age=31536000, immutable".into())], data).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
+        // « private » : ne pas laisser un cache partagé (tunnel) servir l'image sans contrôle.
+        Ok((mime, data)) => ([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=31536000, immutable".into())], data).into_response(),
+        Err(code) => code.into_response(),
     }
 }
 

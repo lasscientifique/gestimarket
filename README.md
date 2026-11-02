@@ -4,7 +4,7 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.8.0**
+- Version actuelle : **0.9.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
 > État des tests : 28 tests automatiques Rust et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 24 vérifications sur 24 (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare, coupure puis retour du tunnel). L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
@@ -18,11 +18,12 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 3. [Installation et utilisation](#installation-et-utilisation)
 4. [Multi-postes, tablettes et téléphones](#multi-postes-tablettes-et-téléphones)
 5. [Application mobile (FlutterFlow + Supabase)](#application-mobile-flutterflow--supabase)
-6. [Développement](#développement)
-7. [Architecture](#architecture)
-8. [Base de données](#base-de-données)
-9. [Interface RPC](#interface-rpc)
-10. [Feuille de route](#feuille-de-route)
+6. [Abonnements et licences (Eden Dev)](#abonnements-et-licences-eden-dev)
+7. [Développement](#développement)
+8. [Architecture](#architecture)
+9. [Base de données](#base-de-données)
+10. [Interface RPC](#interface-rpc)
+11. [Feuille de route](#feuille-de-route)
 
 ---
 
@@ -74,7 +75,8 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - **Séparation des rôles** : les administrateurs et gestionnaires n'ouvrent pas de caisse. En cas de fuite de leur mot de passe, personne ne peut encaisser avec leurs droits élevés. La règle est appliquée côté serveur.
 - **Code PIN** pour chaque utilisateur (haché Argon2) : connexion rapide et **confirmation de toute action critique** (annulation de vente, remise, suppression d'article, changement de prix, archivage, ajustement de stock, clôture de caisse, paramètres, changement de réseau…). Un responsable peut valider l'action d'un autre ; c'est tracé.
-- Blocage temporaire après 5 PIN erronés.
+- Blocage temporaire après 5 PIN erronés ; connexions limitées **par appareil** (5 échecs : 1 min, puis 5 min, puis 30 min).
+- Depuis Internet (tunnel) : pas de connexion par PIN, pas de liste du personnel à l'écran de connexion, photos servies seulement avec une session, paramètres réduits au strict nécessaire avant connexion.
 - Mots de passe hachés Argon2 ; sessions réseau par jeton avec expiration.
 - Journal d'activité de toutes les opérations sensibles.
 - Montants stockés en **unités mineures entières** (pas d'erreur d'arrondi) ; prix relus en base à chaque vente (le client ne fixe jamais un prix).
@@ -151,6 +153,37 @@ Chaque magasin garde son PC serveur ; un **tunnel Cloudflare** lui donne une adr
 - Le widget FlutterFlow `GestiMarketWebView` (paramètres `shopCode`, `supabaseUrl`, `supabaseKey`) choisit le **réseau local d'abord**, sinon Internet, et se **reconnecte seul** quand le PC serveur redémarre (pages 502/530 du tunnel, coupures). Voir `supabase/APPLICATION_MOBILE.md`, section 5.
 
 Guide complet : [`supabase/APPLICATION_MOBILE.md`](supabase/APPLICATION_MOBILE.md) · script SQL : [`supabase/gestimarket_mobile.sql`](supabase/gestimarket_mobile.sql) · widget : [`supabase/flutterflow/gestimarket_webview.dart`](supabase/flutterflow/gestimarket_webview.dart)
+
+---
+
+## Abonnements et licences (Eden Dev)
+
+Chaque boutique a un **compte Eden Dev** (Supabase Auth : e-mail + mot de passe) avec : nom de la boutique, nom complet de la propriétaire, téléphone, pays, ville, adresse et type de boutique. Un compte peut avoir jusqu'à 5 boutiques (code `GM-000001`…). **Aucune donnée commerciale** (ventes, produits, stocks, clients) n'est envoyée à Eden Dev.
+
+| Formule | Postes | Fonctions | Prix (modifiable dans `gm_plans`) |
+|---|---|---|---|
+| **FREE** | 1 | Consultation uniquement | 0 |
+| **STARTER** | 1 | Ventes et modifications, PC seul, sans Internet obligatoire | 5 000 FCFA / mois |
+| **PRO** | 3 | + postes clients (PC, téléphones, tablettes), accès Internet, écran client, logo | 18 000 FCFA / mois |
+| **BUSINESS** | selon contrat | toutes les fonctions | 50 000 FCFA / mois |
+
+Parcours :
+
+1. **Première configuration** : création du compte et de la boutique (ou connexion à un compte existant), **14 jours d'essai PRO**. Internet n'est nécessaire que pour cette étape.
+2. Chaque PC (et chaque boutique d'un même PC) a un **identifiant** (`K7QM-2XPA-9DTR`), empreinte de la machine et du numéro de boutique.
+3. **Paiement** : menu *Abonnement & licence* → formule, durée (1, 3 ou 6 mois), moyen (Orange Money, Moov Money, virement, espèces), **référence de la transaction**. Une capture d'écran ne suffit pas : Eden Dev vérifie la référence.
+4. **Validation par Eden Dev** : tableau de bord Supabase → table `gm_payments` → colonne `status` → `validated` (ou `refused`). La vue `gm_paiements_a_valider` affiche les paiements avec la boutique. L'abonnement démarre à la fin de la période en cours (renouvellement) ou tout de suite.
+5. La fonction `gm-license` **signe la licence (Ed25519)** et la dépose dans le bucket public `licences/<identifiant du PC>.gml`. GestiMarket la télécharge toute seule (toutes les 30 minutes, ou bouton *Vérifier maintenant*). Sans Internet : *Importer un fichier* (licence reçue par WhatsApp ou clé USB).
+
+Règles appliquées par le poste serveur (Rust), même sans Internet :
+
+- **Licence vérifiée hors ligne** : signature Ed25519 (clé privée rangée dans Vault, jamais dans l'application), liée au PC (une licence copiée sur un autre PC est refusée), modification = refus.
+- **Expiration** : avertissements à J-7, J-3, J-1 et le jour J, puis **lecture seule** : consultation, rapports, sauvegardes et export restent possibles ; ventes et modifications bloquées. **Aucune donnée n'est jamais supprimée.** Un renouvellement réactive tout.
+- **Horloge** : la date la plus avancée déjà vue est mémorisée ; reculer l'horloge du PC ne prolonge pas la licence. L'heure de Supabase corrige une date erronée.
+- **Postes simultanés** : chaque appareil connecté (ce PC compris) occupe une place ; une connexion de trop est refusée. Un appareil sans signal depuis 3 minutes libère sa place. L'administrateur voit et déconnecte les postes (*Poste & réseau → Postes connectés*).
+- **Fonctions** : mode serveur et appareils du réseau (PRO), accès par Internet (PRO), écran client (PRO), logo (PRO).
+
+Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`) et `supabase/functions/gm-license/index.ts`. À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
 
 ---
 
@@ -276,6 +309,10 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Version téléphone / tablette, tableau de bord caissier, vente réservée aux caissiers
 - [x] Postes connectés, reprise de client entre caissiers, publication Supabase
 - [x] Accès Internet par tunnel Cloudflare, route local / Internet indiquée, widget FlutterFlow tout-en-un
+- [x] Plusieurs boutiques sur un même PC (5 au maximum)
+- [x] Comptes boutique, formules FREE / STARTER / PRO / BUSINESS, licences signées Ed25519, lecture seule à l'expiration, postes simultanés
+- [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées
+- [ ] Tableau de bord Eden Dev, paiement mobile automatique, tunnels créés automatiquement par boutique, mises à jour signées
 - [ ] Application mobile FlutterFlow (WebView) à construire et tester sur de vrais téléphones
 - [ ] Test sur vrai PC Windows et vrais téléphones
 - [ ] Synchronisation de données entre magasins distants (Supabase) : hors périmètre actuel

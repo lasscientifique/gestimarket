@@ -77,25 +77,50 @@ fn out<T: Serialize>(v: T) -> AppResult<Value> {
     serde_json::to_value(v).map_err(|e| AppError::Internal(e.to_string()))
 }
 
+/// Paramètres lisibles sans connexion depuis Internet (écran de connexion) : rien d'autre ne sort.
+const PUBLIC_SETTINGS: &[&str] =
+    &["shop_name", "shop_logo_id", "currency_symbol", "currency_decimals", "theme_color", "theme_mode", "sidebar_style", "enabled_features", "business_type"];
+
+/// Opérations du compte boutique : sur ce PC uniquement (poste serveur ou poste unique),
+/// à la première configuration ou par l'administrateur.
+fn account_access(state: &AppState, origin: &Origin) -> AppResult<()> {
+    if !matches!(origin, Origin::Local) {
+        return invalid("À faire sur le PC serveur (ou le poste unique) de la boutique.");
+    }
+    if auth::needs_setup(&state.conn())? {
+        return Ok(());
+    }
+    state.require(origin, Access::Admin).map(|_| ())
+}
+
 pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppResult<Value> {
     use Access::*;
     let run = |access, f: &dyn Fn(&mut rusqlite::Connection, &crate::state::SessionUser) -> AppResult<Value>| {
         state.run(origin, access, |c, u| f(c, u))
     };
+    // Abonnement expiré ou absent : lecture seule (toute commande non listée est une écriture).
+    crate::license::check_command(cmd)?;
+    // Appareil à l'origine de l'appel (ajouté par le serveur réseau) : anti force brute, route.
+    let ip = a.get("__ip").and_then(Value::as_str).unwrap_or("local").to_string();
+    let route = a.get("__route").and_then(Value::as_str).unwrap_or("local").to_string();
+    let from_internet = route == "internet";
 
     match cmd {
         // ───── Authentification (sans session) ─────
         "needs_setup" => out(auth::needs_setup(&state.conn())?),
         "initial_setup" => {
             let user = auth::initial_setup(&mut state.conn(), arg(&a, "input")?)?;
-            let token = state.set_user(origin, Some(user.clone()));
+            let token = state.start_session(origin, user.clone(), &ip, &route)?;
             out(json!({ "user": user, "token": token }))
         }
         "login" => {
+            state.login_guard(&ip)?;
             let username: String = arg(&a, "username")?;
             let password: String = arg(&a, "password")?;
-            let user = auth::login(&state.conn(), &username, &password)?;
-            let token = state.set_user(origin, Some(user.clone()));
+            let result = auth::login(&state.conn(), &username, &password);
+            state.login_result(&ip, result.is_ok());
+            let user = result?;
+            let token = state.start_session(origin, user.clone(), &ip, &route)?;
             out(json!({ "user": user, "token": token }))
         }
         "logout" => {
@@ -106,18 +131,29 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(())
         }
         "current_user" => out(state.user(origin)),
+        // Depuis Internet : pas de liste du personnel (connexion par identifiant et mot de passe).
+        "list_login_users" if from_internet => out(Vec::<Value>::new()),
         "list_login_users" => out(auth::login_users(&state.conn())?),
         "login_pin" => {
-            state.pin_guard()?;
+            if from_internet {
+                return invalid("Connexion par code PIN impossible depuis Internet : utilisez votre identifiant et votre mot de passe.");
+            }
+            state.login_guard(&ip)?;
             let user_id: i64 = arg(&a, "user_id")?;
             let pin: String = arg(&a, "pin")?;
-            let found = auth::login_pin(&state.conn(), user_id, pin.trim())?;
-            state.pin_result(found.is_some());
-            let Some(user) = found else { return invalid("Code PIN incorrect.") };
-            let token = state.set_user(origin, Some(user.clone()));
+            let found = auth::login_pin(&state.conn(), user_id, pin.trim());
+            state.login_result(&ip, matches!(found, Ok(Some(_))));
+            let Some(user) = found? else { return invalid("Code PIN incorrect.") };
+            let token = state.start_session(origin, user.clone(), &ip, &route)?;
             out(json!({ "user": user, "token": token }))
         }
-        "get_settings" => out(settings::get_all(&state.conn())?), // nom du commerce, devise : rien de sensible
+        "get_settings" => {
+            let mut all = settings::get_all(&state.conn())?;
+            if from_internet && state.user(origin).is_none() {
+                all.retain(|k, _| PUBLIC_SETTINGS.contains(&k.as_str()));
+            }
+            out(all)
+        }
         "server_info" => {
             let s = settings::get_all(&state.conn())?;
             out(json!({ "shop_name": s.get("shop_name"), "version": env!("CARGO_PKG_VERSION") }))
@@ -169,7 +205,13 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
         "update_settings" => run(Admin, &|c, u| {
             confirm_pin(state, c, u, &a, 3, "Modification des paramètres")?;
-            out(settings::update(c, u, arg(&a, "values")?)?)
+            let values: std::collections::BTreeMap<String, String> = arg(&a, "values")?;
+            if let Some(logo) = values.get("shop_logo_id") {
+                if !logo.trim().is_empty() && *logo != settings::get(c, "shop_logo_id")? && !crate::license::allows("logo") {
+                    return invalid("Le logo personnalisé est inclus à partir de la formule PRO.");
+                }
+            }
+            out(settings::update(c, u, values)?)
         }),
 
         // ───── Catalogue ─────
@@ -410,8 +452,97 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         // ───── Écran client ─────
         "display_update" => {
             state.require(origin, Any)?;
-            let poste: String = arg(&a, "poste")?;
-            state.set_display(&poste, a.get("state").cloned().unwrap_or(Value::Null));
+            // Écran client non inclus dans la formule : rien n'est affiché (sans erreur pour la caisse).
+            if crate::license::allows("customer_display") {
+                let poste: String = arg(&a, "poste")?;
+                state.set_display(&poste, a.get("state").cloned().unwrap_or(Value::Null));
+            }
+            out(())
+        }
+
+        // ───── Abonnement, licence et postes connectés ─────
+        "license_status" => {
+            if !matches!(origin, Origin::Local) {
+                state.require(origin, Any)?;
+            }
+            let mut v = out(crate::license::status())?;
+            v["postes_used"] = json!(state.active_sessions());
+            Ok(v)
+        }
+        "license_sync" => {
+            account_access(state, origin)?;
+            crate::account::sync(state).map_err(AppError::Validation)?;
+            out(crate::license::status())
+        }
+        // Fichier de licence reçu à part (WhatsApp, clé USB) : vérifié avant d'être installé.
+        "license_import" => {
+            let user = if matches!(origin, Origin::Local) && auth::needs_setup(&state.conn())? {
+                None
+            } else {
+                Some(state.require(origin, Admin)?)
+            };
+            let text: String = arg(&a, "text")?;
+            let conn = state.conn();
+            let p = crate::license::install(&conn, &text).map_err(AppError::Validation)?;
+            if let Some(u) = user {
+                audit::log(&conn, &u, "Licence installée", "settings", None, format!("{} — {} jusqu'au {}", p.store_code, p.plan, p.expires_at))?;
+            }
+            drop(conn);
+            out(crate::license::status())
+        }
+        "account_options" => {
+            account_access(state, origin)?;
+            out(crate::account::options().map_err(AppError::Validation)?)
+        }
+        "account_signup" => {
+            account_access(state, origin)?;
+            out(crate::account::signup(state, arg(&a, "input")?).map_err(AppError::Validation)?)
+        }
+        "account_login" => {
+            account_access(state, origin)?;
+            let email: String = arg(&a, "email")?;
+            let password: String = arg(&a, "password")?;
+            out(crate::account::login(&email, &password).map_err(AppError::Validation)?)
+        }
+        "account_create_store" => {
+            account_access(state, origin)?;
+            out(crate::account::create_store(state, arg(&a, "input")?).map_err(AppError::Validation)?)
+        }
+        "account_link" => {
+            account_access(state, origin)?;
+            let code: String = arg(&a, "store_code")?;
+            let r = crate::account::link(state, &code).map_err(AppError::Validation)?;
+            if let Some(u) = state.user(origin) {
+                audit::log(&state.conn(), &u, "Compte boutique relié", "settings", None, &code)?;
+            }
+            out(r)
+        }
+        "account_declare_payment" => {
+            if !matches!(origin, Origin::Local) {
+                return invalid("À faire sur le PC serveur (ou le poste unique) de la boutique.");
+            }
+            let u = state.require(origin, Admin)?;
+            let r = crate::account::declare_payment(
+                &arg::<String>(&a, "password")?,
+                &arg::<String>(&a, "plan")?,
+                arg(&a, "months")?,
+                &arg::<String>(&a, "method")?,
+                &arg::<String>(&a, "reference")?,
+                &arg::<Option<String>>(&a, "payer_phone")?.unwrap_or_default(),
+            )
+            .map_err(AppError::Validation)?;
+            audit::log(&state.conn(), &u, "Paiement d'abonnement déclaré", "settings", None, r.to_string())?;
+            out(r)
+        }
+        "list_sessions" => {
+            state.require(origin, Admin)?;
+            out(json!({ "sessions": state.sessions(), "max": crate::license::max_postes(), "used": state.active_sessions() }))
+        }
+        "kick_session" => {
+            let u = state.require(origin, Admin)?;
+            let id: String = arg(&a, "id")?;
+            let Some(kicked) = state.kick(&id) else { return invalid("Cette session est déjà fermée.") };
+            audit::log(&state.conn(), &u, "Déconnexion d'un poste", "user", Some(kicked.id), &kicked.full_name)?;
             out(())
         }
 

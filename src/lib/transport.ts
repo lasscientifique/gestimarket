@@ -36,6 +36,11 @@ function loadToken() {
   }
 }
 
+/** Jeton de la session réseau (photos servies par le poste serveur depuis Internet). */
+export function getToken() {
+  return token;
+}
+
 export function setToken(t: string | null) {
   token = t;
   try {

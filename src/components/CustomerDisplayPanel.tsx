@@ -4,6 +4,7 @@ import { ExternalLink, MonitorSmartphone } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { HelpTip } from "./Help";
 import { getNetwork, isTauri, local, posteName } from "../lib/transport";
+import { useLicense } from "../lib/license";
 
 /** Adresse de l'écran client de ce poste (TV, projecteur, autre PC, tablette tournée vers le client). */
 export function displayUrl(): string | null {
@@ -32,6 +33,7 @@ export function CustomerDisplayPanel() {
   const [monitors, setMonitors] = useState<{ index: number; name: string; width: number; height: number; primary: boolean }[]>([]);
   const [monitor, setMonitor] = useState<number | null>(null);
   const [qr, setQr] = useState("");
+  const lic = useLicense();
   const url = displayUrl();
 
   useEffect(() => {
@@ -48,6 +50,18 @@ export function CustomerDisplayPanel() {
       toast.error(e);
     }
   };
+
+  if (lic && !lic.features.includes("customer_display")) {
+    return (
+      <div className="card">
+        <h3 className="card-title"><MonitorSmartphone size={18} /> Écran client</h3>
+        <p className="muted">
+          L'écran client (articles, total et monnaie affichés au client) est inclus à partir de la formule PRO.
+          Formule actuelle : {lic.plan_label}.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="card">

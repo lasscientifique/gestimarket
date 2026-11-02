@@ -541,3 +541,100 @@ export interface BoutiquesInfo {
   boutiques: BoutiqueInfo[];
   can_create: boolean;
 }
+
+// ───────────── Abonnement, licence et compte boutique (Eden Dev) ─────────────
+
+export type PlanCode = "free" | "starter" | "pro" | "business";
+export type LicenseFeature = "write" | "server" | "internet" | "customer_display" | "logo";
+
+export interface LicenseStatus {
+  /** Identifiant de ce PC (et de cette boutique sur le PC) : K7QM-2XPA-9DTR */
+  pc_id: string;
+  /** none, not_yet, active, expired */
+  phase: string;
+  plan: PlanCode;
+  plan_label: string;
+  licensed_plan: string | null;
+  features: LicenseFeature[];
+  max_postes: number;
+  read_only: boolean;
+  store_code: string | null;
+  store_name: string | null;
+  starts_at: string | null;
+  expires_at: string | null;
+  days_left: number | null;
+  message: string;
+  warning: string | null;
+  level: "ok" | "warning" | "danger";
+  clock_warning: string | null;
+  load_error: string | null;
+  account: { email: string; store_code: string; store_name: string };
+  last_sync: string | null;
+  last_sync_error: string | null;
+  /** Dernière réponse d'Eden Dev : ok, none, unregistered, suspended */
+  remote_status: string | null;
+  postes_used?: number;
+}
+
+export interface PlanInfo {
+  code: PlanCode;
+  label: string;
+  price_month: number;
+  max_postes: number;
+  features: LicenseFeature[];
+  description: string;
+}
+
+export interface AccountOptions {
+  shop_types: { code: string; label: string }[];
+  countries: { code: string; label: string; currency: string }[];
+  plans: PlanInfo[];
+  payment_instructions: string;
+  trial_days: number;
+}
+
+export interface StoreInput {
+  name: string;
+  owner_name: string;
+  phone: string;
+  country: string;
+  city: string;
+  address: string;
+  shop_type: string;
+}
+
+export interface AccountStore {
+  code: string;
+  name: string;
+  owner_name: string;
+  phone: string;
+  country: string;
+  city: string;
+  address: string;
+  shop_type: string;
+  status: string;
+  currency: string | null;
+  plan: PlanCode | null;
+  plan_label: string | null;
+  ends_at: string | null;
+  trial: boolean | null;
+  pcs: number;
+}
+
+export interface AccountLinkResult {
+  status: "linked" | "confirm_email";
+  store?: AccountStore;
+  sync_error?: string | null;
+}
+
+export interface SessionInfo {
+  id: string;
+  user: string;
+  role: Role;
+  ip: string;
+  route: "local" | "internet";
+  local: boolean;
+  active: boolean;
+  idle_secs: number;
+  since: string;
+}

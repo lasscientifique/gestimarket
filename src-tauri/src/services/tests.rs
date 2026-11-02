@@ -819,3 +819,52 @@ fn cloud_payload_lists_addresses() {
     assert!(p["public_url"].is_null());
     assert_eq!(p["postes_online"], 3);
 }
+
+#[test]
+fn postes_limit_login_throttle_and_internet_restrictions() {
+    use crate::state::{AppState, Origin};
+    use serde_json::json;
+    let (conn, admin) = setup();
+    users::create(&conn, &admin, users::UserInput { username: Some("awa".into()), full_name: "Awa".into(), role: "cashier".into(), active: Some(true), password: Some("caisse123".into()) }).unwrap();
+    let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
+    let anon = Origin::Remote(None);
+    let awa = auth::login(&state.conn(), "awa", "caisse123").unwrap();
+    let boss = auth::login(&state.conn(), "admin", "secret123").unwrap();
+
+    // 2 postes : deux appareils connectés, le troisième est refusé.
+    let t1 = state.set_user(&anon, Some(awa.clone())).unwrap();
+    assert!(state.ensure_slot(&anon, &awa, 2).is_ok());
+    state.set_user(&anon, Some(awa.clone())).unwrap();
+    assert!(state.ensure_slot(&anon, &awa, 2).unwrap_err().to_string().contains("Nombre maximal"));
+    // Un appareil qui se reconnecte (même jeton) reprend sa propre place.
+    assert!(state.ensure_slot(&Origin::Remote(Some(t1)), &awa, 2).is_ok());
+    // Ce PC compte aussi comme un poste ; l'administrateur peut toujours s'y connecter pour libérer des places.
+    assert!(state.ensure_slot(&Origin::Local, &awa, 2).is_err());
+    assert!(state.ensure_slot(&Origin::Local, &boss, 2).is_ok());
+    // Liste des postes et déconnexion d'un appareil par l'administrateur.
+    let sessions = state.sessions();
+    assert_eq!(sessions.len(), 2);
+    assert!(sessions.iter().all(|s| s.active && !s.local));
+    assert!(state.kick(&sessions[0].id).is_some());
+    assert!(state.kick(&sessions[0].id).is_none());
+    assert_eq!(state.active_sessions(), 1);
+    assert!(state.ensure_slot(&anon, &awa, 2).is_ok());
+
+    // Anti force brute par appareil : 5 échecs bloquent cette adresse, pas les autres.
+    let login = |ip: &str, pw: &str| crate::rpc::dispatch(&state, &anon, "login", json!({"username": "awa", "password": pw, "__ip": ip}));
+    for _ in 0..5 {
+        assert!(login("41.73.10.20", "faux").is_err());
+    }
+    assert!(login("41.73.10.20", "caisse123").unwrap_err().to_string().contains("Trop d'essais"));
+    assert!(login("192.168.1.20", "caisse123").is_ok());
+
+    // Depuis Internet : ni liste du personnel, ni connexion par PIN, paramètres publics seulement.
+    let net = json!({"__route": "internet"});
+    assert_eq!(crate::rpc::dispatch(&state, &anon, "list_login_users", net.clone()).unwrap().as_array().unwrap().len(), 0);
+    assert_eq!(crate::rpc::dispatch(&state, &anon, "list_login_users", json!({})).unwrap().as_array().unwrap().len(), 2);
+    let pin = crate::rpc::dispatch(&state, &anon, "login_pin", json!({"user_id": 1, "pin": "2580", "__route": "internet"}));
+    assert!(pin.unwrap_err().to_string().contains("Internet"));
+    let s = crate::rpc::dispatch(&state, &anon, "get_settings", net).unwrap();
+    assert!(s.get("shop_name").is_some() && s.get("supabase_key").is_none() && s.get("om_merchant_number").is_none());
+    assert!(crate::rpc::dispatch(&state, &anon, "get_settings", json!({})).unwrap().get("om_merchant_number").is_some());
+}

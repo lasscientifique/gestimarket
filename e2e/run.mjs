@@ -37,6 +37,22 @@ async function rpc(cmd, args = {}, token = null, base = SRV) {
   return d.ok;
 }
 
+// Licence signée avec la clé de test (kid 99), reconnue seulement par les compilations de développement.
+const TEST_SEED = Buffer.from("gestimarket-cle-de-test-e2e-0001");
+async function testLicense(pcId) {
+  const der = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), TEST_SEED]);
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "Ed25519" }, false, ["sign"]);
+  const now = Date.now();
+  const payload = {
+    v: 1, license_id: crypto.randomUUID(), store_code: "GM-E2E", store_name: "Eden Superrette", plan: "business", max_postes: 20,
+    features: ["write", "server", "internet", "customer_display", "logo"], pc_id: pcId.replace(/-/g, ""),
+    issued_at: new Date(now).toISOString(), starts_at: new Date(now - 3600e3).toISOString(), expires_at: new Date(now + 30 * 86400e3).toISOString(),
+  };
+  const bytes = Buffer.from(JSON.stringify(payload));
+  const sig = Buffer.from(await crypto.subtle.sign({ name: "Ed25519" }, key, bytes));
+  return JSON.stringify({ format: "gestimarket-licence", kid: 99, payload: bytes.toString("base64"), sig: sig.toString("base64") }, null, 2);
+}
+
 function startMock(kind) {
   const p = spawn(process.execPath, ["e2e/mocks.mjs", kind], { stdio: "inherit" });
   return p;
@@ -131,6 +147,21 @@ try {
   } catch (e) {
     console.log(`PIN : ${e.message}`);
   }
+
+  // ── Licence : sans licence, lecture seule ; licence BUSINESS signée avec la clé de test (compilation debug)
+  const before = await rpc("update_settings", { values: { receipt_footer: "Merci" }, pin: PIN }, admin).then(() => "accepté", (e) => e.message);
+  check("sans licence : écriture refusée (lecture seule)", before.includes("Lecture seule"), before);
+  const lic = await rpc("license_status", {}, admin);
+  check("identifiant du PC affiché", /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(lic.pc_id), lic.pc_id);
+  const installed = await rpc("license_import", { text: await testLicense(lic.pc_id) }, admin);
+  check("licence de test installée (BUSINESS, écriture permise)", installed.plan === "business" && !installed.read_only, `${installed.plan} ${installed.message}`);
+  const tampered = JSON.parse(await testLicense(lic.pc_id));
+  const badSig = Buffer.from(tampered.sig, "base64");
+  badSig[0] ^= 1;
+  tampered.sig = badSig.toString("base64");
+  const forged = await rpc("license_import", { text: JSON.stringify(tampered) }, admin).then(() => "acceptée", (e) => e.message);
+  check("licence falsifiée refusée", /Signature|illisible/.test(forged), forged);
+
   await rpc("update_settings", {
     values: { supabase_enabled: "1", supabase_url: "http://127.0.0.1:54321", supabase_key: "cle-publique-test", public_url: PUB },
     pin: PIN,

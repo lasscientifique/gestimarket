@@ -1,8 +1,10 @@
+mod account;
 mod boutique;
 mod cloud;
 mod commands;
 mod db;
 mod error;
+mod license;
 mod live;
 mod network;
 mod rpc;
@@ -65,6 +67,8 @@ pub fn run() {
             if let Err(e) = services::backup::auto_backup(&conn, false) {
                 eprintln!("Sauvegarde automatique impossible : {e}");
             }
+            // Licence de cette boutique (vérifiée hors ligne) et horloge mémorisée.
+            license::init(&conn, &root, &dir, slot);
             app.manage(AppState::new(conn, db_path));
             app.manage(current);
 
@@ -95,6 +99,26 @@ pub fn run() {
                 // Application mobile : adresse du serveur publiée sur Supabase (si activé).
                 cloud::start(app.handle().clone(), config.port);
             }
+
+            // Licence : horloge mémorisée chaque minute ; synchronisation avec Eden Dev toutes les 30 min
+            // (nouvelle licence après un paiement, renouvellement, révocation), si Internet est disponible.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(8));
+                let mut minutes: u32 = 0;
+                loop {
+                    if let Some(state) = handle.try_state::<AppState>() {
+                        license::tick(&state.conn());
+                        if minutes % 30 == 0 && license::should_sync() {
+                            if let Err(e) = account::sync(&state) {
+                                eprintln!("Synchronisation de la licence impossible : {e}");
+                            }
+                        }
+                    }
+                    minutes = minutes.wrapping_add(1);
+                    std::thread::sleep(Duration::from_secs(60));
+                }
+            });
 
             // Sauvegarde automatique vérifiée toutes les heures (une copie par jour au maximum).
             let handle = app.handle().clone();

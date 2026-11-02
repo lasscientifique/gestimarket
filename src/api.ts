@@ -1,5 +1,11 @@
 import { local, rpc, setToken } from "./lib/transport";
 import type {
+  AccountLinkResult,
+  AccountOptions,
+  AccountStore,
+  LicenseStatus,
+  SessionInfo,
+  StoreInput,
   AuditEntry,
   CashMovement,
   CashSession,
@@ -221,4 +227,20 @@ export const api = {
   displayUpdate: (poste: string, state: unknown) => call<void>("display_update", { poste, state }),
   displayState: <T,>(poste: string) => call<T | null>("display_state", { poste }),
   serverInfo: () => call<{ shop_name: string; version: string }>("server_info"),
+
+  // Abonnement et licence (Eden Dev)
+  licenseStatus: () => call<LicenseStatus>("license_status"),
+  licenseSync: () => call<LicenseStatus>("license_sync"),
+  licenseImport: (text: string) => call<LicenseStatus>("license_import", { text }),
+  accountOptions: () => call<AccountOptions>("account_options"),
+  accountSignup: (input: StoreInput & { email: string; password: string }) => call<AccountLinkResult>("account_signup", { input }),
+  accountLogin: (email: string, password: string) => call<{ email: string; stores: AccountStore[] }>("account_login", { email, password }),
+  accountCreateStore: (input: StoreInput) => call<AccountLinkResult>("account_create_store", { input }),
+  accountLink: (store_code: string) => call<AccountLinkResult>("account_link", { store_code }),
+  accountDeclarePayment: (input: { password: string; plan: string; months: number; method: string; reference: string; payer_phone: string }) =>
+    call<{ amount: number; plan_label: string; months: number }>("account_declare_payment", input),
+
+  // Postes connectés
+  listSessions: () => call<{ sessions: SessionInfo[]; max: number; used: number }>("list_sessions"),
+  kickSession: (id: string) => call<void>("kick_session", { id }),
 };

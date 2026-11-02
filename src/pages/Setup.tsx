@@ -7,6 +7,8 @@ import { Modal } from "../components/ui";
 import { NetworkForm } from "../components/NetworkForm";
 import { BusinessTypeGrid, useBusinessProfiles } from "../components/BusinessType";
 import { HelpTip } from "../components/Help";
+import { AccountForm } from "../components/AccountForm";
+import type { AccountLinkResult } from "../types";
 
 const CURRENCIES = [
   { symbol: "FCFA", decimals: 0, label: "Franc CFA (FCFA) — sans décimales" },
@@ -32,7 +34,9 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
-  const [step, setStep] = useState<"shop" | "business">("shop");
+  // Compte boutique d'abord (licence d'essai), sauf dans un navigateur : il se crée sur le PC serveur.
+  const [step, setStep] = useState<"account" | "shop" | "business">(isTauri ? "account" : "shop");
+  const [accountNote, setAccountNote] = useState("");
   const [bizType, setBizType] = useState("");
   const [seed, setSeed] = useState(true);
   const profiles = useBusinessProfiles();
@@ -79,6 +83,59 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
     }
   };
 
+  // Compte relié : la boutique est pré-remplie avec les informations du compte.
+  const accountLinked = (r: AccountLinkResult) => {
+    const s = r.store;
+    if (s) {
+      const currency = CURRENCIES.some((c) => c.symbol === s.currency) ? s.currency! : form.currency;
+      setForm({
+        ...form,
+        shop_name: s.name,
+        shop_phone: s.phone,
+        shop_address: [s.address, s.city].filter(Boolean).join(", "),
+        currency,
+        full_name: s.owner_name,
+      });
+      setAccountNote(
+        `Compte relié : ${s.name} (${s.code})${s.plan_label ? `, formule ${s.plan_label}${s.trial ? " en essai" : ""}` : ""}.` +
+          (r.sync_error ? ` Licence pas encore téléchargée : ${r.sync_error}` : ""),
+      );
+    }
+    setStep("shop");
+  };
+
+  if (step === "account") {
+    return (
+      <div className="auth-page">
+        <div className="auth-card wide">
+          <div className="auth-logo">
+            <Store size={28} />
+          </div>
+          <h1>Bienvenue dans GestiMarket</h1>
+          <p className="muted">
+            Étape 1 : le compte de votre boutique chez Eden Dev (abonnement et licence). Internet est nécessaire pour cette étape seulement.
+            Vos ventes, produits et clients restent sur ce PC.
+          </p>
+          <div className="alert alert-info">
+            Vous ajoutez une caisse supplémentaire à un magasin déjà équipé ?{" "}
+            <button type="button" className="link-btn" onClick={() => setJoinOpen(true)}>Se connecter au poste serveur</button>
+          </div>
+          <AccountForm onLinked={accountLinked} />
+          <p className="muted small" style={{ marginTop: 14 }}>
+            Pas d'Internet pour l'instant ?{" "}
+            <button type="button" className="link-btn" onClick={() => setStep("shop")}>Continuer sans compte</button> : GestiMarket restera en lecture seule
+            jusqu'à l'activation (menu Abonnement & licence).
+          </p>
+        </div>
+        {joinOpen && (
+          <Modal title="Rejoindre un poste serveur" onClose={() => setJoinOpen(false)} width={720}>
+            <NetworkForm />
+          </Modal>
+        )}
+      </div>
+    );
+  }
+
   if (step === "business") {
     const chosen = profiles?.profiles.find((p) => p.id === bizType);
     return (
@@ -123,8 +180,9 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
         </div>
         <h1>Bienvenue dans GestiMarket</h1>
         <p className="muted">Première configuration : renseignez votre commerce et créez le compte administrateur.</p>
+        {accountNote && <div className="alert alert-success">{accountNote}</div>}
 
-        {isTauri && (
+        {isTauri && !accountNote && (
           <div className="alert alert-info">
             Vous ajoutez une caisse supplémentaire à un magasin déjà équipé ?{" "}
             <button type="button" className="link-btn" onClick={() => setJoinOpen(true)}>Se connecter au poste serveur</button>

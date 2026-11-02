@@ -7,6 +7,7 @@ import { HelpTip } from "../components/Help";
 import { NetworkForm } from "../components/NetworkForm";
 import { CustomerDisplayPanel } from "../components/CustomerDisplayPanel";
 import { BoutiquesPanel } from "../components/BoutiquesPanel";
+import { SessionsPanel } from "../components/SessionsPanel";
 import { getNetwork, isTauri, pingServer, posteName } from "../lib/transport";
 import { browserPosteName, deviceLabel, posteId, setBrowserPosteName, usePresence } from "../lib/presence";
 import type { CloudStatus, PosteInfo } from "../types";
@@ -240,6 +241,8 @@ export default function PostePage() {
           <NetworkForm />
         </div>
       )}
+
+      <SessionsPanel />
 
       <BoutiquesPanel />
 

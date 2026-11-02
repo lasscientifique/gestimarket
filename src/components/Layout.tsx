@@ -27,9 +27,11 @@ import {
   FolderTree,
   Menu,
   Network,
+  BadgeCheck,
   X,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
+import { LicenceBanner } from "./LicenceBanner";
 import { ROLE_LABELS } from "../lib/format";
 import { BrandLogo } from "./Brand";
 import type { Role } from "../types";
@@ -89,6 +91,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { to: "/audit", label: "Journal d'activité", icon: <ScrollText size={18} />, roles: ["admin"] },
       { to: "/poste", label: "Poste & réseau", icon: <Network size={18} />, roles: ["admin", "manager", "cashier"] },
       { to: "/settings", label: "Paramètres", icon: <SettingsIcon size={18} />, roles: ["admin"] },
+      { to: "/licence", label: "Abonnement & licence", short: "Licence", icon: <BadgeCheck size={18} />, roles: ["admin"] },
     ],
   },
 ];
@@ -239,7 +242,10 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="content">{children}</main>
+      <main className="content">
+        <LicenceBanner />
+        {children}
+      </main>
       {tabs.length > 0 && (
         <nav className="mobile-tabs">
           {tabs.map((i) => (

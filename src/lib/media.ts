@@ -1,11 +1,15 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { api } from "../api";
-import { isRemote, isTauri, remoteUrl } from "./transport";
+import { getToken, isRemote, isTauri, remoteUrl } from "./transport";
 
 /** URL d'une photo stockée dans la base (servie par le protocole « media » côté Rust). */
 export function mediaUrl(id: number | null | undefined): string | undefined {
   if (!id) return undefined;
-  if (isRemote()) return remoteUrl(`/media/${id}`);
+  // Depuis Internet, le poste serveur exige la session pour servir les photos.
+  if (isRemote()) {
+    const t = getToken();
+    return remoteUrl(`/media/${id}${t ? `?t=${encodeURIComponent(t)}` : ""}`);
+  }
   if (!isTauri) return undefined;
   try {
     return convertFileSrc(String(id), "media");

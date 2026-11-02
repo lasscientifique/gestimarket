@@ -1114,3 +1114,26 @@ input, select, textarea { border-radius: 10px; }
 .boutique-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .boutique-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .boutiques-compact { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+
+/* Abonnement & licence */
+.licence-banner { display: flex; align-items: center; gap: 10px; margin: 14px 30px 0; padding: 10px 14px; border-radius: 10px; border: 1px solid transparent; font-size: 14px; }
+.licence-banner.warning { background: var(--warning-soft); color: var(--warning-text); border-color: color-mix(in srgb, var(--warning) 25%, transparent); }
+.licence-banner.danger { background: var(--danger-soft); color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 25%, transparent); }
+.licence-banner-text { flex: 1; min-width: 0; }
+.licence-banner .btn { white-space: nowrap; }
+.licence-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 14px 0; }
+.licence-grid > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.licence-grid strong { font-size: 16px; }
+.licence-amount { font-size: 22px; }
+.feature-list { list-style: none; padding: 0; margin: 0 0 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px; }
+.feature-list li { display: flex; align-items: center; gap: 8px; }
+.feature-list li.on svg, .table svg.ok { color: var(--success); }
+.feature-list li.off { color: var(--muted); }
+.feature-list li.off svg, .table svg.ko { color: var(--muted); }
+.table th.plan-current { color: var(--accent-strong); }
+.segmented { display: flex; gap: 4px; padding: 4px; margin-bottom: 14px; border-radius: 10px; background: var(--surface-2); }
+.segmented button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; }
+.segmented button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); font-weight: 600; }
+@media (max-width: 760px) {
+  .licence-banner { margin: 10px 12px 0; flex-wrap: wrap; }
+}

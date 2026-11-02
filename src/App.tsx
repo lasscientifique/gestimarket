@@ -28,6 +28,7 @@ import FinderPage from "./pages/Finder";
 import LocationsPage from "./pages/Locations";
 import PaymentsPage from "./pages/Payments";
 import CustomerDisplayPage from "./pages/CustomerDisplay";
+import LicencePage from "./pages/Licence";
 import { useLocation } from "react-router-dom";
 
 function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
@@ -95,6 +96,7 @@ function MainApp() {
         <Route path="/users" element={<Guard roles={ADMIN}><UsersPage /></Guard>} />
         <Route path="/audit" element={<Guard roles={ADMIN}><AuditPage /></Guard>} />
         <Route path="/settings" element={<Guard roles={ADMIN}><SettingsPage /></Guard>} />
+        <Route path="/licence" element={<Guard roles={ADMIN}><LicencePage /></Guard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
