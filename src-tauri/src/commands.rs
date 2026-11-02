@@ -160,10 +160,83 @@ pub async fn toggle_customer_display(app: AppHandle, monitor: Option<usize>, pos
         .title("Écran client")
         .initialization_script(&script)
         .inner_size(1024.0, 640.0);
+    if let Some(d) = webview_dir(&app) {
+        builder = builder.data_directory(d);
+    }
     if let Some(m) = &target {
         let scale = m.scale_factor();
         builder = builder.position(m.position().x as f64 / scale, m.position().y as f64 / scale).fullscreen(true);
     }
     builder.build().map_err(internal)?;
     Ok(true)
+}
+
+// ───────────────────────────── Plusieurs boutiques ─────────────────────────────
+
+/// Données de navigateur propres à la boutique (stockage local, session). `None` pour la boutique 1,
+/// qui garde le dossier par défaut (installations existantes inchangées).
+pub fn webview_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let slot = app.try_state::<crate::boutique::Current>().map(|c| c.slot).unwrap_or(1);
+    if slot <= 1 {
+        return None;
+    }
+    app.path().app_local_data_dir().ok().map(|d| d.join("boutiques").join(slot.to_string()).join("webview"))
+}
+
+#[derive(Serialize)]
+pub struct BoutiquesInfo {
+    pub current: u8,
+    pub max: u8,
+    pub boutiques: Vec<crate::boutique::BoutiqueInfo>,
+    /// Encore possible d'en créer une ?
+    pub can_create: bool,
+}
+
+fn boutiques_root(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    app.path().app_data_dir().map_err(internal)
+}
+
+#[tauri::command]
+pub async fn list_boutiques(app: AppHandle, current: State<'_, crate::boutique::Current>) -> AppResult<BoutiquesInfo> {
+    let root = boutiques_root(&app)?;
+    Ok(BoutiquesInfo {
+        current: current.slot,
+        max: crate::boutique::MAX,
+        boutiques: crate::boutique::list(&root, current.slot),
+        can_create: crate::boutique::next_free(&root).is_some(),
+    })
+}
+
+/// Ouvre une autre boutique de ce PC dans sa propre fenêtre (elle demande sa propre connexion).
+#[tauri::command]
+pub async fn open_boutique(app: AppHandle, current: State<'_, crate::boutique::Current>, slot: u8) -> AppResult<String> {
+    let root = boutiques_root(&app)?;
+    if !(1..=crate::boutique::MAX).contains(&slot) || (slot > 1 && !crate::boutique::data_dir(&root, slot).exists()) {
+        return invalid("Cette boutique n'existe pas sur ce PC.");
+    }
+    if slot == current.slot {
+        return Ok("Vous êtes déjà dans cette boutique.".into());
+    }
+    if crate::boutique::is_open(slot) {
+        return Ok("Cette boutique est déjà ouverte dans une autre fenêtre (barre des tâches).".into());
+    }
+    crate::boutique::launch(slot).map_err(internal)?;
+    Ok("Ouverture de la boutique…".into())
+}
+
+/// Crée une nouvelle boutique (5 au maximum) et l'ouvre : sa première configuration démarre.
+/// Réservé à l'administrateur connecté sur ce PC.
+#[tauri::command]
+pub async fn create_boutique(app: AppHandle, state: State<'_, AppState>) -> AppResult<u8> {
+    let Some(admin) = state.user(&Origin::Local).filter(|u| u.is_admin()) else {
+        return invalid("Seul l'administrateur peut créer une nouvelle boutique.");
+    };
+    let root = boutiques_root(&app)?;
+    let Some(slot) = crate::boutique::next_free(&root) else {
+        return invalid(format!("{} boutiques au maximum sur un même PC.", crate::boutique::MAX));
+    };
+    std::fs::create_dir_all(crate::boutique::data_dir(&root, slot))?;
+    let _ = crate::services::audit::log(&state.conn(), &admin, "Création d'une boutique", "settings", None, format!("Boutique {slot} créée sur ce PC"));
+    crate::boutique::launch(slot).map_err(internal)?;
+    Ok(slot)
 }

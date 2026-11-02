@@ -6,6 +6,7 @@ import { getNetwork, isTauri } from "../lib/transport";
 import { ROLE_LABELS } from "../lib/format";
 import { Modal } from "../components/ui";
 import { NetworkForm } from "../components/NetworkForm";
+import { BoutiquesPanel } from "../components/BoutiquesPanel";
 import { NumPad } from "../components/PinPad";
 import { BrandLogo } from "../components/Brand";
 import type { Role } from "../types";
@@ -189,6 +190,8 @@ export default function LoginPage() {
               </button>
             </form>
           )}
+
+          <BoutiquesPanel compact />
 
           {isTauri && (
             <button type="button" className="link-btn auth-net" onClick={() => setNetOpen(true)}>

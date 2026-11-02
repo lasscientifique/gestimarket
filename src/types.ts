@@ -525,3 +525,19 @@ export interface CloudStatus {
   public_ms: number | null;
   public_error: string | null;
 }
+
+/** Boutique de ce PC (5 au maximum, chacune dans sa fenêtre). */
+export interface BoutiqueInfo {
+  slot: number;
+  name: string;
+  configured: boolean;
+  open: boolean;
+  current: boolean;
+}
+
+export interface BoutiquesInfo {
+  current: number;
+  max: number;
+  boutiques: BoutiqueInfo[];
+  can_create: boolean;
+}

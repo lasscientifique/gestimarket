@@ -1,3 +1,4 @@
+mod boutique;
 mod cloud;
 mod commands;
 mod db;
@@ -44,10 +45,19 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let dir = app.path().app_data_dir()?;
+            // Plusieurs boutiques sur ce PC : chacune a son dossier, sa base et sa fenêtre.
+            let slot = boutique::slot_from_args(std::env::args());
+            let Some(current) = boutique::acquire(slot) else {
+                // Déjà ouverte : on ne lance pas une deuxième fenêtre sur la même base.
+                eprintln!("La boutique {slot} est déjà ouverte sur ce PC.");
+                std::process::exit(0);
+            };
+            let root = app.path().app_data_dir()?;
+            let dir = boutique::data_dir(&root, slot);
             std::fs::create_dir_all(&dir)?;
             let db_path = dir.join("gestimarket.db");
             let conn = db::open(&db_path)?;
+            let shop_name = services::settings::get(&conn, "shop_name").unwrap_or_default();
             // Le code-barres est obligatoire : on en attribue un aux anciens produits qui n'en ont pas.
             if let Err(e) = services::catalog::fill_missing_barcodes(&conn) {
                 eprintln!("Attribution des codes-barres impossible : {e}");
@@ -56,9 +66,28 @@ pub fn run() {
                 eprintln!("Sauvegarde automatique impossible : {e}");
             }
             app.manage(AppState::new(conn, db_path));
+            app.manage(current);
+
+            // Fenêtre principale (créée ici pour séparer les données de navigateur de chaque boutique).
+            if let Some(cfg) = app.config().app.windows.iter().find(|w| w.label == "main").cloned() {
+                let mut title = if shop_name.trim().is_empty() {
+                    "GestiMarket — Gestion commerciale".to_string()
+                } else {
+                    format!("GestiMarket — {}", shop_name.trim())
+                };
+                if slot > 1 {
+                    title.push_str(&format!(" (boutique {slot})"));
+                }
+                let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?.title(title);
+                if let Some(d) = commands::webview_dir(app.handle()) {
+                    builder = builder.data_directory(d);
+                }
+                builder.build()?;
+            }
 
             // Multi-postes : en mode serveur, la base est partagée sur le réseau local.
-            let net = network::NetworkState::load(dir.join("network.json"));
+            // Chaque boutique a son propre port par défaut (7878, 7888, 7898…).
+            let net = network::NetworkState::load(dir.join("network.json"), boutique::default_port(slot));
             let config = net.get();
             app.manage(net);
             if config.mode == "server" {
@@ -88,6 +117,9 @@ pub fn run() {
             commands::restart_app,
             commands::list_monitors,
             commands::toggle_customer_display,
+            commands::list_boutiques,
+            commands::open_boutique,
+            commands::create_boutique,
         ])
         .build(tauri::generate_context!())
         .expect("erreur au lancement de GestiMarket")

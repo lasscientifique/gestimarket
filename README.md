@@ -112,6 +112,15 @@ Trois modes, réglables depuis **Poste & réseau** sur chaque PC :
 - **Écran client** (2ᵉ écran, TV, projecteur, tablette) : disponible sur tous les postes ; affiche articles, total, montant reçu, monnaie, QR Orange Money.
 - Pare-feu Windows : autoriser les ports 7878 et 7879 si une alerte s'affiche.
 
+### Plusieurs boutiques sur un même PC (5 au maximum)
+
+Un opérateur qui gère plusieurs commerces peut les ouvrir **en même temps sur un seul PC**, chacun dans sa fenêtre.
+- **Poste & réseau → Mes boutiques** : liste des boutiques, bouton « Ouvrir », et « Nouvelle boutique » (administrateur). L'écran de connexion propose aussi les autres boutiques.
+- Chaque boutique a sa **propre base** (produits, stock, ventes, utilisateurs, PIN), sa configuration réseau, son code commerce Supabase et ses données de navigateur. La boutique 1 garde le dossier historique : rien ne change pour une installation existante. Les boutiques 2 à 5 sont dans `boutiques/<n>/` du dossier de données.
+- Raccourci direct : `gestimarket.exe --boutique 3`.
+- Une même boutique ne s'ouvre qu'une fois (verrou local sur 127.0.0.1:47871 à 47875, jamais exposé au réseau).
+- En mode serveur, ports par défaut distincts : 7878, 7888, 7898, 7908, 7918 (https = port + 1). Pour l'accès Internet, un sous-domaine du tunnel par boutique et par port.
+
 ---
 
 ## Application mobile (FlutterFlow + Supabase)

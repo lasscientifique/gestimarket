@@ -47,11 +47,12 @@ pub struct NetworkState {
 }
 
 impl NetworkState {
-    pub fn load(path: PathBuf) -> Self {
+    /// `default_port` : port proposé tant que ce poste n'a pas de configuration (dépend de la boutique).
+    pub fn load(path: PathBuf, default_port: u16) -> Self {
         let config = std::fs::read_to_string(&path)
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+            .unwrap_or_else(|| NetworkConfig { port: default_port, ..NetworkConfig::default() });
         Self { path, config: Mutex::new(config) }
     }
 

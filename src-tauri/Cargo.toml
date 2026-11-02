@@ -1,6 +1,6 @@
 [package]
 name = "gestimarket"
-version = "0.7.1"
+version = "0.8.0"
 description = "GestiMarket — logiciel de gestion de supermarché et de boutiques"
 authors = ["GestiMarket"]
 edition = "2021"

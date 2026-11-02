@@ -4,6 +4,7 @@ import type {
   CashMovement,
   CashSession,
   CashierStats,
+  BoutiquesInfo,
   CloudStatus,
   LiveCart,
   LiveCartContent,
@@ -210,6 +211,11 @@ export const api = {
   runAutoBackup: () => call<string>("run_auto_backup"),
   saveTextFile: (path: string, contents: string) => local<void>("save_text_file", { path, contents }),
   readTextFile: (path: string) => local<string>("read_text_file", { path }),
+
+  // Plusieurs boutiques sur ce PC
+  listBoutiques: () => local<BoutiquesInfo>("list_boutiques"),
+  openBoutique: (slot: number) => local<string>("open_boutique", { slot }),
+  createBoutique: () => local<number>("create_boutique"),
 
   // Écran client
   displayUpdate: (poste: string, state: unknown) => call<void>("display_update", { poste, state }),
