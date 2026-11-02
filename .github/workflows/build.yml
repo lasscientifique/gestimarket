@@ -29,8 +29,17 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm run typecheck
-      - run: cargo test
+      - name: cargo test
         working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo test --color never 2>&1 | tee ../cargo-test.log
+      # Erreurs de compilation et tests en échec recopiés en annotations : lisibles sans connexion à GitHub.
+      - name: Erreurs Rust (annotations)
+        if: failure()
+        run: |
+          msg=$(grep -E -A16 '^(error(\[E[0-9]+\])?:|---- .* stdout ----|thread .* panicked)' cargo-test.log | head -200 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=cargo test::${msg:-voir le journal}"
 
   # Test d'interface : GestiMarket en mode serveur sous Xvfb, piloté par Playwright
   # (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare).
