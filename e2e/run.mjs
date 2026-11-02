@@ -256,6 +256,13 @@ try {
   await seen(pc, "Plan de la boutique", "Salle de vente");
   await seen(pc, "Plan de la boutique", "FR1");
   await shot(pc, "08-plan-de-la-boutique.png");
+  // Mode modification : palette de meubles ; double-clic sur le frigo : vue de face avec le produit.
+  await pc.getByRole("button", { name: "Modifier le plan" }).click();
+  await seen(pc, "Plan en modification : palette", "Chambre froide");
+  await shot(pc, "10-plan-modification-palette.png");
+  await pc.locator(".map-fixture").filter({ hasText: "FR1" }).locator("rect").first().dblclick();
+  await seen(pc, "Vue de face du frigo", "Coca-Cola 33 cl");
+  await shot(pc, "11-vue-de-face-frigo.png");
   await pc.goto(`${SRV}/#/finder`);
   await pc.locator(".finder-search input").fill("Coca");
   await seen(pc, "Localiser un produit", "Réfrigérateur vitré FR1");
