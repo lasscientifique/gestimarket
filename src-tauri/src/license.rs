@@ -444,10 +444,12 @@ pub fn set_sync_result(result: &Result<String, String>) {
 
 // ───────────────────────────── Commandes autorisées en lecture seule ─────────────────────────────
 
-/// Toujours possibles : connexion, sécurité des comptes, licence, sauvegardes, consultation des rapports.
+/// Toujours possibles : connexion, sécurité des comptes, licence, sauvegardes, consultation des rapports,
+/// paramètres (dossier de sauvegarde…) et clôture des caisses ouvertes avant l'expiration.
 const ALWAYS: &[&str] = &[
     "needs_setup", "initial_setup", "login", "logout", "current_user", "list_login_users", "login_pin",
-    "get_settings", "server_info", "display_state", "display_update", "set_my_pin", "verify_pin", "change_password",
+    "get_settings", "update_settings", "server_info", "display_state", "display_update", "set_my_pin", "verify_pin", "change_password",
+    "close_cash_session", "force_close_cash_session",
     "save_user", "reset_user_password", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",
     "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup",
@@ -794,10 +796,10 @@ mod tests {
 
     #[test]
     fn read_only_commands() {
-        for cmd in ["list_products", "get_sale", "login", "backup_database", "license_import", "account_signup", "save_user"] {
+        for cmd in ["list_products", "get_sale", "login", "backup_database", "license_import", "account_signup", "save_user", "update_settings", "close_cash_session"] {
             assert!(command_allowed_read_only(cmd), "{cmd}");
         }
-        for cmd in ["create_sale", "save_product", "adjust_stock", "create_purchase", "update_settings", "open_cash_session", "commande_future"] {
+        for cmd in ["create_sale", "save_product", "adjust_stock", "create_purchase", "open_cash_session", "add_cash_movement", "commande_future"] {
             assert!(!command_allowed_read_only(cmd), "{cmd}");
         }
     }

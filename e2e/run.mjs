@@ -153,7 +153,7 @@ try {
   }
 
   // ── Licence : sans licence, lecture seule ; licence BUSINESS signée avec la clé de test (compilation debug)
-  const before = await rpc("update_settings", { values: { receipt_footer: "Merci" }, pin: PIN }, admin).then(() => "accepté", (e) => e.message);
+  const before = await rpc("save_category", { id: null, input: { name: "Essai lecture seule" } }, admin).then(() => "accepté", (e) => e.message);
   check("sans licence : écriture refusée (lecture seule)", before.includes("Lecture seule"), before);
   const lic = await rpc("license_status", {}, admin);
   check("identifiant du PC affiché", /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(lic.pc_id), lic.pc_id);
