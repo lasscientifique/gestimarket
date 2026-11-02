@@ -5,6 +5,7 @@ import { useApp } from "../context/AppContext";
 import { HelpTip } from "./Help";
 import { getNetwork, isTauri, local, posteName } from "../lib/transport";
 import { useLicense } from "../lib/license";
+import { tl } from "../lib/i18n";
 
 /** Adresse de l'écran client de ce poste (TV, projecteur, autre PC, tablette tournée vers le client). */
 export function displayUrl(): string | null {
@@ -54,10 +55,9 @@ export function CustomerDisplayPanel() {
   if (lic && !lic.features.includes("customer_display")) {
     return (
       <div className="card">
-        <h3 className="card-title"><MonitorSmartphone size={18} /> Écran client</h3>
+        <h3 className="card-title"><MonitorSmartphone size={18} />  {tl("Écran client")}</h3>
         <p className="muted">
-          L'écran client (articles, total et monnaie affichés au client) est inclus à partir de la formule PRO.
-          Formule actuelle : {lic.plan_label}.
+          {tl("L'écran client (articles, total et monnaie affichés au client) est inclus à partir de la formule PRO. Formule actuelle :")} {lic.plan_label}.
         </p>
       </div>
     );
@@ -65,43 +65,42 @@ export function CustomerDisplayPanel() {
 
   return (
     <div className="card">
-      <h3 className="card-title"><MonitorSmartphone size={18} /> Écran client de « {posteName()} » <HelpTip k="customer_display" /></h3>
-      <p className="muted">Montre au client ses articles, les prix, le total, le montant reçu et la monnaie, avant qu'il paie.</p>
-      <h4 className="section-title">Sur ce poste</h4>
+      <h3 className="card-title"><MonitorSmartphone size={18} />  {tl("Écran client de «")} {posteName()} » <HelpTip k="customer_display" /></h3>
+      <p className="muted">{tl("Montre au client ses articles, les prix, le total, le montant reçu et la monnaie, avant qu'il paie.")}</p>
+      <h4 className="section-title">{tl("Sur ce poste")}</h4>
       <div className="input-group" style={{ maxWidth: 620, flexWrap: "wrap" }}>
         {isTauri && (
           <select value={monitor ?? ""} onChange={(e) => setMonitor(e.target.value === "" ? null : Number(e.target.value))}>
-            <option value="">Automatique (2ᵉ écran branché)</option>
+            <option value="">{tl("Automatique (2ᵉ écran branché)")}</option>
             {monitors.map((m) => (
               <option key={m.index} value={m.index}>
-                {m.name} — {m.width}×{m.height}{m.primary ? " (principal)" : ""}
+                {m.name} — {m.width}{tl("×")}{m.height}{m.primary ? tl(" (principal)") : ""}
               </option>
             ))}
           </select>
         )}
         <button className="btn btn-primary" onClick={open}>
-          {isTauri ? <MonitorSmartphone size={16} /> : <ExternalLink size={16} />} {isTauri ? "Ouvrir / fermer l'écran client" : "Ouvrir l'écran client (nouvelle fenêtre)"}
+          {isTauri ? <MonitorSmartphone size={16} /> : <ExternalLink size={16} />} {isTauri ? tl("Ouvrir / fermer l'écran client") : tl("Ouvrir l'écran client (nouvelle fenêtre)")}
         </button>
       </div>
       <p className="muted small">
         {isTauri
           ? monitors.length < 2
-            ? "Un seul écran détecté : la fenêtre s'ouvrira en mode fenêtré."
-            : "La fenêtre s'ouvre en plein écran sur l'écran secondaire."
-          : "Faites glisser la fenêtre sur l'écran tourné vers le client, puis plein écran (F11)."}{" "}
-        Raccourci : bouton « Écran client » dans la caisse.
-      </p>
-      <h4 className="section-title">Sur une TV, un projecteur, un autre PC ou une tablette</h4>
+            ? tl("Un seul écran détecté : la fenêtre s'ouvrira en mode fenêtré.")
+            : tl("La fenêtre s'ouvre en plein écran sur l'écran secondaire.")
+          : tl("Faites glisser la fenêtre sur l'écran tourné vers le client, puis plein écran (F11).")}{" "}
+        {tl("Raccourci : bouton « Écran client » dans la caisse.")}</p>
+      <h4 className="section-title">{tl("Sur une TV, un projecteur, un autre PC ou une tablette")}</h4>
       {url ? (
         <div className="display-link">
-          {qr && <img src={qr} alt="QR code de l'écran client" width={130} height={130} />}
+          {qr && <img src={qr} alt={tl("QR code de l'écran client")} width={130} height={130} />}
           <div>
-            <p className="muted small" style={{ margin: 0 }}>Ouvrez cette adresse dans le navigateur de l'appareil (ou scannez le QR code), puis plein écran :</p>
+            <p className="muted small" style={{ margin: 0 }}>{tl("Ouvrez cette adresse dans le navigateur de l'appareil (ou scannez le QR code), puis plein écran :")}</p>
             <div className="mono" style={{ marginTop: 6, fontSize: 14, wordBreak: "break-all" }}>{url}</div>
           </div>
         </div>
       ) : (
-        <p className="muted">Disponible quand ce poste est en mode <strong>serveur</strong> ou <strong>client</strong>.</p>
+        <p className="muted">{tl("Disponible quand ce poste est en mode")} <strong>serveur</strong> ou <strong>client</strong>.</p>
       )}
     </div>
   );

@@ -26,6 +26,8 @@ export interface DisplayState {
   remaining?: number;
   change?: number;
   show_om_qr?: boolean;
+  /** Moyen de paiement dont le QR marchand est affiché (orange_money ou « mm:<id> »). */
+  qr_method?: string | null;
   /** Vente terminée */
   sale_number?: string;
   at: number;

@@ -4,6 +4,7 @@ import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
 import { NumPad } from "../components/PinPad";
 import { BrandLogo } from "../components/Brand";
+import { tl } from "../lib/i18n";
 
 /**
  * Création obligatoire du code PIN à la première connexion.
@@ -30,12 +31,12 @@ export default function PinSetupPage() {
   const next = async () => {
     setError("");
     if (step === "pin") {
-      if (pin.length < 4) return setError("4 à 6 chiffres.");
+      if (pin.length < 4) return setError(tl("4 à 6 chiffres."));
       return setStep("confirm");
     }
     if (pin2 !== pin) {
       setPin2("");
-      return setError("Les deux codes ne correspondent pas.");
+      return setError(tl("Les deux codes ne correspondent pas."));
     }
     setBusy(true);
     try {
@@ -54,11 +55,9 @@ export default function PinSetupPage() {
     <div className="auth-page">
       <div className="auth-card pin-setup">
         <BrandLogo size={58} />
-        <h1>Bonjour {user?.full_name.split(" ")[0]}</h1>
+        <h1>{tl("Bonjour")} {user?.full_name.split(" ")[0]}</h1>
         <p className="muted">
-          Créez votre <strong>code PIN personnel</strong> (4 à 6 chiffres). Il sert à vous connecter rapidement et à confirmer
-          les actions importantes (annulation, clôture de caisse, changement de prix…). Ne le communiquez à personne.
-        </p>
+          {tl("Créez votre")} <strong>{tl("code PIN personnel")}</strong>  {tl("(4 à 6 chiffres). Il sert à vous connecter rapidement et à confirmer les actions importantes (annulation, clôture de caisse, changement de prix…). Ne le communiquez à personne.")}</p>
 
         {step === "password" ? (
           <form
@@ -69,15 +68,15 @@ export default function PinSetupPage() {
             className="form-grid one"
           >
             <label className="field">
-              <span className="field-label">Votre mot de passe actuel (pour confirmer votre identité)</span>
+              <span className="field-label">{tl("Votre mot de passe actuel (pour confirmer votre identité)")}</span>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
             </label>
             {error && <div className="alert alert-danger">{error}</div>}
-            <button className="btn btn-primary btn-lg btn-block" disabled={!password}>Continuer</button>
+            <button className="btn btn-primary btn-lg btn-block" disabled={!password}>{tl("Continuer")}</button>
           </form>
         ) : (
           <>
-            <div className="pin-step">{step === "pin" ? "Choisissez votre code PIN" : "Saisissez-le une seconde fois"}</div>
+            <div className="pin-step">{step === "pin" ? tl("Choisissez votre code PIN") : tl("Saisissez-le une seconde fois")}</div>
             <div className="pin-dots">
               {[0, 1, 2, 3, 4, 5].map((i) => (
                 <span key={i} className={`pin-dot ${i < current.length ? "on" : ""} ${i >= 4 ? "opt" : ""}`} />
@@ -86,11 +85,11 @@ export default function PinSetupPage() {
             <div className="pin-error">{error}</div>
             <NumPad onKey={press} />
             <button className="btn btn-primary btn-lg btn-block" disabled={current.length < 4 || busy} onClick={next}>
-              <ShieldCheck size={18} /> {step === "pin" ? "Suivant" : "Enregistrer mon code PIN"}
+              <ShieldCheck size={18} /> {step === "pin" ? tl("Suivant") : tl("Enregistrer mon code PIN")}
             </button>
           </>
         )}
-        <button className="link-btn auth-net" onClick={logout}><LogOut size={14} /> Se déconnecter</button>
+        <button className="link-btn auth-net" onClick={logout}><LogOut size={14} />  {tl("Se déconnecter")}</button>
       </div>
     </div>
   );

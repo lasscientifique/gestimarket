@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { LicenseFeature, LicenseStatus } from "../types";
+import type { LicenseFeature, LicenseStatus, PlanInfo } from "../types";
+import { locale, tl } from "./i18n";
 
 /**
  * État de la licence du poste serveur (ou de ce PC), partagé par le bandeau et les pages.
@@ -51,20 +52,36 @@ export function useLicense(): LicenseStatus | null {
 }
 
 export const FEATURE_LABELS: Record<LicenseFeature, string> = {
-  write: "Ventes, achats et modifications",
-  server: "Postes clients : autres PC, téléphones, tablettes",
-  internet: "Accès par Internet (tunnel)",
-  customer_display: "Écran client",
-  logo: "Logo personnalisé",
+  write: tl("Ventes, achats et modifications"),
+  server: tl("Postes clients : autres PC, téléphones, tablettes"),
+  internet: tl("Accès par Internet (tunnel)"),
+  customer_display: tl("Écran client"),
+  logo: tl("Logo personnalisé"),
 };
 
 /** Date ISO (licence) → « 16/11/2026 08:47 ». */
 export function isoDateTime(s: string | null | undefined): string {
   if (!s) return "—";
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" });
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleString(locale(), { dateStyle: "short", timeStyle: "short" });
 }
 
 export function fcfa(n: number): string {
-  return `${n.toLocaleString("fr-FR")} FCFA`;
+  return `${n.toLocaleString(locale())} FCFA`;
+}
+
+/** Montant d'abonnement : « 5 000 FCFA », « 8 € », « 9 $US ». */
+export function price(n: number, currency?: string | null): string {
+  if (!currency || currency === "XOF" || currency === "XAF") return fcfa(n);
+  try {
+    return new Intl.NumberFormat(locale(), { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
+  } catch {
+    return `${n.toLocaleString(locale())} ${currency}`;
+  }
+}
+
+/** Prix mensuel d'une formule dans la devise demandée si Eden Dev l'a fixé, sinon en FCFA. */
+export function planPrice(p: PlanInfo, currency?: string | null): { amount: number; currency: string } {
+  const amount = currency ? p.prices?.[currency] : undefined;
+  return amount != null ? { amount, currency: currency! } : { amount: p.price_month, currency: "XOF" };
 }

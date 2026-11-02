@@ -9,6 +9,7 @@ import { StoreMap } from "./plan/StoreMap";
 import { FixtureFront, slotName } from "./plan/FixtureFront";
 import { categoryPath } from "./CategorySelect";
 import { Badge, LocationBadge, Thumb } from "./ui";
+import { tl, tm } from "../lib/i18n";
 
 /**
  * Recherche « Où se trouve ce produit ? » : nom, code-barres (douchette) ou catégorie.
@@ -92,19 +93,19 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
               (e.target as HTMLInputElement).select();
             }
           }}
-          placeholder="Nom du produit, catégorie ou code-barres scanné…"
+          placeholder={tl("Nom du produit, catégorie ou code-barres scanné…")}
           autoFocus={autoFocus}
         />
         {search && (
-          <button className="icon-btn" onClick={() => { setSearch(""); inputRef.current?.focus(); }} aria-label="Effacer">
+          <button className="icon-btn" onClick={() => { setSearch(""); inputRef.current?.focus(); }} aria-label={tl("Effacer")}>
             <X size={16} />
           </button>
         )}
-        <button className="icon-btn" onClick={() => setScan(true)} title="Scanner avec la caméra" aria-label="Scanner avec la caméra">
+        <button className="icon-btn" onClick={() => setScan(true)} title={tl("Scanner avec la caméra")} aria-label={tl("Scanner avec la caméra")}>
           <Camera size={18} />
         </button>
-        {scan && <CameraScanner title="Où est ce produit ?" onCode={(c) => setSearch(c)} onClose={() => setScan(false)} />}
-        {onClose && <kbd className="kbd">Échap</kbd>}
+        {scan && <CameraScanner title={tl("Où est ce produit ?")} onCode={(c) => setSearch(c)} onClose={() => setScan(false)} />}
+        {onClose && <kbd className="kbd">{tl("Échap")}</kbd>}
       </div>
 
       <div className="finder-body">
@@ -112,17 +113,17 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
           {!search.trim() && (
             <div className="finder-hint">
               <MapPin size={34} strokeWidth={1.5} />
-              <strong>Où se trouve un produit ?</strong>
-              <span className="muted">Tapez son nom ou scannez son code-barres (ou l'étiquette d'une case) : le meuble clignote sur le plan de la boutique.</span>
+              <strong>{tl("Où se trouve un produit ?")}</strong>
+              <span className="muted">{tl("Tapez son nom ou scannez son code-barres (ou l'étiquette d'une case) : le meuble clignote sur le plan de la boutique.")}</span>
             </div>
           )}
-          {search.trim() && results.length === 0 && <div className="finder-hint muted">Aucun produit trouvé.</div>}
+          {search.trim() && results.length === 0 && <div className="finder-hint muted">{tl("Aucun produit trouvé.")}</div>}
           {results.map((p, i) => (
             <button key={p.id} className={`finder-item ${i === active ? "active" : ""}`} onClick={() => choose(i)} onMouseEnter={() => choose(i)}>
               <Thumb imageId={p.image_id} name={p.name} color={p.category_color} size={44} />
               <div className="finder-item-main">
                 <strong>{p.name}</strong>
-                <span className="muted small">{categoryPath(p) ?? "Sans catégorie"} · {money(p.sale_price)}</span>
+                <span className="muted small">{categoryPath(p) ?? tl("Sans catégorie")} · {money(p.sale_price)}</span>
               </div>
               <LocationBadge p={p} short />
             </button>
@@ -140,30 +141,30 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
                     <span className="finder-price">{money(selected.sale_price)}</span>
                     {selected.track_stock && (
                       <Badge tone={selected.stock <= 0 ? "danger" : selected.stock <= selected.min_stock ? "warning" : "success"}>
-                        {selected.stock <= 0 ? "Rupture" : `${qty(selected.stock)} ${selected.unit} en stock`}
+                        {selected.stock <= 0 ? tl("Rupture") : tl("{0} {1} en stock", [qty(selected.stock), selected.unit])}
                       </Badge>
                     )}
                   </div>
-                  <span className="muted small">{categoryPath(selected) ?? "Sans catégorie"}</span>
+                  <span className="muted small">{categoryPath(selected) ?? tl("Sans catégorie")}</span>
                   <span className="muted small mono"> · {selected.barcode ?? ""}</span>
                 </div>
               </div>
               {places.length === 0 ? (
                 <div className="finder-location none">
-                  <div className="fl-none"><Package size={18} /> Ce produit n'a pas encore d'emplacement sur le plan.</div>
+                  <div className="fl-none"><Package size={18} />  {tl("Ce produit n'a pas encore d'emplacement sur le plan.")}</div>
                 </div>
               ) : (
                 <>
                   <div className="finder-location">
-                    <div className="fl-part wide"><span>{place?.floor_name}</span><strong>{place?.fixture_name}</strong></div>
-                    {place?.etage && <div className="fl-part"><span>Étage</span><strong>{place.etage}</strong></div>}
-                    {place?.rangee && <div className="fl-part"><span>Case</span><strong>{place.rangee}</strong></div>}
+                    <div className="fl-part wide"><span>{tm(place?.floor_name)}</span><strong>{tm(place?.fixture_name)}</strong></div>
+                    {place?.etage && <div className="fl-part"><span>{tl("Étage")}</span><strong>{place.etage}</strong></div>}
+                    {place?.rangee && <div className="fl-part"><span>{tl("Case")}</span><strong>{place.rangee}</strong></div>}
                   </div>
                   {places.length > 1 && (
                     <div className="finder-places">
                       {places.map((pl, i) => (
                         <button key={pl.location_id} className={`chip ${i === focus ? "active" : ""}`} onClick={() => setFocus(i)}>
-                          {pl.primary && <Star size={12} />} {pl.fixture_code}{pl.etage ? ` · É${pl.etage}` : ""}{pl.rangee ? ` · C${pl.rangee}` : ""}
+                          {pl.primary && <Star size={12} />} {pl.fixture_code}{pl.etage ? tl(" · É{0}", [pl.etage]) : ""}{pl.rangee ? tl(" · C{0}", [pl.rangee]) : ""}
                         </button>
                       ))}
                     </div>
@@ -186,8 +187,8 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
           ) : scannedSlot ? (
             <>
               <div className="finder-location">
-                <div className="fl-part wide"><span>{scannedSlot.floor_name}</span><strong>{scannedSlot.fixture_name}</strong></div>
-                <div className="fl-part"><span>Case scannée</span><strong>{slotName(scannedSlot)}</strong></div>
+                <div className="fl-part wide"><span>{tm(scannedSlot.floor_name)}</span><strong>{tm(scannedSlot.fixture_name)}</strong></div>
+                <div className="fl-part"><span>{tl("Case scannée")}</span><strong>{slotName(scannedSlot)}</strong></div>
               </div>
               <FixtureFront key={scannedSlot.fixture_id} fixtureId={scannedSlot.fixture_id} highlightLocationId={scannedSlot.id} compact />
             </>
@@ -212,7 +213,7 @@ export function ProductFinderModal({ onClose }: { onClose: () => void }) {
   }, [onClose]);
   return (
     <div className="modal-backdrop finder-backdrop" onMouseDown={onClose}>
-      <div className="modal finder-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Localiser un produit">
+      <div className="modal finder-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={tl("Localiser un produit")}>
         <ProductFinder onClose={onClose} />
       </div>
     </div>

@@ -1,12 +1,14 @@
 import type { Role } from "../types";
+import { getLang, locale, tl, tm, ts } from "./i18n";
 
 // ───────────── Devise ─────────────
 // Les montants circulent en entiers (plus petite unité). `decimals` = 0 pour le FCFA, 2 pour l'euro.
 
-let currency = { symbol: "FCFA", decimals: 0 };
+let currency = { symbol: "FCFA", decimals: 0, before: false };
 
-export function configureCurrency(symbol: string, decimals: number) {
-  currency = { symbol: symbol || "FCFA", decimals: Number.isFinite(decimals) ? decimals : 0 };
+/** Devise de la boutique : symbole, décimales (0 à 3) et place du symbole (« $ 12 » ou « 12 FCFA »). */
+export function configureCurrency(symbol: string, decimals: number, position?: string) {
+  currency = { symbol: symbol || "FCFA", decimals: Number.isFinite(decimals) ? decimals : 0, before: position === "before" };
 }
 
 export function currencySymbol() {
@@ -38,30 +40,41 @@ export function minorToInput(minor: number): string {
 export function money(minor: number, withSymbol = true): string {
   const value = fromMinor(minor) || 0; // évite l'affichage de « -0 »
   const s = value
-    .toLocaleString("fr-FR", {
+    .toLocaleString(locale(), {
       minimumFractionDigits: currency.decimals,
       maximumFractionDigits: currency.decimals,
     })
     // Espace fine insécable → espace insécable classique (rendu homogène selon les polices).
     .replace(/ /g, " ");
-  return withSymbol ? `${s} ${currency.symbol}` : s;
+  if (!withSymbol) return s;
+  return currency.before ? `${currency.symbol}\u00a0${s}` : `${s}\u00a0${currency.symbol}`;
 }
 
 // ───────────── Nombres ─────────────
 
+/** Saisie « 1 500,50 », « 1,500.50 » ou « 0,75 » → nombre (virgule ou point décimal). */
 export function parseNumber(value: string): number {
   if (value == null) return NaN;
-  const cleaned = String(value).replace(/\s/g, "").replace(/ /g, "").replace(",", ".");
-  if (cleaned === "") return NaN;
-  return Number(cleaned);
+  let s = String(value).replace(/[\s\u00a0\u202f']/g, "");
+  if (s === "") return NaN;
+  const comma = s.lastIndexOf(",");
+  const dot = s.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    // Le dernier séparateur est le séparateur décimal.
+    s = comma > dot ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  } else if (comma >= 0) {
+    // Anglais : « 1,500 » = mille cinq cents ; sinon la virgule est décimale.
+    s = getLang() === "en" && /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, "") : s.replace(",", ".");
+  }
+  return Number(s);
 }
 
 export function qty(n: number): string {
-  return (n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 3 }).replace(/ /g, " ");
+  return (n || 0).toLocaleString(locale(), { maximumFractionDigits: 3 }).replace(/ /g, " ");
 }
 
 export function percent(n: number, digits = 1): string {
-  return `${n.toLocaleString("fr-FR", { maximumFractionDigits: digits })} %`;
+  return `${n.toLocaleString(locale(), { maximumFractionDigits: digits })} %`;
 }
 
 // ───────────── Dates ─────────────
@@ -95,12 +108,13 @@ export function dateOnly(s: string | null | undefined): string {
 
 export function shortDay(s: string): string {
   const d = new Date(s + "T00:00:00");
-  return d.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit" });
+  return d.toLocaleDateString(locale(), { weekday: "short", day: "2-digit" });
 }
 
 // ───────────── Libellés ─────────────
 
-export const PAYMENT_LABELS: Record<string, string> = {
+/** Moyens de paiement (texte source français, traduit à l'affichage). */
+const PAYMENT_SOURCE: Record<string, string> = {
   cash: "Espèces",
   orange_money: "Orange Money / Sarali",
   mobile_money: "Autre mobile money",
@@ -109,14 +123,35 @@ export const PAYMENT_LABELS: Record<string, string> = {
   other: "Autre",
   mixed: "Paiement mixte",
 };
+/** Libellés choisis par la boutique (opérateurs de mobile money…) : affichés tels quels. */
+let customPayments: Record<string, string> = {};
+let activeOperators: string[] = [];
 
-/** Personnalise le libellé d'Orange Money (paramètre « om_label »). */
-export function configurePaymentLabels(omLabel?: string) {
-  if (omLabel && omLabel.trim()) PAYMENT_LABELS.orange_money = omLabel.trim();
+/** `active` : modes « mm:<id> » des opérateurs proposés en caisse. */
+export function configurePaymentLabels(labels: Record<string, string>, active: string[] = []) {
+  customPayments = labels;
+  activeOperators = active;
+}
+
+/** Opérateurs de mobile money actifs (« mm:<id> »), pour les nouveaux encaissements. */
+export function operatorMethods(): string[] {
+  return activeOperators;
 }
 
 export function paymentLabel(m: string | null | undefined): string {
-  return (m && PAYMENT_LABELS[m]) || m || "—";
+  if (!m) return "—";
+  return customPayments[m] ?? (PAYMENT_SOURCE[m] ? tl(PAYMENT_SOURCE[m]) : m);
+}
+
+/** Codes des moyens de paiement connus, opérateurs de la boutique compris (listes de filtres). */
+export function paymentMethods(): string[] {
+  return [...Object.keys(PAYMENT_SOURCE), ...Object.keys(customPayments).filter((k) => k.startsWith("mm:"))];
+}
+
+/** Libellé imprimé sur le ticket (langue de la boutique). */
+export function paymentLabelShop(m: string | null | undefined): string {
+  if (!m) return "—";
+  return customPayments[m] ?? (PAYMENT_SOURCE[m] ? ts(PAYMENT_SOURCE[m]) : m);
 }
 
 // ───────────── Emplacements ─────────────
@@ -125,10 +160,10 @@ type LocationLike = { bloc?: string | null; etage?: string | null; rangee?: stri
 
 /** « Réfrigérateur FR1 · Étage 3 · Case 2 » ; court : « FR1·É3·C2 ». */
 export function locationText(l: LocationLike | null | undefined, short = false): string {
-  if (!l || !l.bloc) return short ? "—" : "Non rangé";
+  if (!l || !l.bloc) return short ? "—" : tl("Non rangé");
   const parts = short
-    ? [blocShort(l.bloc), l.etage ? `É${l.etage}` : "", l.rangee ? `C${l.rangee}` : ""]
-    : [l.fixture_name || `Meuble ${l.bloc}`, l.etage ? `Étage ${l.etage}` : "", l.rangee ? `Case ${l.rangee}` : ""];
+    ? [blocShort(l.bloc), l.etage ? tl("É{0}", [l.etage]) : "", l.rangee ? tl("C{0}", [l.rangee]) : ""]
+    : [l.fixture_name ? tm(l.fixture_name) : tl("Meuble {0}", [l.bloc]), l.etage ? tl("Étage {0}", [l.etage]) : "", l.rangee ? tl("Case {0}", [l.rangee]) : ""];
   return parts.filter(Boolean).join(short ? "·" : " · ");
 }
 
@@ -146,46 +181,55 @@ export function daysUntil(date: string): number {
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
-  admin: "Administrateur",
-  manager: "Gestionnaire",
-  cashier: "Caissier / Caissière",
+  admin: tl("Administrateur"),
+  manager: tl("Gestionnaire"),
+  cashier: tl("Caissier / Caissière"),
 };
 
 export const MOVEMENT_LABELS: Record<string, string> = {
-  initial: "Stock initial",
-  sale: "Vente",
-  sale_cancel: "Annulation vente",
-  purchase: "Réception achat",
-  adjustment: "Ajustement / inventaire",
-  loss: "Perte / casse",
-  return: "Retour client",
+  initial: tl("Stock initial"),
+  sale: tl("Vente"),
+  sale_cancel: tl("Annulation vente"),
+  purchase: tl("Réception achat"),
+  adjustment: tl("Ajustement / inventaire"),
+  loss: tl("Perte / casse"),
+  return: tl("Retour client"),
 };
 
 export const UNITS = ["pce", "kg", "g", "L", "cl", "m", "paquet", "carton", "sac", "boîte", "bouteille"];
 
 /** Unités de mesure regroupées par famille. */
 export const UNIT_GROUPS: { label: string; units: string[] }[] = [
-  { label: "Quantité", units: ["pce", "unité", "lot", "paire"] },
-  { label: "Poids", units: ["kg", "g", "mg", "tonne"] },
-  { label: "Volume", units: ["L", "ml", "cl", "m³"] },
-  { label: "Longueur", units: ["m", "cm", "mm", "km"] },
-  { label: "Conditionnement", units: ["carton", "paquet", "sachet", "boîte", "pack"] },
-  { label: "Alimentaire", units: ["sac", "bassine", "mesure", "tas"] },
-  { label: "Boissons", units: ["bouteille", "bidon", "canette", "casier"] },
-  { label: "Matériaux", units: ["barre", "rouleau", "palette", "brouette", "voyage"] },
-  { label: "Tissus", units: ["mètre", "coupon", "yard"] },
-  { label: "Électricité", units: ["bobine", "couronne"] },
-  { label: "Restauration", units: ["plat", "portion", "part", "verre"] },
+  { label: tl("Quantité"), units: ["pce", "unité", "lot", "paire"] },
+  { label: tl("Poids"), units: ["kg", "g", "mg", "tonne"] },
+  { label: tl("Volume"), units: ["L", "ml", "cl", "m³"] },
+  { label: tl("Longueur"), units: ["m", "cm", "mm", "km"] },
+  { label: tl("Conditionnement"), units: ["carton", "paquet", "sachet", "boîte", "pack"] },
+  { label: tl("Alimentaire"), units: ["sac", "bassine", "mesure", "tas"] },
+  { label: tl("Boissons"), units: ["bouteille", "bidon", "canette", "casier"] },
+  { label: tl("Matériaux"), units: ["barre", "rouleau", "palette", "brouette", "voyage"] },
+  { label: tl("Tissus"), units: ["mètre", "coupon", "yard"] },
+  { label: tl("Électricité"), units: ["bobine", "couronne"] },
+  { label: tl("Restauration"), units: ["plat", "portion", "part", "verre"] },
 ];
+
+/** Taux de taxe nommés de la boutique (paramètre « tax_rates » : une ligne « Nom=taux »). */
+export function taxRates(setting: string | undefined): { name: string; rate: number }[] {
+  return (setting ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.split("="))
+    .filter((p) => p.length === 2 && p[0].trim() && Number.isFinite(parseNumber(p[1])))
+    .map(([name, rate]) => ({ name: name.trim(), rate: parseNumber(rate) }));
+}
 
 /** Libellés des fonctions activables selon le type de commerce. */
 export const FEATURE_LABELS: Record<string, { label: string; hint: string }> = {
-  expiry: { label: "Dates de péremption", hint: "Alertes sur les produits qui périment bientôt." },
-  brand: { label: "Marques", hint: "Champ « Marque » sur les produits, recherche par marque." },
-  sku: { label: "Référence interne", hint: "Code article interne (ex. RIZ-001), en plus du code-barres." },
-  packagings: { label: "Conditionnements", hint: "Vente au carton, au sac, au pack… avec conversion automatique (1 carton = 12 bouteilles)." },
-  decimal: { label: "Quantités décimales", hint: "Vente au poids ou au mètre (0,5 kg, 2,75 m)." },
-  services: { label: "Services / plats", hint: "Articles sans stock : réparations, plats, prestations." },
+  expiry: { label: tl("Dates de péremption"), hint: tl("Alertes sur les produits qui périment bientôt.") },
+  brand: { label: tl("Marques"), hint: tl("Champ « Marque » sur les produits, recherche par marque.") },
+  sku: { label: tl("Référence interne"), hint: tl("Code article interne (ex. RIZ-001), en plus du code-barres.") },
+  packagings: { label: tl("Conditionnements"), hint: tl("Vente au carton, au sac, au pack… avec conversion automatique (1 carton = 12 bouteilles).") },
+  decimal: { label: tl("Quantités décimales"), hint: tl("Vente au poids ou au mètre (0,5 kg, 2,75 m).") },
+  services: { label: tl("Services / plats"), hint: tl("Articles sans stock : réparations, plats, prestations.") },
 };
 
 // ───────────── Export CSV (compatible Excel FR) ─────────────

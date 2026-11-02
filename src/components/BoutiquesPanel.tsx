@@ -5,6 +5,7 @@ import { errorMessage, useApp } from "../context/AppContext";
 import { Badge } from "./ui";
 import { isTauri } from "../lib/transport";
 import type { BoutiquesInfo } from "../types";
+import { tl } from "../lib/i18n";
 
 /**
  * Plusieurs boutiques sur ce PC (5 au maximum) : chacune s'ouvre dans sa propre fenêtre,
@@ -33,11 +34,11 @@ export function BoutiquesPanel({ compact }: { compact?: boolean }) {
     }
   };
   const create = async () => {
-    if (!window.confirm(`Créer une nouvelle boutique sur ce PC ? Elle s'ouvrira dans une nouvelle fenêtre pour sa première configuration (nom, administrateur…). Maximum ${info.max}.`)) return;
+    if (!window.confirm(tl("Créer une nouvelle boutique sur ce PC ? Elle s'ouvrira dans une nouvelle fenêtre pour sa première configuration (nom, administrateur…). Maximum {0}.", [info.max]))) return;
     setBusy(true);
     try {
       const slot = await api.createBoutique();
-      toast.success(`Boutique ${slot} créée : configurez-la dans la nouvelle fenêtre.`);
+      toast.success(tl("Boutique {0} créée : configurez-la dans la nouvelle fenêtre.", [slot]));
       setTimeout(load, 2500);
     } catch (e) {
       toast.error(errorMessage(e));
@@ -53,16 +54,15 @@ export function BoutiquesPanel({ compact }: { compact?: boolean }) {
           <Store size={18} />
           <div className="boutique-main">
             <strong>{b.name}</strong>
-            <span className="small muted">Boutique {b.slot}</span>
+            <span className="small muted">{tl("Boutique")} {b.slot}</span>
           </div>
           {b.current ? (
-            <Badge tone="info">cette fenêtre</Badge>
+            <Badge tone="info">{tl("cette fenêtre")}</Badge>
           ) : b.open ? (
             <Badge tone="success">ouverte</Badge>
           ) : (
             <button className="btn btn-sm" onClick={() => open(b.slot)}>
-              <ExternalLink size={14} /> Ouvrir
-            </button>
+              <ExternalLink size={14} />  {tl("Ouvrir")}</button>
           )}
         </div>
       ))}
@@ -74,7 +74,7 @@ export function BoutiquesPanel({ compact }: { compact?: boolean }) {
     if (info.boutiques.length < 2) return null;
     return (
       <div className="boutiques-compact">
-        <div className="small muted">Autres boutiques de ce PC</div>
+        <div className="small muted">{tl("Autres boutiques de ce PC")}</div>
         {list}
       </div>
     );
@@ -83,17 +83,15 @@ export function BoutiquesPanel({ compact }: { compact?: boolean }) {
   return (
     <div className="card">
       <h3 className="card-title">
-        <Store size={18} /> Mes boutiques sur ce PC <Badge>{info.boutiques.length} / {info.max}</Badge>
-        <button className="icon-btn" onClick={load} title="Actualiser" style={{ marginLeft: "auto" }}><RefreshCw size={14} /></button>
+        <Store size={18} />  {tl("Mes boutiques sur ce PC")} <Badge>{info.boutiques.length} / {info.max}</Badge>
+        <button className="icon-btn" onClick={load} title={tl("Actualiser")} style={{ marginLeft: "auto" }}><RefreshCw size={14} /></button>
       </h3>
       <p className="muted small">
-        Chaque boutique a sa propre base (produits, stock, ventes, utilisateurs), son propre code PIN et sa fenêtre. Vous pouvez en ouvrir
-        plusieurs en même temps, jusqu'à {info.max}. En mode serveur, chacune utilise son port : 7878, 7888, 7898…
-      </p>
+        {tl("Chaque boutique a sa propre base (produits, stock, ventes, utilisateurs), son propre code PIN et sa fenêtre. Vous pouvez en ouvrir plusieurs en même temps, jusqu'à")} {info.max}{tl(". En mode serveur, chacune utilise son port : 7878, 7888, 7898…")}</p>
       {list}
       {user?.role === "admin" && (
         <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={busy || !info.can_create} onClick={create}>
-          <Plus size={16} /> {info.can_create ? "Nouvelle boutique" : `Maximum atteint (${info.max})`}
+          <Plus size={16} /> {info.can_create ? tl("Nouvelle boutique") : tl("Maximum atteint ({0})", [info.max])}
         </button>
       )}
     </div>

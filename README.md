@@ -1,13 +1,13 @@
 # GestiMarket
 
-Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, supermarchés, grossistes, pharmacies, quincailleries, etc. Interface 100 % française, fonctionnement **hors ligne** (base SQLite locale), multi-postes sur le réseau du magasin, utilisable sur PC, tablette et téléphone.
+Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, supermarchés, grossistes, pharmacies, quincailleries, etc. Interface en **français (par défaut) et en anglais**, utilisable dans **tous les pays** (devises, formats, taxes, opérateurs de paiement mobile), fonctionnement **hors ligne** (base SQLite locale), multi-postes sur le réseau du magasin, utilisable sur PC, tablette et téléphone.
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.11.0**
+- Version actuelle : **0.12.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
-> État des tests : 42 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs) et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 38 vérifications sur 38 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan). Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
+> État des tests : 43 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. Test d'interface de bout en bout sous Xvfb avec Playwright : 38 vérifications sur 38 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan). Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
 
 ---
 
@@ -34,15 +34,15 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 - Navigation dans les catégories par fil d'Ariane, produits avec photo, emplacement et stock.
 - **Conditionnements** : vendre au carton, au sac ou au pack (1 carton = 12 bouteilles) avec code-barres et prix propres ; le stock est décompté en unités de base.
 - Remises, tickets en attente, client associé, vente à crédit (plafond par client), points de fidélité.
-- **Paiements** : espèces (monnaie rendue, pavé numérique), **Orange Money / Sarali** (numéro marchand ou QR code, ID de transaction obligatoire et unique), autre mobile money, carte, crédit ; paiement partiel multi-moyens.
+- **Paiements** : espèces (monnaie rendue, pavé numérique), **Orange Money / Sarali** et **opérateurs configurables** (Wave, MTN MoMo, M-Pesa…) : numéro marchand ou QR code, ID de transaction obligatoire et unique ; autre mobile money, carte, crédit ; paiement partiel multi-moyens.
 - Ticket imprimable, écran client.
 - **Suivi des collègues** : voir en direct le ticket des autres caisses et **reprendre un client** sans tout ressaisir.
 
 ### Catalogue
 - **Code-barres obligatoire** (EAN ou QR) : généré automatiquement si absent ; étiquettes imprimables en code-barres ou QR code.
-- Champs : désignation, référence interne, marque, catégorie, unité, prix d'achat et de vente TTC, TVA, stock, seuil d'alerte, fournisseur, péremption, photo, emplacement, statut.
+- Champs : désignation, référence interne, marque, catégorie, unité, prix d'achat et de vente (saisi TTC ou HT), taxe, stock, seuil d'alerte, fournisseur, péremption, photo, emplacement, statut.
 - **Catégories en arbre sans limite de niveaux** (catégorie → sous-catégorie → famille…), déplacement, masquage, couleur et photo, import / export CSV, détection des catégories vides et des produits sans catégorie.
-- **Catalogue prédéfini** de 32 catégories avec leurs sous-catégories (+ menu restaurant), chargeable à la carte sans doublon.
+- **Catalogue prédéfini** de 32 catégories avec leurs sous-catégories (+ menu restaurant), en français ou en anglais, chargeable à la carte sans doublon.
 - **22 types de commerce** (boutique de quartier, commerce général, supermarché, supérette, grossiste, pharmacie, vêtements et chaussures, quincaillerie, matériaux de construction, électronique, téléphonie, boulangerie-pâtisserie, boucherie-poissonnerie, fruits et légumes, cosmétiques-parfumerie, librairie-papeterie, pièces auto-moto, agro-vétérinaire, bar-maquis-café, kiosque / station-service, boutique spécialisée, restaurant) : l'interface s'adapte (péremption, marque, référence, conditionnements, quantités décimales, services) et le plan propose les meubles du métier. Mêmes codes que les types de boutique du compte Eden Dev.
 - Familles d'unités (poids, volume, longueur, conditionnement, boissons, matériaux, tissus…).
 - Import de produits depuis Excel / CSV.
@@ -60,6 +60,14 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 - **Tableau de bord du caissier** : statistiques de sa session (ventes, panier moyen, espèces attendues, répartition par moyen de paiement, ventes par heure, meilleurs articles).
 - Sessions de caisse : fond de caisse, entrées / sorties d'espèces, clôture avec calcul de l'écart ; clôture forcée par l'administrateur.
 - Rapports de ventes, suivi des paiements mobiles, journal d'activité complet.
+
+### International (langues, devises, taxes)
+- **Français (par défaut) et anglais** : chaque utilisateur choisit sa langue (icône langue du menu, écran de connexion, première configuration), mémorisée sur son compte. Les **tickets et l'écran client** suivent la langue de la boutique (*Paramètres → Boutique*). Les messages du poste serveur et de Supabase sont traduits à l'affichage.
+- **Tous les pays et toutes les devises** (ISO 4217) : décimales de la devise (0 pour le FCFA et le GNF, 2 pour l'euro et le dollar, 3 pour le dinar tunisien…), symbole modifiable, placé avant ou après le montant ; nombres et dates au format du pays. La saisie accepte la virgule ou le point décimal.
+- **Taxes** : taux nommés (« TVA 18 %=18 », « Exonéré=0 ») proposés sur la fiche produit ; prix saisis **TTC ou HT** (le ticket détaille alors total HT, taxe et TTC) ; identifiants légaux (NIF, RCCM…) sur plusieurs lignes, imprimés sur le ticket.
+- **Paiements mobiles configurables** : en plus d'Orange Money / Sarali, une liste d'opérateurs (Wave, Moov Money, MTN MoMo, Airtel Money, M-Pesa, Free Money, Mixx by Yas, T-Money, Flooz, Celtiis Cash, Telecel Money ou tout autre) : bouton en caisse aux couleurs de l'opérateur, numéro marchand, QR code (photo ou texte) affiché aussi sur l'écran client, ID de transaction obligatoire ou non et jamais utilisé deux fois, rapprochement dans *Paiements mobiles*.
+- **Catalogue prédéfini** en français ou en anglais selon la langue de la boutique (mêmes catégories).
+- **Abonnement** : prix des formules dans la devise de la boutique quand Eden Dev l'a fixé (`gm_plan_prices`), sinon en FCFA.
 
 ### Personnalisation
 - Logo, nom du commerce, couleur du thème, style du menu, thème clair / sombre ; thème par défaut sinon.
@@ -162,7 +170,7 @@ Guide complet : [`supabase/APPLICATION_MOBILE.md`](supabase/APPLICATION_MOBILE.m
 
 Chaque boutique a un **compte Eden Dev** (Supabase Auth : e-mail + mot de passe) avec : nom de la boutique, nom complet de la propriétaire, téléphone, pays, ville, adresse et type de boutique. Un compte peut avoir jusqu'à 5 boutiques (code `GM-000001`…). **Aucune donnée commerciale** (ventes, produits, stocks, clients) n'est envoyée à Eden Dev.
 
-| Formule | Postes | Fonctions | Prix (modifiable dans `gm_plans`) |
+| Formule | Postes | Fonctions | Prix en FCFA (`gm_plans`) ; autres devises dans `gm_plan_prices` |
 |---|---|---|---|
 | **FREE** | 1 | Consultation uniquement | 0 |
 | **STARTER** | 1 | Ventes et modifications, PC seul, sans Internet obligatoire | 5 000 FCFA / mois |
@@ -189,7 +197,7 @@ Règles appliquées par le poste serveur (Rust), même sans Internet :
 - **Postes simultanés** : chaque appareil connecté (ce PC compris) occupe une place ; une connexion de trop est refusée. Un appareil sans signal depuis 3 minutes libère sa place. L'administrateur voit et déconnecte les postes (*Poste & réseau → Postes connectés*).
 - **Fonctions** : mode serveur et appareils du réseau (PRO), accès par Internet (PRO), écran client (PRO), logo (PRO).
 
-Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_types_commerce.sql` (types de boutique = types de commerce de l'application), `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), et les fonctions `supabase/functions/gm-license` et `supabase/functions/gm-pay` (*Verify JWT* désactivé pour les deux). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
+Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_types_commerce.sql` (types de boutique = types de commerce de l'application), `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), `supabase/gestimarket_international.sql` (tous les pays avec leur devise ISO, prix des formules par devise `gm_plan_prices`, carte Visa dans la devise de la boutique), et les fonctions `supabase/functions/gm-license` et `supabase/functions/gm-pay` (*Verify JWT* désactivé pour les deux). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
 
 Réglages d'Eden Dev (table `gm_config`) :
 
@@ -198,7 +206,8 @@ Réglages d'Eden Dev (table `gm_config`) :
 | `om_merchant_code`, `om_merchant_name` | Code marchand Sarali d'Eden Dev et nom affiché par Orange Money |
 | `om_qr_payload` | Contenu du QR code marchand (facultatif ; scanner l'autocollant avec un téléphone pour le lire) |
 | `card_enabled` | `true` pour ouvrir la carte Visa, une fois les clés Cybersource en place |
-| `card_currency` | Devise des paiements par carte (`XOF`) |
+| `card_currency` | Devise par défaut des paiements par carte (`XOF`) |
+| `card_currencies` | Devises acceptées par le profil Cybersource (`XOF,EUR,USD`) : la carte est payée dans la devise de la boutique si elle y figure et a un prix dans `gm_plan_prices` |
 
 **Cartes de bon** : `select * from public.gm_voucher_batch('pro', 1, 20);` dans le SQL Editor (formule, mois, nombre de cartes, lot facultatif) → *Export → CSV* → `supabase/cartes_de_bon.html` (coller, afficher, imprimer : 10 cartes par page A4, format carte bancaire). Les codes ne sont visibles qu'à la création (gardés hachés en SHA-256). Suivi : vue `gm_cartes_de_bon` ; une carte perdue ou volée : `status` → `cancelled` dans `gm_vouchers`.
 
@@ -220,6 +229,8 @@ npm run dev                 # interface seule (navigateur, port 1420)
 npx tauri dev               # application complète en développement
 npm run typecheck           # vérification TypeScript
 npm run test:rust           # tests Rust (logique métier)
+npm run i18n:check          # aucun texte sans traduction anglaise (interface et messages)
+node scripts/i18n.mjs wrap  # entoure les nouveaux textes français de tl() / ts()
 node e2e/run.mjs            # test d'interface (serveur lancé sur :7878, Playwright installé)
 npx tauri build             # build de production de la plateforme courante
 ```
@@ -233,13 +244,15 @@ npx tauri build --target x86_64-pc-windows-gnu --bundles nsis
 # Version portable : gestimarket.exe + WebView2Loader.dll (dossier release/)
 ```
 
-Pour changer de version : `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`.
+Pour changer de version : `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` (et `Cargo.lock`).
+
+Traductions : les textes restent en français dans le code, entourés de `tl()` (interface, langue de l'utilisateur), `ts()` (ticket et écran client, langue de la boutique) ou `tm()` (messages du poste serveur et de Supabase). L'anglais est dans `src/i18n/en.ts` et `src/i18n/en-messages.ts` (`python scripts/i18n_messages.py` liste les messages Rust et SQL).
 
 ### Intégration continue (`.github/workflows/build.yml`)
 
 | Job | Quand | Contenu |
 |---|---|---|
-| `test` | chaque envoi | `npm run typecheck` et `cargo test` sous Ubuntu |
+| `test` | chaque envoi | `npm run typecheck`, contrôle des traductions anglaises et `cargo test` sous Ubuntu |
 | `e2e` | envoi sur `main` | compilation debug, GestiMarket en mode serveur sous Xvfb, `e2e/run.mjs` (Playwright) avec le faux tunnel et la fausse API Supabase de `e2e/mocks.mjs` ; captures publiées dans une pré-release `e2e-N` |
 | `release` | étiquette `v*` | installateurs Windows (`-setup.exe`, `.msi`), Linux (`.deb`, `.rpm`, `.AppImage`) et macOS, release publiée |
 
@@ -303,14 +316,15 @@ SQLite, migrations versionnées (`PRAGMA user_version`, clés étrangères véri
 | 004 | Code PIN des utilisateurs |
 | 005 | Catalogue v2 : catégories actives, marque, référence, conditionnements, quantités en unités de base |
 | 006 | Plan de la boutique : niveaux (`store_floors`), palette de meubles (`fixture_types`), meubles posés en mètres (`fixtures`), cases étage × case (`locations`), autres emplacements d'un produit (`product_locations`) ; les anciens blocs deviennent des gondoles |
+| 007 | International : langue de chaque utilisateur (`users.lang`) |
 
-Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix TTC, dates locales.
+Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix de vente enregistrés TTC (même saisis HT), dates locales.
 
 ---
 
 ## Interface RPC
 
-Les commandes sont appelées par `POST /rpc/{commande}` (corps JSON, en-tête `Authorization: Bearer <jeton>`) ou par la commande Tauri `rpc`. Réponse : `{ "ok": … }` ou `{ "error": "message en français" }`.
+Les commandes sont appelées par `POST /rpc/{commande}` (corps JSON, en-tête `Authorization: Bearer <jeton>`) ou par la commande Tauri `rpc`. Réponse : `{ "ok": … }` ou `{ "error": "message en français" }` (traduit à l'affichage).
 
 Familles de commandes : authentification et PIN · utilisateurs · paramètres · catégories et catalogue · produits (dont `scan_code`) · emplacements · stock · achats · clients · ventes · sessions de caisse (`cashier_stats`, `force_close_cash_session`) · rapports · postes (`poste_heartbeat`, `list_postes`) · tickets partagés (`live_cart_update`, `live_carts`, `live_cart_take`) · application mobile (`cloud_status`, `cloud_publish_now`) · écran client (`display_update`, `display_state`).
 
@@ -332,7 +346,7 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Comptes boutique, formules FREE / STARTER / PRO / BUSINESS, licences signées Ed25519, lecture seule à l'expiration, postes simultanés
 - [x] Paiement des abonnements : carte de bon (activation immédiate), Orange Money (Sarali), carte Visa (Cybersource) ; formule supérieure immédiate
 - [x] Plan de la boutique façon architecte (meubles, frigos, réserve, meubles personnalisés, poser / prendre), 22 types de commerce
-- [ ] Français / anglais et utilisation dans tous les pays (devises, taxes, paiements mobiles configurables) : version 0.12
+- [x] Français / anglais et utilisation dans tous les pays (devises, taxes, paiements mobiles configurables, prix des formules par devise)
 - [ ] Retours et avoirs, prix de gros et promotions, rapport Z, dépenses, bons de commande, variantes, codes-barres de balance, imprimante thermique
 - [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées
 - [ ] Tableau de bord Eden Dev, paiement mobile automatique, tunnels créés automatiquement par boutique, mises à jour signées

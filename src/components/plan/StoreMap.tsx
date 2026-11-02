@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Maximize, Minus, Plus } from "lucide-react";
 import type { Fixture, Floor } from "../../types";
+import { tl, tm } from "../../lib/i18n";
 
 /** Position, taille (mètres) et rotation (degrés) d'un meuble. */
 export interface Geometry {
@@ -250,7 +251,7 @@ export function StoreMap({
         }}
         onDrop={onDrop}
         role="img"
-        aria-label={`Plan : ${floor.name}`}
+        aria-label={tl("Plan : {0}", [floor.name])}
       >
         <defs>
           <pattern id={`grid-${floor.id}`} width="1" height="1" patternUnits="userSpaceOnUse">
@@ -304,7 +305,7 @@ export function StoreMap({
                     dominantBaseline={isZone ? "auto" : "central"}
                     className={isZone || isText ? "map-text dark" : "map-text"}
                   >
-                    {isZone || isText ? f.name : f.storage ? f.code : "Caisse"}
+                    {isZone || isText ? tm(f.name) : f.storage ? f.code : tl("Caisse")}
                   </text>
                   {f.storage && f.product_count > 0 && (
                     <g>
@@ -341,13 +342,12 @@ export function StoreMap({
         })}
       </svg>
       <div className="map-tools">
-        <button type="button" className="icon-btn" onClick={() => zoom(1 / 1.3)} aria-label="Zoomer"><Plus size={16} /></button>
-        <button type="button" className="icon-btn" onClick={() => zoom(1.3)} aria-label="Dézoomer"><Minus size={16} /></button>
-        <button type="button" className="icon-btn" onClick={() => setView(fit())} aria-label="Voir tout le niveau"><Maximize size={15} /></button>
+        <button type="button" className="icon-btn" onClick={() => zoom(1 / 1.3)} aria-label={tl("Zoomer")}><Plus size={16} /></button>
+        <button type="button" className="icon-btn" onClick={() => zoom(1.3)} aria-label={tl("Dézoomer")}><Minus size={16} /></button>
+        <button type="button" className="icon-btn" onClick={() => setView(fit())} aria-label={tl("Voir tout le niveau")}><Maximize size={15} /></button>
       </div>
       <div className="map-scale">
-        {floor.name} · {floor.width} × {floor.depth} m · carreau = 1 m
-      </div>
+        {tm(floor.name)} · {floor.width}  {tl("×")} {floor.depth}  {tl("m · carreau = 1 m")}</div>
     </div>
   );
 }

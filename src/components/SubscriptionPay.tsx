@@ -4,17 +4,18 @@ import { ArrowLeft, CircleCheck, Copy, CreditCard, Hourglass, Smartphone, Ticket
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
 import { Badge } from "./ui";
-import { fcfa, isoDateTime, setLicense } from "../lib/license";
+import { fcfa, isoDateTime, planPrice, price, setLicense } from "../lib/license";
 import type { AccountOptions, CardStart, LicenseStatus, SubscriptionMethod, PlanCode, PlanInfo, SubscriptionPayment } from "../types";
+import { tl } from "../lib/i18n";
 
 export const METHOD_LABELS: Record<string, string> = {
-  carte_bon: "Carte de bon",
-  orange_money: "Orange Money",
-  carte_visa: "Carte Visa",
-  moov_money: "Moov Money",
-  virement: "Virement",
-  especes: "Espèces",
-  autre: "Autre",
+  carte_bon: tl("Carte de bon"),
+  orange_money: tl("Orange Money"),
+  carte_visa: tl("Carte Visa"),
+  moov_money: tl("Moov Money"),
+  virement: tl("Virement"),
+  especes: tl("Espèces"),
+  autre: tl("Autre"),
 };
 
 /** « y7eg9d6zdfp998t0 » → « Y7EG-9D6Z-DFP9-98T0 » (16 caractères au plus). */
@@ -43,33 +44,33 @@ export function SubscriptionPay({ options, lic, onChange }: { options: AccountOp
 
   return (
     <div className="card" id="payer">
-      <h3 className="card-title"><CreditCard size={18} /> Payer ou renouveler l'abonnement</h3>
+      <h3 className="card-title"><CreditCard size={18} />  {tl("Payer ou renouveler l'abonnement")}</h3>
       {!method ? (
         <>
-          <p className="muted">Choisissez le moyen de paiement.</p>
+          <p className="muted">{tl("Choisissez le moyen de paiement.")}</p>
           <div className="pay-methods">
             <button type="button" className="pay-method" onClick={() => choose("carte_bon")}>
               <Ticket size={26} />
-              <strong>Carte de bon</strong>
-              <span className="small muted">Code à 16 caractères acheté chez Eden Dev ou un revendeur. Activation immédiate.</span>
+              <strong>{tl("Carte de bon")}</strong>
+              <span className="small muted">{tl("Code à 16 caractères acheté chez Eden Dev ou un revendeur. Activation immédiate.")}</span>
             </button>
             <button type="button" className="pay-method" onClick={() => choose("orange_money")}>
               <Smartphone size={26} />
-              <strong>Orange Money</strong>
-              <span className="small muted">Code marchand Sarali ou QR code. Validé par Eden Dev.</span>
+              <strong>{tl("Orange Money")}</strong>
+              <span className="small muted">{tl("Code marchand Sarali ou QR code. Validé par Eden Dev.")}</span>
             </button>
             <button type="button" className="pay-method" onClick={() => choose("carte_visa")} disabled={!pay?.card_enabled}>
               <CreditCard size={26} />
-              <strong>Carte Visa</strong>
+              <strong>{tl("Carte Visa")}</strong>
               <span className="small muted">
-                {pay?.card_enabled ? "Page de paiement sécurisée de Visa. Activation automatique." : "Bientôt disponible."}
+                {pay?.card_enabled ? tl("Page de paiement sécurisée de Visa. Activation automatique.") : tl("Bientôt disponible.")}
               </span>
             </button>
           </div>
         </>
       ) : (
         <>
-          <button type="button" className="link-btn" onClick={() => setMethod(null)}><ArrowLeft size={15} /> Changer de moyen de paiement</button>
+          <button type="button" className="link-btn" onClick={() => setMethod(null)}><ArrowLeft size={15} />  {tl("Changer de moyen de paiement")}</button>
           {method === "carte_bon" && <VoucherForm onChange={onChange} />}
           {method === "orange_money" && <OrangeMoneyForm options={options} lic={lic} onChange={onChange} />}
           {method === "carte_visa" && <CardForm options={options} lic={lic} onChange={onChange} />}
@@ -95,11 +96,11 @@ function VoucherForm({ onChange }: { onChange: () => void }) {
       const v = r.voucher;
       const syncError = r.sync_error ?? (await refreshAfterPayment());
       setDone(
-        `Carte acceptée : formule ${v.plan_label}, ${v.months} mois, jusqu'au ${isoDateTime(v.ends_at)}.` +
-          (syncError ? ` La licence sera téléchargée dès que possible (${syncError}).` : " La licence de ce PC est à jour."),
+        tl("Carte acceptée : formule {0}, {1} mois, jusqu'au {2}.", [v.plan_label, v.months, isoDateTime(v.ends_at)]) +
+          (syncError ? tl(" La licence sera téléchargée dès que possible ({0}).", [syncError]) : tl(" La licence de ce PC est à jour.")),
       );
       setCode("");
-      toast.success(`Carte de bon activée : ${v.plan_label} ${v.months} mois.`);
+      toast.success(tl("Carte de bon activée : {0} {1} mois.", [v.plan_label, v.months]));
       onChange();
     } catch (err) {
       setError(errorMessage(err));
@@ -111,16 +112,14 @@ function VoucherForm({ onChange }: { onChange: () => void }) {
   return (
     <form onSubmit={submit} className="pay-step">
       <p className="muted">
-        Grattez la carte et saisissez le code de 16 caractères. La formule et la durée sont celles de la carte ; une formule supérieure
-        s'applique tout de suite, sinon la période s'ajoute à la suite de l'abonnement en cours.
-      </p>
+        {tl("Grattez la carte et saisissez le code de 16 caractères. La formule et la durée sont celles de la carte ; une formule supérieure s'applique tout de suite, sinon la période s'ajoute à la suite de l'abonnement en cours.")}</p>
       <label className="field">
-        <span className="field-label">Code de la carte *</span>
+        <span className="field-label">{tl("Code de la carte *")}</span>
         <input
           className="voucher-input mono"
           value={code}
           onChange={(e) => setCode(formatVoucher(e.target.value))}
-          placeholder="XXXX-XXXX-XXXX-XXXX"
+          placeholder={tl("XXXX-XXXX-XXXX-XXXX")}
           autoComplete="off"
           spellCheck={false}
           autoFocus
@@ -130,7 +129,7 @@ function VoucherForm({ onChange }: { onChange: () => void }) {
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
         <button className="btn btn-primary" disabled={busy || code.replace(/-/g, "").length !== 16}>
-          {busy ? "Vérification…" : "Activer la carte"}
+          {busy ? tl("Vérification…") : tl("Activer la carte")}
         </button>
       </div>
     </form>
@@ -145,6 +144,8 @@ function PlanPicker({
   setPlan,
   months,
   setMonths,
+  currency,
+  amount,
 }: {
   options: AccountOptions;
   lic: LicenseStatus;
@@ -152,20 +153,22 @@ function PlanPicker({
   setPlan: (p: PlanCode) => void;
   months: number;
   setMonths: (m: number) => void;
+  currency: string;
+  amount: number;
 }) {
   const plans = options.plans.filter((p) => p.code !== "free");
   const rank = (code: string) => options.plans.findIndex((p) => p.code === code);
   const current = lic.phase === "active" && lic.plan !== "free" ? lic.plan : null;
   const chosen = plans.find((p) => p.code === plan);
-  let when = "La nouvelle période commence dès la validation du paiement.";
+  let when = tl("La nouvelle période commence dès la validation du paiement.");
   if (current && chosen) {
     const label = plans.find((p) => p.code === current)?.label ?? current.toUpperCase();
     if (rank(plan) > rank(current)) {
-      when = `Formule supérieure : ${chosen.label} s'applique dès la validation ; les jours restants de ${label} sont convertis en jours de ${chosen.label}.`;
+      when = tl("Formule supérieure : {0} s'applique dès la validation ; les jours restants de {1} sont convertis en jours de {2}.", [chosen.label, label, chosen.label]);
     } else if (plan === current) {
-      when = `La période s'ajoute à la suite de votre abonnement ${label} en cours (jusqu'au ${isoDateTime(lic.expires_at)}).`;
+      when = tl("La période s'ajoute à la suite de votre abonnement {0} en cours (jusqu'au {1}).", [label, isoDateTime(lic.expires_at)]);
     } else {
-      when = `${chosen.label} commencera à la fin de votre abonnement ${label} (le ${isoDateTime(lic.expires_at)}).`;
+      when = tl("{0} commencera à la fin de votre abonnement {1} (le {2}).", [chosen.label, label, isoDateTime(lic.expires_at)]);
     }
   }
   return (
@@ -174,32 +177,34 @@ function PlanPicker({
         {plans.map((p: PlanInfo) => (
           <button type="button" key={p.code} className={`plan-choice${plan === p.code ? " active" : ""}`} onClick={() => setPlan(p.code)}>
             <strong>{p.label}</strong>
-            <span>{fcfa(p.price_month)} / mois</span>
-            <span className="small muted">{p.max_postes} poste(s){p.code === current ? " · formule actuelle" : ""}</span>
+            <span>{tl("{0} / mois", [price(planPrice(p, currency).amount, planPrice(p, currency).currency)])}</span>
+            <span className="small muted">{p.max_postes}  {tl("poste(s)")}{p.code === current ? tl(" · formule actuelle") : ""}</span>
           </button>
         ))}
       </div>
       <div className="segmented">
         {[1, 3, 6].map((m) => (
-          <button type="button" key={m} className={months === m ? "active" : ""} onClick={() => setMonths(m)}>{m} mois</button>
+          <button type="button" key={m} className={months === m ? "active" : ""} onClick={() => setMonths(m)}>{tl("{0} mois", [m])}</button>
         ))}
       </div>
       <div className="pay-amount">
-        <span className="muted small">Montant à payer</span>
-        <strong className="licence-amount">{fcfa((chosen?.price_month ?? 0) * months)}</strong>
+        <span className="muted small">{tl("Montant à payer")}</span>
+        <strong className="licence-amount">{price(amount, currency)}</strong>
         <span className="muted small">{when}</span>
       </div>
     </>
   );
 }
 
-function usePlanChoice(options: AccountOptions, lic: LicenseStatus) {
+/** Formule et durée choisies ; montant dans `wanted` si Eden Dev a fixé ce prix, sinon en FCFA. */
+function usePlanChoice(options: AccountOptions, lic: LicenseStatus, wanted = "XOF") {
   const plans = options.plans.filter((p) => p.code !== "free");
   const initial = (lic.plan !== "free" && plans.some((p) => p.code === lic.plan) ? lic.plan : null) ?? (plans.find((p) => p.code === "pro")?.code ?? plans[0]?.code ?? "starter");
   const [plan, setPlan] = useState<PlanCode>(initial);
   const [months, setMonths] = useState(1);
-  const amount = (plans.find((p) => p.code === plan)?.price_month ?? 0) * months;
-  return { plan, setPlan, months, setMonths, amount };
+  const chosen = plans.find((p) => p.code === plan);
+  const unit = chosen ? planPrice(chosen, wanted) : { amount: 0, currency: "XOF" };
+  return { plan, setPlan, months, setMonths, amount: unit.amount * months, currency: unit.currency };
 }
 
 function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
@@ -227,10 +232,10 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
     try {
       const r = await api.accountDeclareOrangeMoney({ plan: choice.plan, months: choice.months, reference, payer_phone: phone });
       setDone(
-        `Paiement envoyé à Eden Dev : ${r.plan_label}, ${r.months} mois, ${fcfa(r.amount)}. Dès sa validation, la licence de ce PC se met à jour toute seule (vérification toutes les 2 minutes).`,
+        tl("Paiement envoyé à Eden Dev : {0}, {1} mois, {2}. Dès sa validation, la licence de ce PC se met à jour toute seule (vérification toutes les 2 minutes).", [r.plan_label, r.months, fcfa(r.amount)]),
       );
       setReference("");
-      toast.success("Paiement Orange Money envoyé à Eden Dev.");
+      toast.success(tl("Paiement Orange Money envoyé à Eden Dev."));
       onChange();
     } catch (err) {
       setError(errorMessage(err));
@@ -246,29 +251,28 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
         <div className="om-pay">
           <ol className="om-pay-steps">
             <li>
-              Payez <strong>{fcfa(choice.amount)}</strong> avec Orange Money (application Orange Money ou <span className="mono">#144#</span>, paiement
-              marchand) au code marchand{" "}
+              {tl("Payez")} <strong>{fcfa(choice.amount)}</strong>  {tl("avec Orange Money (application Orange Money ou")} <span className="mono">#144#</span>{tl(", paiement marchand) au code marchand")}{" "}
               <strong className="mono">{merchant}</strong>
-              <button type="button" className="icon-btn" aria-label="Copier le code marchand" onClick={() => navigator.clipboard?.writeText(merchant).then(() => toast.info("Code marchand copié."))}>
+              <button type="button" className="icon-btn" aria-label={tl("Copier le code marchand")} onClick={() => navigator.clipboard?.writeText(merchant).then(() => toast.info(tl("Code marchand copié.")))}>
                 <Copy size={14} />
               </button>
-              {pay?.om_merchant_name ? ` (${pay.om_merchant_name})` : ""}{qr ? ", ou scannez le QR code" : ""}.
+              {pay?.om_merchant_name ? ` (${pay.om_merchant_name})` : ""}{qr ? tl(", ou scannez le QR code") : ""}.
             </li>
-            <li>Saisissez ci-dessous l'ID de la transaction reçu par SMS.</li>
-            <li>Eden Dev vérifie le paiement et le valide : la licence se met à jour toute seule.</li>
+            <li>{tl("Saisissez ci-dessous l'ID de la transaction reçu par SMS.")}</li>
+            <li>{tl("Eden Dev vérifie le paiement et le valide : la licence se met à jour toute seule.")}</li>
           </ol>
-          {qr && <img className="om-pay-qr" src={qr} alt="QR code marchand Orange Money d'Eden Dev" />}
+          {qr && <img className="om-pay-qr" src={qr} alt={tl("QR code marchand Orange Money d'Eden Dev")} />}
         </div>
       ) : (
-        <div className="alert alert-warning">Le code marchand Orange Money d'Eden Dev n'est pas encore configuré : contactez Eden Dev ou utilisez une carte de bon.</div>
+        <div className="alert alert-warning">{tl("Le code marchand Orange Money d'Eden Dev n'est pas encore configuré : contactez Eden Dev ou utilisez une carte de bon.")}</div>
       )}
       <div className="form-grid">
         <label className="field">
-          <span className="field-label">ID de la transaction *</span>
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Reçu par SMS" autoComplete="off" spellCheck={false} />
+          <span className="field-label">{tl("ID de la transaction *")}</span>
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={tl("Reçu par SMS")} autoComplete="off" spellCheck={false} />
         </label>
         <label className="field">
-          <span className="field-label">Numéro qui a payé</span>
+          <span className="field-label">{tl("Numéro qui a payé")}</span>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
         </label>
       </div>
@@ -276,7 +280,7 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
         <button className="btn btn-primary" disabled={busy || !merchant || reference.trim().length < 6}>
-          {busy ? "Envoi…" : "J'ai payé : envoyer l'ID de transaction"}
+          {busy ? tl("Envoi…") : tl("J'ai payé : envoyer l'ID de transaction")}
         </button>
       </div>
     </form>
@@ -284,8 +288,10 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
 }
 
 function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
-  const { toast } = useApp();
-  const choice = usePlanChoice(options, lic);
+  const { toast, settings } = useApp();
+  const shopCurrency = settings.currency_code ?? "XOF";
+  const cardCurrency = options.payment?.card_currencies?.includes(shopCurrency) ? shopCurrency : (options.payment?.card_currency ?? "XOF");
+  const choice = usePlanChoice(options, lic, cardCurrency);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState<CardStart | null>(null);
   const [error, setError] = useState("");
@@ -302,7 +308,7 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
         stopped = true;
         window.clearInterval(timer);
         setWaiting(null);
-        setError("Aucune réponse de la page de paiement après 20 minutes. Si vous avez payé, le paiement apparaîtra dans « Mes paiements ».");
+        setError(tl("Aucune réponse de la page de paiement après 20 minutes. Si vous avez payé, le paiement apparaîtra dans « Mes paiements »."));
         onChange();
         return;
       }
@@ -315,12 +321,12 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
         onChange();
         if (p.status === "validated") {
           const syncError = await refreshAfterPayment();
-          setDone(`Paiement par carte accepté : ${p.plan_label}, ${p.months} mois, jusqu'au ${isoDateTime(p.ends_at)}.` + (syncError ? ` Licence pas encore téléchargée (${syncError}).` : " La licence de ce PC est à jour."));
-          toast.success("Paiement par carte accepté.");
+          setDone(tl("Paiement par carte accepté : {0}, {1} mois, jusqu'au {2}.", [p.plan_label, p.months, isoDateTime(p.ends_at)]) + (syncError ? tl(" Licence pas encore téléchargée ({0}).", [syncError]) : tl(" La licence de ce PC est à jour.")));
+          toast.success(tl("Paiement par carte accepté."));
         } else if (p.status === "declared") {
-          setDone("Paiement reçu, en vérification par Eden Dev. La licence se mettra à jour dès la validation.");
+          setDone(tl("Paiement reçu, en vérification par Eden Dev. La licence se mettra à jour dès la validation."));
         } else {
-          setError(p.note || "Paiement par carte refusé ou annulé.");
+          setError(p.note || tl("Paiement par carte refusé ou annulé."));
         }
       } catch {
         // Internet coupé un instant : on réessaie au prochain tour.
@@ -349,12 +355,10 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
     return (
       <div className="pay-step pay-waiting">
         <Hourglass size={30} />
-        <strong>Page de paiement ouverte dans votre navigateur</strong>
+        <strong>{tl("Page de paiement ouverte dans votre navigateur")}</strong>
         <p className="muted">
-          Payez {fcfa(waiting.amount)} ({waiting.plan_label}, {waiting.months} mois) sur la page sécurisée de Visa, puis revenez ici : la licence se met à jour
-          dès que le paiement est accepté.
-        </p>
-        <button type="button" className="btn" onClick={() => setWaiting(null)}>Arrêter d'attendre</button>
+          {tl("Payez")} {price(waiting.amount, waiting.currency)} ({waiting.plan_label}, {waiting.months}  {tl("mois) sur la page sécurisée de Visa, puis revenez ici : la licence se met à jour dès que le paiement est accepté.")}</p>
+        <button type="button" className="btn" onClick={() => setWaiting(null)}>{tl("Arrêter d'attendre")}</button>
       </div>
     );
   }
@@ -363,14 +367,12 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
     <div className="pay-step">
       <PlanPicker options={options} lic={lic} {...choice} />
       <p className="muted small">
-        Le paiement se fait sur la page sécurisée de Visa (Cybersource) dans votre navigateur, avec la vérification de votre banque (code par SMS).
-        Le numéro de carte ne passe jamais par GestiMarket.
-      </p>
+        {tl("Le paiement se fait sur la page sécurisée de Visa (Cybersource) dans votre navigateur, avec la vérification de votre banque (code par SMS). Le numéro de carte ne passe jamais par GestiMarket.")}</p>
       {error && <div className="alert alert-danger">{error}</div>}
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
         <button type="button" className="btn btn-primary" disabled={busy || choice.amount <= 0} onClick={start}>
-          <CreditCard size={16} /> {busy ? "Ouverture…" : `Payer ${fcfa(choice.amount)} par carte Visa`}
+          <CreditCard size={16} /> {busy ? tl("Ouverture…") : tl("Payer {0} par carte Visa", [price(choice.amount, choice.currency)])}
         </button>
       </div>
     </div>
@@ -380,13 +382,13 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
 function statusBadge(p: SubscriptionPayment) {
   switch (p.status) {
     case "validated":
-      return <Badge tone="success">validé</Badge>;
+      return <Badge tone="success">{tl("validé")}</Badge>;
     case "declared":
-      return <Badge tone="warning">en attente de validation</Badge>;
+      return <Badge tone="warning">{tl("en attente de validation")}</Badge>;
     case "pending":
-      return p.abandoned ? <Badge>abandonné</Badge> : <Badge tone="info">paiement en cours</Badge>;
+      return p.abandoned ? <Badge>{tl("abandonné")}</Badge> : <Badge tone="info">{tl("paiement en cours")}</Badge>;
     default:
-      return <Badge tone="danger">refusé</Badge>;
+      return <Badge tone="danger">{tl("refusé")}</Badge>;
   }
 }
 
@@ -405,20 +407,20 @@ export function PaymentsHistory({ refreshKey }: { refreshKey: number }) {
       .catch((e) => setError(errorMessage(e)));
   }, [refreshKey]);
 
-  if (error) return <p className="muted small">Paiements indisponibles pour l'instant : {error}</p>;
+  if (error) return <p className="muted small">{tl("Paiements indisponibles pour l'instant :")} {error}</p>;
   if (!list?.length) return null;
   return (
     <div className="card">
-      <h3 className="card-title"><CircleCheck size={18} /> Mes paiements</h3>
+      <h3 className="card-title"><CircleCheck size={18} />  {tl("Mes paiements")}</h3>
       <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Moyen</th>
-              <th>Formule</th>
-              <th className="num">Montant</th>
-              <th>État</th>
+              <th>{tl("Date")}</th>
+              <th>{tl("Moyen")}</th>
+              <th>{tl("Formule")}</th>
+              <th className="num">{tl("Montant")}</th>
+              <th>{tl("État")}</th>
             </tr>
           </thead>
           <tbody>
@@ -426,11 +428,11 @@ export function PaymentsHistory({ refreshKey }: { refreshKey: number }) {
               <tr key={p.id}>
                 <td>{isoDateTime(p.created_at)}</td>
                 <td>{METHOD_LABELS[p.method] ?? p.method}</td>
-                <td>{p.plan_label}{p.months ? `, ${p.months} mois` : ""}</td>
-                <td className="num">{fcfa(p.amount)}</td>
+                <td>{p.plan_label}{p.months ? tl(", {0} mois", [p.months]) : ""}</td>
+                <td className="num">{price(p.amount, p.currency)}</td>
                 <td>
                   {statusBadge(p)}
-                  {p.status === "validated" && p.ends_at && <div className="small muted">jusqu'au {isoDateTime(p.ends_at)}</div>}
+                  {p.status === "validated" && p.ends_at && <div className="small muted">{tl("jusqu'au")} {isoDateTime(p.ends_at)}</div>}
                   {p.status === "refused" && p.note && <div className="small muted">{p.note}</div>}
                 </td>
               </tr>

@@ -1,4 +1,5 @@
 import type { Category } from "../types";
+import { tl } from "../lib/i18n";
 
 /** Regroupe les catégories : chaque catégorie principale avec ses sous-catégories directes. */
 export function categoryTree(categories: Category[]) {
@@ -62,7 +63,7 @@ export function CategorySelect({
           {"   ".repeat(c.depth ?? 0)}
           {(c.depth ?? 0) > 0 ? "› " : ""}
           {c.name}
-          {c.active ? "" : " (masquée)"}
+          {c.active ? "" : tl(" (masquée)")}
         </option>
       ))}
     </select>

@@ -3,6 +3,7 @@ import { Camera, Check, Flashlight, ImageUp, Lock, ScanLine, SwitchCamera } from
 import { decodeCanvas, decodeImageFile, liveCameraAvailable, scanFeedback, secureUrl } from "../lib/scanner";
 import { Modal } from "./ui";
 import { hasNativeScanner, onNativeCode, requestNativeScan } from "../lib/native";
+import { tl } from "../lib/i18n";
 
 /**
  * Scanner de codes-barres et QR codes par la caméra (téléphone, tablette, webcam).
@@ -103,10 +104,10 @@ export function CameraScanner({
         const name = (e as { name?: string }).name;
         setError(
           name === "NotAllowedError"
-            ? "Accès à la caméra refusé. Autorisez la caméra pour ce site dans les réglages du navigateur."
+            ? tl("Accès à la caméra refusé. Autorisez la caméra pour ce site dans les réglages du navigateur.")
             : name === "NotFoundError"
-              ? "Aucune caméra trouvée sur cet appareil."
-              : "Impossible de démarrer la caméra.",
+              ? tl("Aucune caméra trouvée sur cet appareil.")
+              : tl("Impossible de démarrer la caméra."),
         );
       }
     })();
@@ -143,7 +144,7 @@ export function CameraScanner({
     try {
       const code = await decodeImageFile(f);
       if (code) await accept(code);
-      else setError("Aucun code lu sur la photo. Rapprochez-vous, évitez les reflets et gardez le code bien net.");
+      else setError(tl("Aucun code lu sur la photo. Rapprochez-vous, évitez les reflets et gardez le code bien net."));
     } finally {
       setPhotoBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -159,16 +160,16 @@ export function CameraScanner({
       width={520}
       footer={
         <>
-          {continuous && count > 0 && <span className="muted small" style={{ marginRight: "auto" }}>{count} code(s) lu(s)</span>}
-          <button className="btn btn-primary" onClick={onClose}>{continuous ? "Terminer" : "Fermer"}</button>
+          {continuous && count > 0 && <span className="muted small" style={{ marginRight: "auto" }}>{count}  {tl("code(s) lu(s)")}</span>}
+          <button className="btn btn-primary" onClick={onClose}>{continuous ? tl("Terminer") : tl("Fermer")}</button>
         </>
       }
     >
       {native ? (
         <div className="scanner-photo">
           <ScanLine size={42} strokeWidth={1.4} />
-          <p>Le scanner de l'application est ouvert. Visez le code-barres ou le QR code.</p>
-          <button className="btn btn-primary" onClick={() => requestNativeScan(title)}><Camera size={16} /> {count ? "Scanner un autre article" : "Rouvrir le scanner"}</button>
+          <p>{tl("Le scanner de l'application est ouvert. Visez le code-barres ou le QR code.")}</p>
+          <button className="btn btn-primary" onClick={() => requestNativeScan(title)}><Camera size={16} /> {count ? tl("Scanner un autre article") : tl("Rouvrir le scanner")}</button>
         </div>
       ) : live && !error ? (
         <div className="scanner-view">
@@ -176,10 +177,10 @@ export function CameraScanner({
           <div className="scanner-frame"><span /></div>
           <div className="scanner-tools">
             {torch !== null && (
-              <button className={`icon-btn round ${torch ? "on" : ""}`} onClick={toggleTorch} title="Lampe"><Flashlight size={18} /></button>
+              <button className={`icon-btn round ${torch ? "on" : ""}`} onClick={toggleTorch} title={tl("Lampe")}><Flashlight size={18} /></button>
             )}
             {devices.length > 1 && (
-              <button className="icon-btn round" onClick={nextCamera} title="Changer de caméra"><SwitchCamera size={18} /></button>
+              <button className="icon-btn round" onClick={nextCamera} title={tl("Changer de caméra")}><SwitchCamera size={18} /></button>
             )}
           </div>
         </div>
@@ -187,13 +188,11 @@ export function CameraScanner({
         <div className="scanner-photo">
           <Camera size={42} strokeWidth={1.4} />
           <p>
-            Prenez le code-barres ou le QR code en photo, bien net et centré : il sera lu automatiquement.
-          </p>
+            {tl("Prenez le code-barres ou le QR code en photo, bien net et centré : il sera lu automatiquement.")}</p>
           {!live && https && (
             <div className="alert alert-info small">
-              <Lock size={14} /> Pour scanner <strong>en direct</strong> (vidéo), ouvrez l'adresse sécurisée{" "}
-              <a href={https}>{https.replace(/\/#.*$/, "")}</a> puis acceptez l'avertissement de sécurité la première fois.
-            </div>
+              <Lock size={14} />  {tl("Pour scanner")} <strong>{tl("en direct")}</strong>  {tl("(vidéo), ouvrez l'adresse sécurisée")}{" "}
+              <a href={https}>{https.replace(/\/#.*$/, "")}</a>  {tl("puis acceptez l'avertissement de sécurité la première fois.")}</div>
           )}
         </div>
       )}
@@ -202,12 +201,12 @@ export function CameraScanner({
       {status && (
         <div className={`alert ${status.ok ? "alert-success" : "alert-danger"} scan-status`}>
           {status.ok ? <Check size={16} /> : null} <span className="mono">{status.code}</span>
-          {status.ok ? (continuous ? " — ajouté" : "") : " — non reconnu"}
+          {status.ok ? (continuous ? tl(" — ajouté") : "") : tl(" — non reconnu")}
         </div>
       )}
       <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
       <button className="btn btn-block" style={{ marginTop: 10 }} disabled={photoBusy} onClick={() => fileRef.current?.click()}>
-        <ImageUp size={16} /> {photoBusy ? "Lecture de la photo…" : live ? "Ou prendre / choisir une photo" : "Prendre une photo du code"}
+        <ImageUp size={16} /> {photoBusy ? tl("Lecture de la photo…") : live ? tl("Ou prendre / choisir une photo") : tl("Prendre une photo du code")}
       </button>
     </Modal>
   );

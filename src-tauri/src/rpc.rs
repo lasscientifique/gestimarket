@@ -182,6 +182,15 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
 
         // ───── Compte ─────
+        // Langue de l'utilisateur connecté (fr, en) : retenue pour ses prochaines connexions.
+        "set_my_lang" => run(Any, &|c, u| {
+            let lang = auth::valid_lang(&arg::<Option<String>>(&a, "lang")?);
+            c.execute("UPDATE users SET lang = ?1 WHERE id = ?2", rusqlite::params![lang, u.id])?;
+            let mut updated = u.clone();
+            updated.lang = lang;
+            state.update_user(origin, updated.clone());
+            out(updated)
+        }),
         "change_password" => run(Any, &|c, u| {
             out(auth::change_password(c, u, &arg::<String>(&a, "current")?, &arg::<String>(&a, "password")?)?)
         }),
@@ -230,8 +239,11 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(catalog::set_category_active(c, u, arg(&a, "id")?, arg(&a, "active")?)?)
         }),
         // Catalogue prédéfini et profils de commerce (lecture libre : aussi utilisé à la première configuration).
-        "business_profiles" => out(json!({ "profiles": templates::profiles(), "catalogue": templates::summaries() })),
-        "catalogue_tree" => out(templates::catalogue()),
+        "business_profiles" => {
+            let tree = templates::shop_catalogue(&state.conn())?;
+            out(json!({ "profiles": templates::profiles(), "catalogue": templates::summaries(&tree) }))
+        }
+        "catalogue_tree" => out(templates::shop_catalogue(&state.conn())?),
         "seed_catalogue" => run(Admin, &|c, u| out(templates::seed(c, u, &arg::<Vec<usize>>(&a, "indexes")?)?)),
         "import_categories" => run(Manager, &|c, u| out(templates::import_paths(c, u, arg(&a, "paths")?)?)),
         // Choix du type de commerce : enregistre le profil et ses fonctions, charge ses catégories si demandé.

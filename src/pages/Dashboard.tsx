@@ -7,6 +7,7 @@ import { useApp } from "../context/AppContext";
 import { Badge, Empty, Loading, PageHeader, StatCard } from "../components/ui";
 import { dateTime, fromMinor, money, paymentLabel, percent, qty, shortDay } from "../lib/format";
 import type { Dashboard } from "../types";
+import { locale, tl } from "../lib/i18n";
 
 export default function DashboardPage() {
   const { toast, user } = useApp();
@@ -35,62 +36,59 @@ export default function DashboardPage() {
     <div className="page">
       <PageHeader
         help="dashboard"
-        title={`Bonjour ${user?.full_name.split(" ")[0] ?? ""}`}
-        subtitle={new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+        title={tl("Bonjour {0}", [user?.full_name.split(" ")[0] ?? ""])}
+        subtitle={new Date().toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
         actions={
           <button className="btn" onClick={load}>
-            <RefreshCw size={16} /> Actualiser
-          </button>
+            <RefreshCw size={16} />  {tl("Actualiser")}</button>
         }
       />
 
       {noCashier && (
         <div className="alert alert-warning">
-          <strong>Aucun compte caissier.</strong> Par sécurité, l'administrateur et les gestionnaires ne vendent pas : créez au moins un compte
-          caissier pour encaisser. <Link to="/users">Créer un caissier →</Link>
+          <strong>{tl("Aucun compte caissier.")}</strong>  {tl("Par sécurité, l'administrateur et les gestionnaires ne vendent pas : créez au moins un compte caissier pour encaisser.")} <Link to="/users">{tl("Créer un caissier →")}</Link>
         </div>
       )}
 
       <div className="stats">
         <StatCard
-          label="Chiffre d'affaires du jour"
+          label={tl("Chiffre d'affaires du jour")}
           value={money(data.today_revenue)}
           icon={evolution !== null && evolution < 0 ? <TrendingDown size={18} /> : <TrendingUp size={18} />}
           tone="accent"
           hint={
             evolution === null ? (
-              "Pas de ventes hier"
+              tl("Pas de ventes hier")
             ) : (
               <span className={evolution >= 0 ? "text-success" : "text-danger"}>
                 {evolution >= 0 ? "+" : ""}
-                {percent(evolution)} vs hier
-              </span>
+                {percent(evolution)}  {tl("vs hier")}</span>
             )
           }
         />
-        <StatCard label="Ventes du jour" value={data.today_count} icon={<ShoppingBag size={18} />} hint={`Panier moyen : ${money(basket)}`} />
-        <StatCard label="Marge brute du jour" value={money(data.today_margin)} icon={<Wallet size={18} />} tone="success" hint={`Mois : ${money(data.month_margin)} (${percent(marginRate)})`} />
-        <StatCard label="CA du mois" value={money(data.month_revenue)} icon={<TrendingUp size={18} />} hint={`${data.month_count} ventes`} />
+        <StatCard label={tl("Ventes du jour")} value={data.today_count} icon={<ShoppingBag size={18} />} hint={tl("Panier moyen : {0}", [money(basket)])} />
+        <StatCard label={tl("Marge brute du jour")} value={money(data.today_margin)} icon={<Wallet size={18} />} tone="success" hint={tl("Mois : {0} ({1})", [money(data.month_margin), percent(marginRate)])} />
+        <StatCard label={tl("CA du mois")} value={money(data.month_revenue)} icon={<TrendingUp size={18} />} hint={`${data.month_count} ventes`} />
         <StatCard
-          label="Valeur du stock (achat)"
+          label={tl("Valeur du stock (achat)")}
           value={money(data.stock.value_cost)}
           icon={<Boxes size={18} />}
-          hint={`${data.stock.product_count} produits actifs`}
+          hint={tl("{0} produits actifs", [data.stock.product_count])}
         />
         <StatCard
-          label="Alertes stock"
+          label={tl("Alertes stock")}
           value={data.stock.low_stock_count + data.stock.out_of_stock_count}
           icon={<AlertTriangle size={18} />}
           tone={data.stock.out_of_stock_count > 0 ? "danger" : data.stock.low_stock_count > 0 ? "warning" : "default"}
-          hint={`${data.stock.out_of_stock_count} en rupture · ${data.stock.low_stock_count} sous le seuil`}
+          hint={tl("{0} en rupture · {1} sous le seuil", [data.stock.out_of_stock_count, data.stock.low_stock_count])}
         />
-        <StatCard label="Créances clients" value={money(data.customers_debt)} icon={<HandCoins size={18} />} tone={data.customers_debt > 0 ? "warning" : "default"} hint={<Link to="/customers">Voir les clients</Link>} />
+        <StatCard label={tl("Créances clients")} value={money(data.customers_debt)} icon={<HandCoins size={18} />} tone={data.customers_debt > 0 ? "warning" : "default"} hint={<Link to="/customers">{tl("Voir les clients")}</Link>} />
       </div>
 
       <div className="grid-2-1">
         <div className="card">
           <div className="card-header">
-            <h3>Ventes des 14 derniers jours</h3>
+            <h3>{tl("Ventes des 14 derniers jours")}</h3>
           </div>
           <div style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -103,9 +101,9 @@ export default function DashboardPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 12, fill: "var(--muted)" }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 12, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={70} tickFormatter={(v) => Number(v).toLocaleString("fr-FR")} />
+                <YAxis tick={{ fontSize: 12, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={70} tickFormatter={(v) => Number(v).toLocaleString(locale())} />
                 <Tooltip
-                  formatter={(v, name) => [Number(v).toLocaleString("fr-FR"), name === "ca" ? "Chiffre d'affaires" : "Marge"]}
+                  formatter={(v, name) => [Number(v).toLocaleString(locale()), name === "ca" ? tl("Chiffre d'affaires") : tl("Marge")]}
                   labelFormatter={(_, p) => (p?.[0]?.payload ? `${p[0].payload.date.split("-").reverse().join("/")} · ${p[0].payload.count} ventes` : "")}
                 />
                 <Area type="monotone" dataKey="ca" stroke="var(--accent)" strokeWidth={2} fill="url(#ca)" />
@@ -117,10 +115,10 @@ export default function DashboardPage() {
 
         <div className="card">
           <div className="card-header">
-            <h3>Meilleures ventes (7 jours)</h3>
+            <h3>{tl("Meilleures ventes (7 jours)")}</h3>
           </div>
           {data.top_products.length === 0 ? (
-            <Empty title="Aucune vente" />
+            <Empty title={tl("Aucune vente")} />
           ) : (
             <div className="rank-list">
               {data.top_products.map((p, i) => (
@@ -141,18 +139,18 @@ export default function DashboardPage() {
       <div className="grid-2">
         <div className="card">
           <div className="card-header">
-            <h3>Dernières ventes</h3>
-            <Link to="/sales" className="link">Tout voir</Link>
+            <h3>{tl("Dernières ventes")}</h3>
+            <Link to="/sales" className="link">{tl("Tout voir")}</Link>
           </div>
           {data.recent_sales.length === 0 ? (
-            <Empty title="Aucune vente pour le moment" />
+            <Empty title={tl("Aucune vente pour le moment")} />
           ) : (
             <table className="table compact">
               <tbody>
                 {data.recent_sales.map((s) => (
                   <tr key={s.id} className={s.status === "cancelled" ? "row-cancelled" : ""}>
                     <td><strong>{s.number}</strong><div className="muted small">{dateTime(s.created_at)}</div></td>
-                    <td>{s.customer_name ?? <span className="muted">Client de passage</span>}</td>
+                    <td>{s.customer_name ?? <span className="muted">{tl("Client de passage")}</span>}</td>
                     <td><Badge>{paymentLabel(s.payment_method)}</Badge></td>
                     <td className="num"><strong>{money(s.total)}</strong></td>
                   </tr>
@@ -164,11 +162,11 @@ export default function DashboardPage() {
 
         <div className="card">
           <div className="card-header">
-            <h3>Produits à réapprovisionner</h3>
-            <Link to="/stock" className="link">Gérer le stock</Link>
+            <h3>{tl("Produits à réapprovisionner")}</h3>
+            <Link to="/stock" className="link">{tl("Gérer le stock")}</Link>
           </div>
           {data.low_stock.length === 0 ? (
-            <Empty title="Aucune alerte">Tous les stocks sont au-dessus de leur seuil.</Empty>
+            <Empty title={tl("Aucune alerte")}>{tl("Tous les stocks sont au-dessus de leur seuil.")}</Empty>
           ) : (
             <table className="table compact">
               <tbody>
@@ -191,11 +189,11 @@ export default function DashboardPage() {
       <div className="grid-2">
         <div className="card">
           <div className="card-header">
-            <h3>Encaissements du jour</h3>
-            <Link to="/payments" className="link">Paiements mobiles</Link>
+            <h3>{tl("Encaissements du jour")}</h3>
+            <Link to="/payments" className="link">{tl("Paiements mobiles")}</Link>
           </div>
           {data.today_payments.length === 0 ? (
-            <Empty title="Aucun encaissement aujourd'hui" />
+            <Empty title={tl("Aucun encaissement aujourd'hui")} />
           ) : (
             <div className="bars">
               {data.today_payments.map((b) => {
@@ -215,11 +213,11 @@ export default function DashboardPage() {
         </div>
         <div className="card">
           <div className="card-header">
-            <h3>Péremption proche</h3>
-            <Link to="/stock" className="link">Voir tout</Link>
+            <h3>{tl("Péremption proche")}</h3>
+            <Link to="/stock" className="link">{tl("Voir tout")}</Link>
           </div>
           {data.expiring.length === 0 ? (
-            <Empty title="Aucun produit à surveiller" />
+            <Empty title={tl("Aucun produit à surveiller")} />
           ) : (
             <table className="table compact">
               <tbody>
@@ -229,7 +227,7 @@ export default function DashboardPage() {
                     <td className="num muted small">{qty(p.stock)} {p.unit}</td>
                     <td className="num">
                       <Badge tone={p.days_left < 0 ? "danger" : p.days_left <= 7 ? "danger" : "warning"}>
-                        {p.days_left < 0 ? `Périmé depuis ${-p.days_left} j` : p.days_left === 0 ? "Aujourd'hui" : `${p.days_left} j`}
+                        {p.days_left < 0 ? tl("Périmé depuis {0} j", [-p.days_left]) : p.days_left === 0 ? tl("Aujourd'hui") : `${p.days_left} j`}
                       </Badge>
                     </td>
                   </tr>

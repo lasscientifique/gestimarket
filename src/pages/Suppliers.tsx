@@ -5,6 +5,7 @@ import { useApp } from "../context/AppContext";
 import { Empty, Field, Modal, PageHeader } from "../components/ui";
 import { money } from "../lib/format";
 import type { Supplier } from "../types";
+import { tl } from "../lib/i18n";
 
 export default function SuppliersPage() {
   const { toast, confirm, askPin } = useApp();
@@ -19,9 +20,9 @@ export default function SuppliersPage() {
   }, [load]);
 
   const archive = async (s: Supplier) => {
-    if (!(await confirm({ title: "Archiver le fournisseur", message: `Archiver « ${s.name} » ?`, danger: true, confirmLabel: "Archiver" }))) return;
+    if (!(await confirm({ title: tl("Archiver le fournisseur"), message: tl("Archiver « {0} » ?", [s.name]), danger: true, confirmLabel: tl("Archiver") }))) return;
     try {
-      const pin = await askPin({ title: "Archiver le fournisseur", level: "manager" });
+      const pin = await askPin({ title: tl("Archiver le fournisseur"), level: "manager" });
       if (!pin) return;
       await api.archiveSupplier(s.id, pin);
       load();
@@ -33,16 +34,16 @@ export default function SuppliersPage() {
   return (
     <div className="page">
       <PageHeader
-        help="suppliers" title="Fournisseurs" subtitle={`${list.length} fournisseur(s)`} actions={<button className="btn btn-primary" onClick={() => setEditing("new")}><Plus size={16} /> Nouveau fournisseur</button>} />
+        help="suppliers" title={tl("Fournisseurs")} subtitle={tl("{0} fournisseur(s)", [list.length])} actions={<button className="btn btn-primary" onClick={() => setEditing("new")}><Plus size={16} />  {tl("Nouveau fournisseur")}</button>} />
       <div className="toolbar">
-        <div className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, contact ou téléphone…" /></div>
+        <div className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tl("Nom, contact ou téléphone…")} /></div>
       </div>
       <div className="card no-pad">
         {list.length === 0 ? (
-          <Empty title="Aucun fournisseur" />
+          <Empty title={tl("Aucun fournisseur")} />
         ) : (
           <table className="table">
-            <thead><tr><th>Fournisseur</th><th>Contact</th><th>Coordonnées</th><th className="num">Produits</th><th className="num">Total des achats</th><th></th></tr></thead>
+            <thead><tr><th>{tl("Fournisseur")}</th><th>{tl("Contact")}</th><th>{tl("Coordonnées")}</th><th className="num">{tl("Produits")}</th><th className="num">{tl("Total des achats")}</th><th></th></tr></thead>
             <tbody>
               {list.map((s) => (
                 <tr key={s.id} onDoubleClick={() => setEditing(s)}>
@@ -83,7 +84,7 @@ function SupplierForm({ supplier, onClose, onSaved }: { supplier: Supplier | nul
   const submit = async () => {
     try {
       await api.saveSupplier(supplier?.id ?? null, f);
-      toast.success("Fournisseur enregistré.");
+      toast.success(tl("Fournisseur enregistré."));
       onSaved();
     } catch (e) {
       toast.error(e);
@@ -91,17 +92,17 @@ function SupplierForm({ supplier, onClose, onSaved }: { supplier: Supplier | nul
   };
   return (
     <Modal
-      title={supplier ? "Modifier le fournisseur" : "Nouveau fournisseur"}
+      title={supplier ? tl("Modifier le fournisseur") : tl("Nouveau fournisseur")}
       onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Annuler</button><button className="btn btn-primary" disabled={!f.name.trim()} onClick={submit}>Enregistrer</button></>}
+      footer={<><button className="btn" onClick={onClose}>{tl("Annuler")}</button><button className="btn btn-primary" disabled={!f.name.trim()} onClick={submit}>{tl("Enregistrer")}</button></>}
     >
       <div className="form-grid">
-        <Field label="Raison sociale *" span={2}><input value={f.name} onChange={set("name")} autoFocus /></Field>
-        <Field label="Personne à contacter"><input value={f.contact} onChange={set("contact")} /></Field>
-        <Field label="Téléphone"><input value={f.phone} onChange={set("phone")} /></Field>
-        <Field label="E-mail"><input value={f.email} onChange={set("email")} /></Field>
-        <Field label="Adresse"><input value={f.address} onChange={set("address")} /></Field>
-        <Field label="Notes" span={2}><textarea rows={2} value={f.notes} onChange={set("notes")} /></Field>
+        <Field label={tl("Raison sociale *")} span={2}><input value={f.name} onChange={set("name")} autoFocus /></Field>
+        <Field label={tl("Personne à contacter")}><input value={f.contact} onChange={set("contact")} /></Field>
+        <Field label={tl("Téléphone")}><input value={f.phone} onChange={set("phone")} /></Field>
+        <Field label={tl("E-mail")}><input value={f.email} onChange={set("email")} /></Field>
+        <Field label={tl("Adresse")}><input value={f.address} onChange={set("address")} /></Field>
+        <Field label={tl("Notes")} span={2}><textarea rows={2} value={f.notes} onChange={set("notes")} /></Field>
       </div>
     </Modal>
   );

@@ -4,6 +4,8 @@
  */
 import { useSyncExternalStore } from "react";
 import { rpc, getNetwork, isRemote, isTauri } from "./transport";
+import { tl } from "./i18n";
+
 
 const ID_KEY = "gm-poste-id";
 const NAME_KEY = "gm-poste-name";
@@ -36,7 +38,7 @@ export function deviceLabel(): string {
   if (/iPad|Macintosh.*Mobile|Macintosh.*Safari.*(?=.*Version)/.test(ua) && navigator.maxTouchPoints > 1) return `iPad${app}`;
   if (/iPhone/.test(ua)) return `iPhone${app}`;
   const android = ua.match(/Android[^;]*;\s*([^;)]+?)(?:\sBuild|\))/);
-  if (/Android/.test(ua)) return `${/Mobile/.test(ua) ? "Téléphone" : "Tablette"} Android${android ? ` (${android[1].trim()})` : ""}${app}`;
+  if (/Android/.test(ua)) return tl("{0} Android{1}{2}", [/Mobile/.test(ua) ? "Téléphone" : "Tablette", android ? ` (${android[1].trim()})` : "", app]);
   if (/Windows/.test(ua)) return "PC Windows (navigateur)";
   if (/Mac OS X/.test(ua)) return "Mac (navigateur)";
   if (/Linux/.test(ua)) return "Linux (navigateur)";
@@ -104,7 +106,7 @@ async function beat() {
     const r = await rpc<{ online: number; route?: string; internet_ok?: boolean | null }>("poste_heartbeat", {
       // L'écran client partage le stockage de sa caisse : identifiant distinct.
       id: display ? `${posteId()}-ecran` : posteId(),
-      name: display ? `Écran client — ${nameOf()}` : nameOf(),
+      name: display ? tl("Écran client — {0}", [nameOf()]) : nameOf(),
       kind: deviceKind(),
       device: deviceLabel(),
       mode: isTauri ? getNetwork()?.config.mode ?? "local" : "browser",

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { LanguageSwitch } from "./LanguageSwitch";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -38,6 +39,7 @@ import type { Role } from "../types";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { ProductFinderModal } from "./ProductFinder";
 import { ConnChip } from "../pages/Poste";
+import { tl } from "../lib/i18n";
 
 interface NavItem {
   to: string;
@@ -60,38 +62,38 @@ const A: Role[] = ["admin", "manager", "cashier"];
 
 const NAV: { title: string; items: NavItem[] }[] = [
   {
-    title: "Ventes",
+    title: tl("Ventes"),
     items: [
-      { to: "/dashboard", label: "Tableau de bord", short: "Accueil", icon: <LayoutDashboard size={18} />, roles: ["admin"] },
-      { to: "/my-dashboard", label: "Mon tableau de bord", short: "Mes stats", icon: <LayoutDashboard size={18} />, roles: ["cashier"] },
-      { to: "/pos", label: "Caisse", icon: <ShoppingCart size={18} />, roles: ["cashier"] },
-      { to: "/finder", label: "Localiser un produit", short: "Localiser", icon: <ScanSearch size={18} />, roles: A },
-      { to: "/sales", label: "Historique des ventes", short: "Ventes", icon: <Receipt size={18} />, roles: A },
-      { to: "/cash", label: "Sessions de caisse", icon: <Wallet size={18} />, roles: A },
-      { to: "/customers", label: "Clients", icon: <Users size={18} />, roles: A },
+      { to: "/dashboard", label: tl("Tableau de bord"), short: tl("Accueil"), icon: <LayoutDashboard size={18} />, roles: ["admin"] },
+      { to: "/my-dashboard", label: tl("Mon tableau de bord"), short: tl("Mes stats"), icon: <LayoutDashboard size={18} />, roles: ["cashier"] },
+      { to: "/pos", label: tl("Caisse"), icon: <ShoppingCart size={18} />, roles: ["cashier"] },
+      { to: "/finder", label: tl("Localiser un produit"), short: tl("Localiser"), icon: <ScanSearch size={18} />, roles: A },
+      { to: "/sales", label: tl("Historique des ventes"), short: tl("Ventes"), icon: <Receipt size={18} />, roles: A },
+      { to: "/cash", label: tl("Sessions de caisse"), icon: <Wallet size={18} />, roles: A },
+      { to: "/customers", label: tl("Clients"), icon: <Users size={18} />, roles: A },
     ],
   },
   {
-    title: "Magasin",
+    title: tl("Magasin"),
     items: [
-      { to: "/products", label: "Produits", icon: <Package size={18} />, roles: M },
-      { to: "/categories", label: "Catégories", icon: <FolderTree size={18} />, roles: M },
-      { to: "/locations", label: "Plan de la boutique", short: "Plan", icon: <LayoutGrid size={18} />, roles: M },
-      { to: "/stock", label: "Stock & inventaire", short: "Stock", icon: <Boxes size={18} />, roles: M },
-      { to: "/purchases", label: "Achats / réceptions", icon: <Truck size={18} />, roles: M },
-      { to: "/suppliers", label: "Fournisseurs", icon: <Factory size={18} />, roles: M },
+      { to: "/products", label: tl("Produits"), icon: <Package size={18} />, roles: M },
+      { to: "/categories", label: tl("Catégories"), icon: <FolderTree size={18} />, roles: M },
+      { to: "/locations", label: tl("Plan de la boutique"), short: tl("Plan"), icon: <LayoutGrid size={18} />, roles: M },
+      { to: "/stock", label: tl("Stock & inventaire"), short: tl("Stock"), icon: <Boxes size={18} />, roles: M },
+      { to: "/purchases", label: tl("Achats / réceptions"), icon: <Truck size={18} />, roles: M },
+      { to: "/suppliers", label: tl("Fournisseurs"), icon: <Factory size={18} />, roles: M },
     ],
   },
   {
-    title: "Pilotage",
+    title: tl("Pilotage"),
     items: [
-      { to: "/reports", label: "Rapports", icon: <BarChart3 size={18} />, roles: ["admin"] },
-      { to: "/payments", label: "Paiements mobiles", icon: <Smartphone size={18} />, roles: ["admin"] },
-      { to: "/users", label: "Utilisateurs", icon: <UserCog size={18} />, roles: ["admin"] },
-      { to: "/audit", label: "Journal d'activité", icon: <ScrollText size={18} />, roles: ["admin"] },
-      { to: "/poste", label: "Poste & réseau", icon: <Network size={18} />, roles: ["admin", "manager", "cashier"] },
-      { to: "/settings", label: "Paramètres", icon: <SettingsIcon size={18} />, roles: ["admin"] },
-      { to: "/licence", label: "Abonnement & licence", short: "Licence", icon: <BadgeCheck size={18} />, roles: ["admin"] },
+      { to: "/reports", label: tl("Rapports"), icon: <BarChart3 size={18} />, roles: ["admin"] },
+      { to: "/payments", label: tl("Paiements mobiles"), icon: <Smartphone size={18} />, roles: ["admin"] },
+      { to: "/users", label: tl("Utilisateurs"), icon: <UserCog size={18} />, roles: ["admin"] },
+      { to: "/audit", label: tl("Journal d'activité"), icon: <ScrollText size={18} />, roles: ["admin"] },
+      { to: "/poste", label: tl("Poste & réseau"), icon: <Network size={18} />, roles: ["admin", "manager", "cashier"] },
+      { to: "/settings", label: tl("Paramètres"), icon: <SettingsIcon size={18} />, roles: ["admin"] },
+      { to: "/licence", label: tl("Abonnement & licence"), short: tl("Licence"), icon: <BadgeCheck size={18} />, roles: ["admin"] },
     ],
   },
 ];
@@ -161,38 +163,38 @@ export function Layout({ children }: { children: ReactNode }) {
     <div className={`app-shell ${collapsed ? "drawer-collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
       {/* Barre du haut (téléphone / tablette) */}
       <header className="mobile-topbar">
-        <button className="icon-btn" onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu"><Menu size={22} /></button>
+        <button className="icon-btn" onClick={() => setMobileOpen(true)} aria-label={tl("Ouvrir le menu")}><Menu size={22} /></button>
         <BrandLogo size={30} className="brand-logo" />
         <div className="mobile-title">
           <strong>{current?.label ?? settings.shop_name}</strong>
-          <span>{settings.shop_name || "GestiMarket"}</span>
+          <span>{settings.shop_name || tl("GestiMarket")}</span>
         </div>
-        <NavLink to="/poste" className="conn-link mobile-conn" aria-label="Poste & réseau"><ConnChip compact /></NavLink>
-        <button className="icon-btn" onClick={() => setFinderOpen(true)} aria-label="Où est le produit ?"><MapPin size={20} /></button>
+        <NavLink to="/poste" className="conn-link mobile-conn" aria-label={tl("Poste & réseau")}><ConnChip compact /></NavLink>
+        <button className="icon-btn" onClick={() => setFinderOpen(true)} aria-label={tl("Où est le produit ?")}><MapPin size={20} /></button>
         <div className={`avatar sm role-${user.role}`} onClick={() => setPwdOpen(true)}>{initials}</div>
       </header>
       <div className="mobile-overlay" onClick={() => setMobileOpen(false)} />
       <aside className="sidebar">
-        <button className="icon-btn light mobile-close" onClick={() => setMobileOpen(false)} aria-label="Fermer le menu"><X size={20} /></button>
+        <button className="icon-btn light mobile-close" onClick={() => setMobileOpen(false)} aria-label={tl("Fermer le menu")}><X size={20} /></button>
         <div className="brand">
           <BrandLogo size={collapsed ? 40 : 46} className="brand-logo" />
           {!collapsed && (
             <div className="brand-text">
-              <div className="brand-name" title={settings.shop_name}>{settings.shop_name || "GestiMarket"}</div>
-              <div className="brand-sub">{settings.shop_address || "GestiMarket"}</div>
+              <div className="brand-name" title={settings.shop_name}>{settings.shop_name || tl("GestiMarket")}</div>
+              <div className="brand-sub">{settings.shop_address || tl("GestiMarket")}</div>
             </div>
           )}
-          <button className="icon-btn light drawer-toggle" onClick={toggleDrawer} title={collapsed ? "Déplier le menu" : "Replier le menu"}>
+          <button className="icon-btn light drawer-toggle" onClick={toggleDrawer} title={collapsed ? tl("Déplier le menu") : tl("Replier le menu")}>
             {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
           </button>
         </div>
 
-        <button className="quick-find" onClick={() => setFinderOpen(true)} title="Où se trouve un produit ? (Ctrl + K)">
+        <button className="quick-find" onClick={() => setFinderOpen(true)} title={tl("Où se trouve un produit ? (Ctrl + K)")}>
           <MapPin size={16} />
-          {!collapsed && <><span>Où est le produit ?</span><kbd className="kbd dark">Ctrl K</kbd></>}
+          {!collapsed && <><span>{tl("Où est le produit ?")}</span><kbd className="kbd dark">{tl("Ctrl K")}</kbd></>}
         </button>
 
-        <NavLink to="/poste" className="conn-link" title="Poste & réseau : état de la liaison avec le serveur">
+        <NavLink to="/poste" className="conn-link" title={tl("Poste & réseau : état de la liaison avec le serveur")}>
           <ConnChip compact={collapsed} />
         </NavLink>
 
@@ -223,17 +225,18 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
           )}
           <div className="user-actions">
-            <button className="icon-btn light" title={theme === "dark" ? "Thème clair" : "Thème sombre"} onClick={toggleTheme}>
+            <LanguageSwitch compact light />
+            <button className="icon-btn light" title={theme === "dark" ? tl("Thème clair") : tl("Thème sombre")} onClick={toggleTheme}>
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button className="icon-btn light" title="Mon compte : mot de passe et code PIN" onClick={() => setPwdOpen(true)}>
+            <button className="icon-btn light" title={tl("Mon compte : mot de passe et code PIN")} onClick={() => setPwdOpen(true)}>
               <KeyRound size={16} />
             </button>
             <button
               className="icon-btn light"
-              title="Se déconnecter (changer de caissier)"
+              title={tl("Se déconnecter (changer de caissier)")}
               onClick={async () => {
-                if (await confirm({ title: "Déconnexion", message: "Voulez-vous vous déconnecter ?", confirmLabel: "Se déconnecter" })) await logout();
+                if (await confirm({ title: tl("Déconnexion"), message: tl("Voulez-vous vous déconnecter ?"), confirmLabel: tl("Se déconnecter") })) await logout();
               }}
             >
               <LogOut size={16} />
@@ -256,7 +259,7 @@ export function Layout({ children }: { children: ReactNode }) {
           ))}
           <button className="mobile-tab" onClick={() => setMobileOpen(true)}>
             <Menu size={18} />
-            <span>Menu</span>
+            <span>{tl("Menu")}</span>
           </button>
         </nav>
       )}

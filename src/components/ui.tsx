@@ -3,6 +3,7 @@ import { X, Inbox, Loader2, ImagePlus, Trash2, MapPin, Package } from "lucide-re
 import { chooseAndUploadImage, mediaUrl } from "../lib/media";
 import { locationText } from "../lib/format";
 import { PageHelpButton } from "./Help";
+import { tl } from "../lib/i18n";
 
 export function PageHeader({ title, subtitle, actions, help }: { title: string; subtitle?: ReactNode; actions?: ReactNode; help?: string }) {
   return (
@@ -45,7 +46,7 @@ export function Modal({
       <div className="modal" style={{ width }} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="modal-header">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Fermer">
+          <button className="icon-btn" onClick={onClose} aria-label={tl("Fermer")}>
             <X size={18} />
           </button>
         </div>
@@ -81,7 +82,7 @@ export function StatCard({
   );
 }
 
-export function Empty({ title = "Aucun élément", children }: { title?: string; children?: ReactNode }) {
+export function Empty({ title = tl("Aucun élément"), children }: { title?: string; children?: ReactNode }) {
   return (
     <div className="empty">
       <Inbox size={36} strokeWidth={1.5} />
@@ -184,18 +185,17 @@ export function ImageField({
       <span className="field-label">{label}</span>
       <div className="image-field-row">
         <button type="button" className="image-drop" style={{ width: size, height: size }} onClick={choose} disabled={busy}>
-          {url ? <img src={url} alt="" /> : busy ? <Loader2 className="spin" size={22} /> : <><ImagePlus size={24} /><span>Ajouter</span></>}
+          {url ? <img src={url} alt="" /> : busy ? <Loader2 className="spin" size={22} /> : <><ImagePlus size={24} /><span>{tl("Ajouter")}</span></>}
         </button>
         <div className="image-field-actions">
           <button type="button" className="btn btn-sm" onClick={choose} disabled={busy}>
-            <ImagePlus size={14} /> {value ? "Changer" : "Choisir une image"}
+            <ImagePlus size={14} /> {value ? tl("Changer") : tl("Choisir une image")}
           </button>
           {value && (
             <button type="button" className="btn btn-sm btn-danger-outline" onClick={() => onChange(null)}>
-              <Trash2 size={14} /> Retirer
-            </button>
+              <Trash2 size={14} />  {tl("Retirer")}</button>
           )}
-          <span className="field-hint">JPEG, PNG ou WebP — redimensionnée automatiquement.</span>
+          <span className="field-hint">{tl("JPEG, PNG ou WebP — redimensionnée automatiquement.")}</span>
           {error && <span className="text-danger small">{error}</span>}
         </div>
       </div>
@@ -213,7 +213,7 @@ export function LocationBadge({
   short?: boolean;
   big?: boolean;
 }) {
-  if (!p.bloc) return <span className={`loc-badge none ${big ? "big" : ""}`}><MapPin size={big ? 16 : 12} /> Non rangé</span>;
+  if (!p.bloc) return <span className={`loc-badge none ${big ? "big" : ""}`}><MapPin size={big ? 16 : 12} />  {tl("Non rangé")}</span>;
   const others = p.other_places ?? 0;
   return (
     <span className={`loc-badge ${big ? "big" : ""}`} title={locationText(p) + (others ? ` (+ ${others} autre(s) emplacement(s))` : "")}>

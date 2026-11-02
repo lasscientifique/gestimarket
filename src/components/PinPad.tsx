@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Delete, ShieldCheck, X, Loader2 } from "lucide-react";
+import { tl } from "../lib/i18n";
 
 /** Pavé numérique tactile (code PIN, montants). */
 export function NumPad({ onKey, extra }: { onKey: (k: string) => void; extra?: string }) {
@@ -16,9 +17,9 @@ export function NumPad({ onKey, extra }: { onKey: (k: string) => void; extra?: s
 }
 
 export const LEVEL_LABELS: Record<string, string> = {
-  cashier: "votre code PIN",
-  manager: "le code PIN d'un gestionnaire ou de l'administrateur",
-  admin: "le code PIN de l'administrateur",
+  cashier: tl("votre code PIN"),
+  manager: tl("le code PIN d'un gestionnaire ou de l'administrateur"),
+  admin: tl("le code PIN de l'administrateur"),
 };
 
 /**
@@ -92,10 +93,10 @@ export function PinDialog({
   return (
     <div className="modal-backdrop pin-backdrop" onMouseDown={onCancel}>
       <div className={`pin-dialog ${shake ? "shake" : ""}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
-        <button className="icon-btn pin-close" onClick={onCancel} aria-label="Annuler"><X size={18} /></button>
+        <button className="icon-btn pin-close" onClick={onCancel} aria-label={tl("Annuler")}><X size={18} /></button>
         <div className="pin-icon"><ShieldCheck size={28} /></div>
         <h2>{title}</h2>
-        <p className="muted">{message ?? <>Confirmez avec {LEVEL_LABELS[level] ?? "votre code PIN"}.</>}</p>
+        <p className="muted">{message ?? <>{tl("Confirmez avec")} {LEVEL_LABELS[level] ?? tl("votre code PIN")}.</>}</p>
         <div className="pin-dots">
           {[0, 1, 2, 3, 4, 5].map((i) => (
             <span key={i} className={`pin-dot ${i < pin.length ? "on" : ""} ${i >= 4 ? "opt" : ""}`} />
@@ -104,8 +105,7 @@ export function PinDialog({
         <div className="pin-error">{busy ? <Loader2 className="spin" size={16} /> : error}</div>
         <NumPad onKey={press} extra="C" />
         <button className="btn btn-primary btn-lg btn-block" disabled={pin.length < 4 || busy} onClick={() => submit(pin)}>
-          Valider
-        </button>
+          {tl("Valider")}</button>
       </div>
     </div>
   );

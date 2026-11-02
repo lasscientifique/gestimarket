@@ -29,6 +29,8 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm run typecheck
+      - name: Traductions (anglais)
+        run: node scripts/i18n.mjs check && python3 scripts/i18n_messages.py --check
       - name: cargo test
         working-directory: src-tauri
         run: |

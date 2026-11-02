@@ -26,6 +26,7 @@ import { exportCsv } from "../lib/files";
 import { parseCsv } from "../lib/csv";
 import { toCsv } from "../lib/format";
 import type { Category } from "../types";
+import { tl } from "../lib/i18n";
 
 const COLORS = ["#0f766e", "#2563eb", "#7c3aed", "#db2777", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#64748b"];
 
@@ -102,7 +103,7 @@ export default function CategoriesPage() {
   const toggleActive = async (c: Category) => {
     try {
       await api.setCategoryActive(c.id, !c.active);
-      toast.success(c.active ? `« ${c.name} » est masquée en caisse.` : `« ${c.name} » est de nouveau visible.`);
+      toast.success(c.active ? tl("« {0} » est masquée en caisse.", [c.name]) : tl("« {0} » est de nouveau visible.", [c.name]));
       load();
     } catch (e) {
       toast.error(e);
@@ -111,15 +112,13 @@ export default function CategoriesPage() {
 
   const remove = async (c: Category) => {
     const sub = subtreeIds(categories, c.id).size - 1;
-    const msg = `Supprimer « ${c.name} »${sub ? ` et ses ${sub} sous-catégorie(s)` : ""} ? ${
-      c.product_count ? `Les ${c.product_count} produit(s) concerné(s) seront conservés, sans catégorie.` : "Aucun produit n'est concerné."
-    }`;
-    if (!(await confirm({ title: "Supprimer la catégorie", message: msg, danger: true, confirmLabel: "Supprimer" }))) return;
+    const msg = tl("Supprimer « {0} »{1} ? {2}", [c.name, sub ? ` et ses ${sub} sous-catégorie(s)` : "", c.product_count ? `Les ${c.product_count} produit(s) concerné(s) seront conservés, sans catégorie.` : "Aucun produit n'est concerné."]);
+    if (!(await confirm({ title: tl("Supprimer la catégorie"), message: msg, danger: true, confirmLabel: tl("Supprimer") }))) return;
     try {
-      const pin = await askPin({ title: "Supprimer la catégorie", level: "manager" });
+      const pin = await askPin({ title: tl("Supprimer la catégorie"), level: "manager" });
       if (!pin) return;
       await api.deleteCategory(c.id, pin);
-      toast.success("Catégorie supprimée.");
+      toast.success(tl("Catégorie supprimée."));
       load();
     } catch (e) {
       toast.error(e);
@@ -132,7 +131,7 @@ export default function CategoriesPage() {
       categories.map((c) => [c.path.split(" › ").join(" > "), c.depth + 1, c.product_count, c.active ? "oui" : "non"]),
     );
     try {
-      if (await exportCsv("categories.csv", csv)) toast.success("Export terminé.");
+      if (await exportCsv("categories.csv", csv)) toast.success(tl("Export terminé."));
     } catch (e) {
       toast.error(e);
     }
@@ -152,9 +151,9 @@ export default function CategoriesPage() {
           return cells[0].includes(">") || cells[0].includes("›") ? cells[0].replace(/›/g, ">") : cells.filter((x) => !/^\d+$/.test(x) && !/^(oui|non)$/i.test(x)).join(" > ");
         })
         .filter(Boolean);
-      if (!paths.length) return toast.error("Aucune catégorie trouvée dans ce fichier.");
+      if (!paths.length) return toast.error(tl("Aucune catégorie trouvée dans ce fichier."));
       const n = await api.importCategories(paths);
-      toast.success(`${n} catégorie(s) créée(s) (${paths.length} ligne(s) lue(s)).`);
+      toast.success(tl("{0} catégorie(s) créée(s) ({1} ligne(s) lue(s)).", [n, paths.length]));
       load();
     } catch (e) {
       toast.error(e);
@@ -165,65 +164,63 @@ export default function CategoriesPage() {
     <div className="page">
       <PageHeader
         help="categories"
-        title="Catégories"
-        subtitle="Catégorie → sous-catégorie → famille… sans limite de niveaux"
+        title={tl("Catégories")}
+        subtitle={tl("Catégorie → sous-catégorie → famille… sans limite de niveaux")}
         actions={
           <>
             {isAdmin && (
               <button className="btn" onClick={() => setCatalogueOpen(true)}>
-                <Library size={16} /> Charger le catalogue
-              </button>
+                <Library size={16} />  {tl("Charger le catalogue")}</button>
             )}
-            <button className="btn" onClick={doImport}><Upload size={16} /> Importer</button>
-            <button className="btn" onClick={doExport}><Download size={16} /> Exporter</button>
+            <button className="btn" onClick={doImport}><Upload size={16} />  {tl("Importer")}</button>
+            <button className="btn" onClick={doExport}><Download size={16} />  {tl("Exporter")}</button>
             <button className="btn btn-primary" onClick={() => setEditing({ category: null, parent: null })}>
-              <Plus size={16} /> Nouvelle catégorie
-            </button>
+              <Plus size={16} />  {tl("Nouvelle catégorie")}</button>
           </>
         }
       />
 
       <div className="stats">
-        <StatCard label="Catégories principales" value={String(roots)} icon={<FolderTree size={20} />} />
-        <StatCard label="Total (tous niveaux)" value={String(categories.length)} icon={<FolderTree size={20} />} tone="accent" />
-        <StatCard label="Catégories vides" value={String(empty)} icon={<PackageX size={20} />} tone={empty ? "warning" : undefined} />
-        <button className="stat-link" onClick={() => navigate("/products")} title="Voir dans Produits (filtre « Sans catégorie »)">
-          <StatCard label="Produits sans catégorie" value={String(noCategory)} icon={<PackageX size={20} />} tone={noCategory ? "danger" : "success"} />
+        <StatCard label={tl("Catégories principales")} value={String(roots)} icon={<FolderTree size={20} />} />
+        <StatCard label={tl("Total (tous niveaux)")} value={String(categories.length)} icon={<FolderTree size={20} />} tone="accent" />
+        <StatCard label={tl("Catégories vides")} value={String(empty)} icon={<PackageX size={20} />} tone={empty ? "warning" : undefined} />
+        <button className="stat-link" onClick={() => navigate("/products")} title={tl("Voir dans Produits (filtre « Sans catégorie »)")}>
+          <StatCard label={tl("Produits sans catégorie")} value={String(noCategory)} icon={<PackageX size={20} />} tone={noCategory ? "danger" : "success"} />
         </button>
       </div>
 
       <div className="toolbar">
         <div className="search-box">
           <Search size={16} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher une catégorie…" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tl("Rechercher une catégorie…")} />
         </div>
         <div className="segmented inline-seg">
-          <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Toutes</button>
-          <button className={filter === "empty" ? "active" : ""} onClick={() => setFilter("empty")}>Vides ({empty})</button>
-          <button className={filter === "hidden" ? "active" : ""} onClick={() => setFilter("hidden")}>Masquées ({hidden})</button>
+          <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{tl("Toutes")}</button>
+          <button className={filter === "empty" ? "active" : ""} onClick={() => setFilter("empty")}>{tl("Vides (")}{empty})</button>
+          <button className={filter === "hidden" ? "active" : ""} onClick={() => setFilter("hidden")}>{tl("Masquées (")}{hidden})</button>
         </div>
-        <button className="btn btn-sm" onClick={() => setCollapsed(new Set())}>Tout déplier</button>
-        <button className="btn btn-sm" onClick={() => setCollapsed(new Set(categories.filter((c) => c.children_count > 0).map((c) => c.id)))}>Tout replier</button>
+        <button className="btn btn-sm" onClick={() => setCollapsed(new Set())}>{tl("Tout déplier")}</button>
+        <button className="btn btn-sm" onClick={() => setCollapsed(new Set(categories.filter((c) => c.children_count > 0).map((c) => c.id)))}>{tl("Tout replier")}</button>
       </div>
 
       <div className="card no-pad">
         {categories.length === 0 ? (
-          <Empty title="Aucune catégorie">
-            Créez votre première catégorie{isAdmin && <> ou chargez le catalogue prédéfini (32 catégories et leurs sous-catégories)</>}.
+          <Empty title={tl("Aucune catégorie")}>
+            {tl("Créez votre première catégorie")}{isAdmin && <>  {tl("ou chargez le catalogue prédéfini (32 catégories et leurs sous-catégories)")}</>}.
             {isAdmin && (
               <div style={{ marginTop: 12 }}>
-                <button className="btn btn-primary" onClick={() => setCatalogueOpen(true)}><Library size={16} /> Charger le catalogue</button>
+                <button className="btn btn-primary" onClick={() => setCatalogueOpen(true)}><Library size={16} />  {tl("Charger le catalogue")}</button>
               </div>
             )}
           </Empty>
         ) : rows.length === 0 ? (
-          <Empty title="Aucun résultat" />
+          <Empty title={tl("Aucun résultat")} />
         ) : (
           <div className="tree-list">
             {rows.map((c) => (
               <div key={c.id} className={`tree-row depth-${Math.min(c.depth, 4)} ${c.active ? "" : "is-hidden"}`} style={{ paddingLeft: 12 + c.depth * 26 }}>
                 {c.children_count > 0 ? (
-                  <button className="icon-btn tree-toggle" onClick={() => toggleCollapse(c.id)} aria-label="Déplier / replier">
+                  <button className="icon-btn tree-toggle" onClick={() => toggleCollapse(c.id)} aria-label={tl("Déplier / replier")}>
                     {collapsed.has(c.id) && !search && filter === "all" ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                   </button>
                 ) : (
@@ -233,20 +230,19 @@ export default function CategoriesPage() {
                 <div className="tree-main">
                   <span className={c.depth === 0 ? "tree-name root" : "tree-name"}>{c.name}</span>
                   <span className="muted small">
-                    {c.children_count > 0 && <>{c.children_count} sous-catégorie(s) · </>}
-                    {c.product_count} produit(s)
-                    {c.direct_count !== c.product_count && c.direct_count > 0 && <> dont {c.direct_count} ici</>}
+                    {c.children_count > 0 && <>{c.children_count}  {tl("sous-catégorie(s) ·")} </>}
+                    {c.product_count}  {tl("produit(s)")}{c.direct_count !== c.product_count && c.direct_count > 0 && <> dont {c.direct_count} ici</>}
                   </span>
                 </div>
-                {!c.active && <Badge tone="warning">Masquée</Badge>}
-                {c.product_count === 0 && c.active && <Badge>Vide</Badge>}
+                {!c.active && <Badge tone="warning">{tl("Masquée")}</Badge>}
+                {c.product_count === 0 && c.active && <Badge>{tl("Vide")}</Badge>}
                 <div className="tree-actions">
-                  <button className="icon-btn" title="Ajouter une sous-catégorie" onClick={() => setEditing({ category: null, parent: c.id })}><Plus size={15} /></button>
-                  <button className="icon-btn" title="Modifier / déplacer" onClick={() => setEditing({ category: c, parent: c.parent_id })}><Pencil size={15} /></button>
-                  <button className="icon-btn" title={c.active ? "Masquer en caisse" : "Afficher"} onClick={() => toggleActive(c)}>
+                  <button className="icon-btn" title={tl("Ajouter une sous-catégorie")} onClick={() => setEditing({ category: null, parent: c.id })}><Plus size={15} /></button>
+                  <button className="icon-btn" title={tl("Modifier / déplacer")} onClick={() => setEditing({ category: c, parent: c.parent_id })}><Pencil size={15} /></button>
+                  <button className="icon-btn" title={c.active ? tl("Masquer en caisse") : tl("Afficher")} onClick={() => toggleActive(c)}>
                     {c.active ? <Eye size={15} /> : <EyeOff size={15} />}
                   </button>
-                  <button className="icon-btn danger" title="Supprimer" onClick={() => remove(c)}><Trash2 size={15} /></button>
+                  <button className="icon-btn danger" title={tl("Supprimer")} onClick={() => remove(c)}><Trash2 size={15} /></button>
                 </div>
               </div>
             ))}
@@ -267,10 +263,10 @@ export default function CategoriesPage() {
         />
       )}
       {catalogueOpen && (
-        <Modal title={<>Charger le catalogue de catégories <HelpTip k="business_type" /></>} onClose={() => setCatalogueOpen(false)} width={860}>
+        <Modal title={<>{tl("Charger le catalogue de catégories")} <HelpTip k="business_type" /></>} onClose={() => setCatalogueOpen(false)} width={860}>
           <CataloguePicker
             onDone={(n) => {
-              toast.success(n ? `${n} catégorie(s) ajoutée(s).` : "Ces catégories existent déjà : rien à ajouter.");
+              toast.success(n ? tl("{0} catégorie(s) ajoutée(s).", [n]) : tl("Ces catégories existent déjà : rien à ajouter."));
               setCatalogueOpen(false);
               load();
             }}
@@ -309,7 +305,7 @@ function CategoryForm({
     setBusy(true);
     try {
       await api.saveCategory(category?.id ?? null, { name, color, image_id: image, parent_id: parent, sort_order: Number(order) || 0, active });
-      toast.success(category ? "Catégorie modifiée." : "Catégorie ajoutée.");
+      toast.success(category ? tl("Catégorie modifiée.") : tl("Catégorie ajoutée."));
       onSaved(again);
       if (again) {
         setName("");
@@ -324,33 +320,32 @@ function CategoryForm({
 
   return (
     <Modal
-      title={category ? `Modifier « ${category.name} »` : parent ? "Nouvelle sous-catégorie" : "Nouvelle catégorie"}
+      title={category ? tl("Modifier « {0} »", [category.name]) : parent ? tl("Nouvelle sous-catégorie") : tl("Nouvelle catégorie")}
       onClose={onClose}
       width={620}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Fermer</button>
-          {!category && <button className="btn" disabled={busy || !name.trim()} onClick={() => save(true)}>Enregistrer et ajouter une autre</button>}
-          <button className="btn btn-primary" disabled={busy || !name.trim()} onClick={() => save(false)}>Enregistrer</button>
+          <button className="btn" onClick={onClose}>{tl("Fermer")}</button>
+          {!category && <button className="btn" disabled={busy || !name.trim()} onClick={() => save(true)}>{tl("Enregistrer et ajouter une autre")}</button>}
+          <button className="btn btn-primary" disabled={busy || !name.trim()} onClick={() => save(false)}>{tl("Enregistrer")}</button>
         </>
       }
     >
       <div className="cat-editor">
-        <ImageField value={image} onChange={setImage} size={96} label="Photo / icône" maxSize={300} />
+        <ImageField value={image} onChange={setImage} size={96} label={tl("Photo / icône")} maxSize={300} />
         <div className="cat-editor-main">
           <div className="form-grid">
-            <Field label="Nom *" span={2}>
-              <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="Ex. Riz local" onKeyDown={(e) => e.key === "Enter" && name.trim() && save(!category)} />
+            <Field label={tl("Nom *")} span={2}>
+              <input value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder={tl("Ex. Riz local")} onKeyDown={(e) => e.key === "Enter" && name.trim() && save(!category)} />
             </Field>
-            <Field label="Rangée dans" hint={parentPath ? `Chemin : ${parentPath} › ${name || "…"}` : "Vide = catégorie principale"} span={2}>
-              <CategorySelect categories={categories} value={parent} onChange={setParent} exclude={category?.id ?? null} emptyLabel="— Catégorie principale —" />
+            <Field label={tl("Rangée dans")} hint={parentPath ? tl("Chemin : {0} › {1}", [parentPath, name || "…"]) : tl("Vide = catégorie principale")} span={2}>
+              <CategorySelect categories={categories} value={parent} onChange={setParent} exclude={category?.id ?? null} emptyLabel={tl("— Catégorie principale —")} />
             </Field>
-            <Field label="Ordre d'affichage" hint="Les plus petits nombres en premier">
+            <Field label={tl("Ordre d'affichage")} hint={tl("Les plus petits nombres en premier")}>
               <input inputMode="numeric" value={order} onChange={(e) => setOrder(e.target.value)} />
             </Field>
             <label className="check" style={{ alignSelf: "end" }}>
-              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Visible en caisse
-            </label>
+              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />  {tl("Visible en caisse")}</label>
           </div>
           <div className="color-row">
             {COLORS.map((c) => (

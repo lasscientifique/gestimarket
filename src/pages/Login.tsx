@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { LanguageSwitch } from "../components/LanguageSwitch";
 import { LogIn, Network, ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
@@ -10,6 +11,8 @@ import { BoutiquesPanel } from "../components/BoutiquesPanel";
 import { NumPad } from "../components/PinPad";
 import { BrandLogo } from "../components/Brand";
 import type { Role } from "../types";
+import { tl } from "../lib/i18n";
+
 
 type LoginUser = { id: number; username: string; full_name: string; role: Role; has_pin: boolean };
 
@@ -115,19 +118,20 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page">
+      <div className="auth-lang"><LanguageSwitch /></div>
       <div className="auth-shell">
         <div className="auth-hero">
           <BrandLogo size={84} />
-          <h1>{settings.shop_name || "GestiMarket"}</h1>
-          <p>{settings.shop_address || "Caisse et gestion de magasin"}</p>
-          <span className="auth-hero-foot">GestiMarket</span>
+          <h1>{settings.shop_name || tl("GestiMarket")}</h1>
+          <p>{settings.shop_address || tl("Caisse et gestion de magasin")}</p>
+          <span className="auth-hero-foot">{tl("GestiMarket")}</span>
         </div>
 
         <div className="auth-card">
           {mode === "tiles" && !selected && (
             <>
-              <h2>Qui êtes-vous ?</h2>
-              <p className="muted">Touchez votre nom, puis tapez votre code PIN.</p>
+              <h2>{tl("Qui êtes-vous ?")}</h2>
+              <p className="muted">{tl("Touchez votre nom, puis tapez votre code PIN.")}</p>
               {users === null ? (
                 <div className="loading"><Loader2 className="spin" size={20} /></div>
               ) : (
@@ -141,13 +145,13 @@ export default function LoginPage() {
                   ))}
                 </div>
               )}
-              <button className="btn btn-block" onClick={() => setMode("password")}><KeyRound size={16} /> Connexion avec mot de passe</button>
+              <button className="btn btn-block" onClick={() => setMode("password")}><KeyRound size={16} />  {tl("Connexion avec mot de passe")}</button>
             </>
           )}
 
           {mode === "tiles" && selected && (
             <>
-              <button className="link-btn back" onClick={() => setSelected(null)}><ArrowLeft size={15} /> Changer d'utilisateur</button>
+              <button className="link-btn back" onClick={() => setSelected(null)}><ArrowLeft size={15} />  {tl("Changer d'utilisateur")}</button>
               <div className="pin-who">
                 <span className={`user-tile-avatar role-${selected.role}`}>{initials(selected.full_name)}</span>
                 <div>
@@ -163,8 +167,7 @@ export default function LoginPage() {
               <div className="pin-error">{busy ? <Loader2 className="spin" size={16} /> : error}</div>
               <NumPad onKey={press} extra="C" />
               <button className="btn btn-primary btn-lg btn-block" disabled={pin.length < 4 || busy} onClick={() => loginPin(pin)}>
-                <LogIn size={18} /> Se connecter
-              </button>
+                <LogIn size={18} />  {tl("Se connecter")}</button>
             </>
           )}
 
@@ -172,21 +175,20 @@ export default function LoginPage() {
             <form onSubmit={submit} className="form-grid one">
               {users && users.length > 0 && (
                 <button type="button" className="link-btn back" onClick={() => { setMode("tiles"); setError(""); }}>
-                  <ArrowLeft size={15} /> Connexion rapide par code PIN
-                </button>
+                  <ArrowLeft size={15} />  {tl("Connexion rapide par code PIN")}</button>
               )}
-              <h2>Connexion</h2>
+              <h2>{tl("Connexion")}</h2>
               <label className="field">
-                <span className="field-label">Identifiant</span>
+                <span className="field-label">{tl("Identifiant")}</span>
                 <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus={!username} autoComplete="username" />
               </label>
               <label className="field">
-                <span className="field-label">Mot de passe</span>
+                <span className="field-label">{tl("Mot de passe")}</span>
                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={!!username} autoComplete="current-password" />
               </label>
               {error && <div className="alert alert-danger">{error}</div>}
               <button className="btn btn-primary btn-lg btn-block" disabled={busy || !username || !password}>
-                <LogIn size={18} /> {busy ? "Connexion…" : "Se connecter"}
+                <LogIn size={18} /> {busy ? tl("Connexion…") : tl("Se connecter")}
               </button>
             </form>
           )}
@@ -195,13 +197,12 @@ export default function LoginPage() {
 
           {isTauri && (
             <button type="button" className="link-btn auth-net" onClick={() => setNetOpen(true)}>
-              <Network size={14} /> {modeLabel} — modifier
-            </button>
+              <Network size={14} /> {modeLabel}  {tl("— modifier")}</button>
           )}
         </div>
       </div>
       {netOpen && (
-        <Modal title="Réseau multi-postes" onClose={() => setNetOpen(false)} width={720}>
+        <Modal title={tl("Réseau multi-postes")} onClose={() => setNetOpen(false)} width={720}>
           <NetworkForm />
         </Modal>
       )}

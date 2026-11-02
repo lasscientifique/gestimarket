@@ -7,3 +7,6 @@ src-tauri/gen/
 *.db
 *.db-wal
 *.db-shm
+# Listes de travail des traductions (régénérées par scripts/i18n.mjs keys et scripts/i18n_messages.py)
+scripts/i18n-keys.json
+scripts/i18n-messages.json

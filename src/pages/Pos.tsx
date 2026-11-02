@@ -35,7 +35,8 @@ import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Badge, Field, LocationBadge, Modal, Thumb } from "../components/ui";
 import { OpenSessionModal } from "../components/CashModals";
-import { OrangeMoneyQr } from "../components/OrangeMoneyQr";
+import { operatorTheme, PaymentQr } from "../components/OrangeMoneyQr";
+import { operatorOf, parseOperators } from "../lib/mobile";
 import { HelpTip, PageHelpButton } from "../components/Help";
 import { NumPad } from "../components/PinPad";
 import { CameraScanner } from "../components/CameraScanner";
@@ -46,6 +47,7 @@ import { printReceipt } from "../lib/receipt";
 import { IDLE_DISPLAY, publishDisplay, type DisplayLine } from "../lib/display";
 import { isTauri, posteName } from "../lib/transport";
 import type { CashSession, Category, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, Sale } from "../types";
+import { locale, tl } from "../lib/i18n";
 
 interface CartLine {
   product: Product;
@@ -200,7 +202,7 @@ export default function PosPage() {
         setDiscount(0);
         setModal(null);
         setTicketOpen(false);
-        toast.info(`${r.taken_by} a repris ce client sur sa caisse : le ticket a été retiré d'ici.`);
+        toast.info(tl("{0} a repris ce client sur sa caisse : le ticket a été retiré d'ici.", [r.taken_by]));
       }
     } catch {
       /* hors ligne : on réessaie au prochain envoi */
@@ -220,7 +222,7 @@ export default function PosPage() {
 
   /** Reprise du client d'un collègue : son ticket arrive ici, prêt à encaisser. */
   const takeOver = async (c: LiveCart) => {
-    const pin = await askPin({ title: `Reprendre le client de ${c.user_name}`, action: `Reprise du ticket de ${c.poste}`, level: "cashier" });
+    const pin = await askPin({ title: tl("Reprendre le client de {0}", [c.user_name]), action: `Reprise du ticket de ${c.poste}`, level: "cashier" });
     if (!pin) return;
     try {
       const taken = await api.liveCartTake(c.poste_id, pin);
@@ -235,7 +237,7 @@ export default function PosPage() {
       setCustomer(taken.cart.customer);
       setDiscount(taken.cart.discount);
       setOthersOpen(false);
-      toast.success(`Client de ${taken.user_name} (${taken.poste}) repris : ${lines.length} ligne(s), ${money(taken.total)}.`);
+      toast.success(tl("Client de {0} ({1}) repris : {2} ligne(s), {3}.", [taken.user_name, taken.poste, lines.length, money(taken.total)]));
     } catch (e) {
       toast.error(e);
     }
@@ -301,7 +303,7 @@ export default function PosPage() {
   const addToCart = (p: Product, quantity = 1, packaging: Packaging | null = null) => {
     const need = baseInCart(p.id) + quantity * (packaging?.quantity ?? 1);
     if (p.track_stock && !allowNegative && need > p.stock + 1e-9) {
-      toast.error(`Stock insuffisant pour « ${p.name} » (disponible : ${qty(p.stock)} ${p.unit}).`);
+      toast.error(tl("Stock insuffisant pour « {0} » (disponible : {1} {2}).", [p.name, qty(p.stock), p.unit]));
       return;
     }
     setCart((c) => {
@@ -324,9 +326,9 @@ export default function PosPage() {
   const setLineQty = async (index: number, q: number) => {
     if (!(q > 0)) return removeLine(index);
     const p = cart[index].product;
-    if (q < cart[index].quantity && !(await guard("void", "Diminuer la quantité", `Diminution de quantité : ${lineName(cart[index])} (${qty(cart[index].quantity)} → ${qty(q)})`))) return;
+    if (q < cart[index].quantity && !(await guard("void", tl("Diminuer la quantité"), tl("Diminution de quantité : {0} ({1} → {2})", [lineName(cart[index]), qty(cart[index].quantity), qty(q)])))) return;
     if (p.track_stock && !allowNegative && baseInCart(p.id, index) + q * lineFactor(cart[index]) > p.stock + 1e-9) {
-      toast.error(`Stock insuffisant (disponible : ${qty(p.stock)} ${p.unit}).`);
+      toast.error(tl("Stock insuffisant (disponible : {0} {1}).", [qty(p.stock), p.unit]));
       return;
     }
     setCart((c) => c.map((l, i) => (i === index ? { ...l, quantity: +q.toFixed(3) } : l)));
@@ -334,7 +336,7 @@ export default function PosPage() {
 
   const removeLine = async (index: number) => {
     const l = cart[index];
-    if (!l || !(await guard("void", "Retirer l'article", `Suppression d'article : ${lineName(l)} × ${qty(l.quantity)}`))) return;
+    if (!l || !(await guard("void", tl("Retirer l'article"), tl("Suppression d'article : {0} × {1}", [lineName(l), qty(l.quantity)])))) return;
     setCart((c) => c.filter((_, i) => i !== index));
   };
 
@@ -352,8 +354,8 @@ export default function PosPage() {
     if (!cart.length) return;
     const ticket: HeldTicket = {
       id: Date.now(),
-      at: new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      label: customer?.name ?? `Ticket ${held.length + 1}`,
+      at: new Date().toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }),
+      label: customer?.name ?? tl("Ticket {0}", [held.length + 1]),
       lines: cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, quantity: l.quantity, discount: l.discount })),
       customer,
       discount,
@@ -361,7 +363,7 @@ export default function PosPage() {
     };
     setHeld((h) => [...h, ticket]);
     resetSale();
-    toast.info("Ticket mis en attente (F8 pour le reprendre).");
+    toast.info(tl("Ticket mis en attente (F8 pour le reprendre)."));
   };
 
   const recall = async (t: HeldTicket) => {
@@ -409,7 +411,7 @@ export default function PosPage() {
         onTile(products[0]);
         return true;
       }
-      if (input !== search || products.length === 0) toast.error(`Aucun produit avec le code « ${code} ».`);
+      if (input !== search || products.length === 0) toast.error(tl("Aucun produit avec le code « {0} ».", [code]));
     } catch (e) {
       toast.error(e);
     }
@@ -430,31 +432,31 @@ export default function PosPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && onSearchEnter()}
-              placeholder="Scanner un code-barres ou rechercher un produit… (F2)"
+              placeholder={tl("Scanner un code-barres ou rechercher un produit… (F2)")}
               autoFocus
             />
             {search && (
-              <button className="icon-btn" onClick={() => setSearch("")} aria-label="Effacer">
+              <button className="icon-btn" onClick={() => setSearch("")} aria-label={tl("Effacer")}>
                 <X size={16} />
               </button>
             )}
           </div>
           <div className="pos-tools">
-            <button className="btn btn-square btn-camera" onClick={() => setCameraOpen(true)} title="Scanner avec la caméra (téléphone, tablette, webcam)">
+            <button className="btn btn-square btn-camera" onClick={() => setCameraOpen(true)} title={tl("Scanner avec la caméra (téléphone, tablette, webcam)")}>
               <Camera size={19} />
             </button>
-            <button className="btn btn-square" onClick={() => setCodeOpen(true)} title="Saisir un code-barres au clavier (code illisible)">
+            <button className="btn btn-square" onClick={() => setCodeOpen(true)} title={tl("Saisir un code-barres au clavier (code illisible)")}>
               <Keyboard size={19} />
             </button>
-            <button className="btn btn-square" onClick={() => setModal("held")} title="Tickets en attente (F8)">
+            <button className="btn btn-square" onClick={() => setModal("held")} title={tl("Tickets en attente (F8)")}>
               <History size={19} />
               {held.length > 0 && <span className="count-pill">{held.length}</span>}
             </button>
-            <button className="btn btn-square" onClick={() => setOthersOpen(true)} title="Autres caisses : suivre un collègue et reprendre son client">
+            <button className="btn btn-square" onClick={() => setOthersOpen(true)} title={tl("Autres caisses : suivre un collègue et reprendre son client")}>
               <Users size={19} />
               {othersCount > 0 && <span className="count-pill">{othersCount}</span>}
             </button>
-            <button className={`btn btn-square ${displayOpen && isTauri ? "btn-active" : ""}`} onClick={toggleDisplay} title="Écran client : afficher le panier au client (2ᵉ écran, TV, tablette)">
+            <button className={`btn btn-square ${displayOpen && isTauri ? "btn-active" : ""}`} onClick={toggleDisplay} title={tl("Écran client : afficher le panier au client (2ᵉ écran, TV, tablette)")}>
               <MonitorSmartphone size={19} />
             </button>
             <PageHelpButton page="pos" />
@@ -463,7 +465,7 @@ export default function PosPage() {
 
         {breadcrumb.length > 0 && (
           <div className="crumbs">
-            <button className="chip" onClick={() => setCategoryId(null)}><Wallet size={14} /> Tous</button>
+            <button className="chip" onClick={() => setCategoryId(null)}><Wallet size={14} />  {tl("Tous")}</button>
             {breadcrumb.map((c) => (
               <span key={c.id} className="crumb">
                 <ChevronRight size={14} className="muted" />
@@ -476,13 +478,13 @@ export default function PosPage() {
           {breadcrumb.length === 0 && (
             <button className="cat-card active" onClick={() => setCategoryId(null)}>
               <span className="cat-card-img all"><Wallet size={18} /></span>
-              <span>Tous</span>
+              <span>{tl("Tous")}</span>
             </button>
           )}
           {breadcrumb.length > 0 && (
             <button className="cat-card" onClick={() => setCategoryId(breadcrumb.length > 1 ? breadcrumb[breadcrumb.length - 2].id : null)}>
               <span className="cat-card-img all"><ArrowLeft size={18} /></span>
-              <span>Retour</span>
+              <span>{tl("Retour")}</span>
             </button>
           )}
           {strip.map((c) => (
@@ -514,7 +516,7 @@ export default function PosPage() {
                       <MapPin size={10} /> {locationText(p, true)}
                     </span>
                   )}
-                  {out && <span className="tile-out">Rupture</span>}
+                  {out && <span className="tile-out">{tl("Rupture")}</span>}
                   {p.packagings.length > 0 && (
                     <span className="tile-pack"><Package size={10} /> {p.packagings.length + 1} formats</span>
                   )}
@@ -534,8 +536,8 @@ export default function PosPage() {
           {products.length === 0 && (
             <div className="empty" style={{ gridColumn: "1 / -1" }}>
               <Search size={32} strokeWidth={1.5} />
-              <strong>Aucun produit</strong>
-              <span className="muted">Modifiez la recherche ou ajoutez des produits dans le catalogue.</span>
+              <strong>{tl("Aucun produit")}</strong>
+              <span className="muted">{tl("Modifiez la recherche ou ajoutez des produits dans le catalogue.")}</span>
             </div>
           )}
         </div>
@@ -546,34 +548,34 @@ export default function PosPage() {
         <button className="pmb-ticket" onClick={() => setTicketOpen(true)}>
           <span className="pmb-count">{cart.length}</span>
           <span className="pmb-text">
-            <strong>Ticket</strong>
-            <span>{qty(itemsCount)} article(s)</span>
+            <strong>{tl("Ticket")}</strong>
+            <span>{qty(itemsCount)}  {tl("article(s)")}</span>
           </span>
         </button>
         <button className="btn btn-primary pmb-pay" disabled={!cart.length} onClick={() => setModal("pay")}>
-          Encaisser <strong>{money(total)}</strong>
+          {tl("Encaisser")} <strong>{money(total)}</strong>
         </button>
       </div>
 
       {/* ───── Colonne ticket ───── */}
       <section className="pos-ticket">
         <div className="ticket-head">
-          <button className="icon-btn ticket-close" onClick={() => setTicketOpen(false)} aria-label="Retour aux produits">
+          <button className="icon-btn ticket-close" onClick={() => setTicketOpen(false)} aria-label={tl("Retour aux produits")}>
             <ArrowLeft size={20} />
           </button>
           <button className="customer-btn" onClick={() => setModal("customer")}>
             {customer ? <UserRound size={18} /> : <UserPlus size={18} />}
             <div>
-              <div className="cb-title">{customer ? customer.name : "Client de passage"}</div>
+              <div className="cb-title">{customer ? customer.name : tl("Client de passage")}</div>
               <div className="cb-sub">
                 {customer
                   ? `${customer.phone ?? ""}${customer.balance > 0 ? ` · Dette : ${money(customer.balance)}` : ""}`
-                  : "Associer un client (F4)"}
+                  : tl("Associer un client (F4)")}
               </div>
             </div>
           </button>
           {customer && (
-            <button className="icon-btn" onClick={() => setCustomer(null)} title="Retirer le client">
+            <button className="icon-btn" onClick={() => setCustomer(null)} title={tl("Retirer le client")}>
               <X size={16} />
             </button>
           )}
@@ -583,14 +585,14 @@ export default function PosPage() {
           {cart.length === 0 && (
             <div className="empty">
               <ScanBarcode size={36} strokeWidth={1.5} />
-              <strong>Ticket vide</strong>
-              <span className="muted">Scannez ou touchez un produit pour l'ajouter.</span>
+              <strong>{tl("Ticket vide")}</strong>
+              <span className="muted">{tl("Scannez ou touchez un produit pour l'ajouter.")}</span>
             </div>
           )}
           {cart.map((l, i) => (
             <div key={`${l.product.id}-${l.packaging?.id ?? 0}`} className="line">
               <Thumb imageId={l.product.image_id} name={l.product.name} color={l.product.category_color} size={38} />
-              <button className="line-info" onClick={() => setModal({ line: i })} title="Modifier la ligne">
+              <button className="line-info" onClick={() => setModal({ line: i })} title={tl("Modifier la ligne")}>
                 <span className="line-name">{l.product.name}</span>
                 <span className="line-sub">
                   {l.packaging && <Badge tone="info"><Package size={11} /> {l.packaging.name}</Badge>}
@@ -599,16 +601,16 @@ export default function PosPage() {
                 </span>
               </button>
               <div className="qty-ctrl">
-                <button onClick={() => setLineQty(i, +(l.quantity - 1).toFixed(3))} aria-label="Moins">
+                <button onClick={() => setLineQty(i, +(l.quantity - 1).toFixed(3))} aria-label={tl("Moins")}>
                   <Minus size={14} />
                 </button>
-                <input value={qty(l.quantity)} readOnly onClick={() => setModal({ line: i })} title="Modifier la quantité" />
-                <button onClick={() => setLineQty(i, +(l.quantity + 1).toFixed(3))} aria-label="Plus">
+                <input value={qty(l.quantity)} readOnly onClick={() => setModal({ line: i })} title={tl("Modifier la quantité")} />
+                <button onClick={() => setLineQty(i, +(l.quantity + 1).toFixed(3))} aria-label={tl("Plus")}>
                   <Plus size={14} />
                 </button>
               </div>
               <div className="line-total">{money(lineTotal(l), false)}</div>
-              <button className="icon-btn danger" onClick={() => removeLine(i)} aria-label="Supprimer">
+              <button className="icon-btn danger" onClick={() => removeLine(i)} aria-label={tl("Supprimer")}>
                 <Trash2 size={16} />
               </button>
             </div>
@@ -616,35 +618,33 @@ export default function PosPage() {
         </div>
 
         <div className="ticket-totals">
-          <div className="kv"><span>Articles</span><span>{qty(itemsCount)}</span></div>
-          <div className="kv"><span>Sous-total</span><span>{money(subtotal)}</span></div>
+          <div className="kv"><span>{tl("Articles")}</span><span>{qty(itemsCount)}</span></div>
+          <div className="kv"><span>{tl("Sous-total")}</span><span>{money(subtotal)}</span></div>
           <div className="kv">
             <button className="link-btn" onClick={() => setModal("discount")} disabled={!cart.length}>
-              <Percent size={14} /> Remise
-            </button>
+              <Percent size={14} />  {tl("Remise")}</button>
             <span>{discount > 0 ? `-${money(Math.min(discount, subtotal))}` : "—"}</span>
           </div>
-          {tax > 0 && <div className="kv muted"><span>dont TVA</span><span>{money(tax)}</span></div>}
+          {tax > 0 && <div className="kv muted"><span>{tl("dont TVA")}</span><span>{money(tax)}</span></div>}
           <div className="grand-total">
-            <span>TOTAL</span>
+            <span>{tl("TOTAL")}</span>
             <span>{money(total)}</span>
           </div>
           <div className="ticket-actions">
             <button
               className="btn"
               onClick={async () => {
-                if (await guard("void", "Vider le ticket", `Ticket vidé : ${cart.length} ligne(s), ${money(total)}`)) resetSale();
+                if (await guard("void", tl("Vider le ticket"), tl("Ticket vidé : {0} ligne(s), {1}", [cart.length, money(total)]))) resetSale();
               }}
               disabled={!cart.length}
-              title="Vider le ticket"
+              title={tl("Vider le ticket")}
             >
               <Trash2 size={16} />
             </button>
-            <button className="btn" onClick={holdCurrent} disabled={!cart.length} title="Mettre en attente (le client a oublié quelque chose…)">
-              <PauseCircle size={16} /> Attente
-            </button>
+            <button className="btn" onClick={holdCurrent} disabled={!cart.length} title={tl("Mettre en attente (le client a oublié quelque chose…)")}>
+              <PauseCircle size={16} />  {tl("Attente")}</button>
             <button className="btn btn-primary btn-lg" disabled={!cart.length || sessionMissing} onClick={() => setModal("pay")}>
-              Encaisser <kbd className="kbd light">F9</kbd>
+              {tl("Encaisser")} <kbd className="kbd light">F9</kbd>
             </button>
           </div>
         </div>
@@ -652,11 +652,10 @@ export default function PosPage() {
         {sessionMissing && (
           <div className="session-lock">
             <Lock size={28} />
-            <strong>Caisse fermée</strong>
-            <span className="muted">Ouvrez une session de caisse pour commencer à vendre.</span>
+            <strong>{tl("Caisse fermée")}</strong>
+            <span className="muted">{tl("Ouvrez une session de caisse pour commencer à vendre.")}</span>
             <button className="btn btn-primary" onClick={() => setModal("open")}>
-              Ouvrir la caisse
-            </button>
+              {tl("Ouvrir la caisse")}</button>
           </div>
         )}
       </section>
@@ -682,7 +681,7 @@ export default function PosPage() {
         />
       )}
       {packChoice && (
-        <Modal title={<>Quel format ? <HelpTip k="packagings" /></>} onClose={() => setPackChoice(null)} width={480}>
+        <Modal title={<>{tl("Quel format ?")} <HelpTip k="packagings" /></>} onClose={() => setPackChoice(null)} width={480}>
           <div className="pick-list">
             {[null, ...packChoice.packagings].map((k) => (
               <button
@@ -695,7 +694,7 @@ export default function PosPage() {
               >
                 <Package size={20} className="muted" />
                 <div style={{ flex: 1 }}>
-                  <strong>{k ? k.name : `À l'unité (${packChoice.unit})`}</strong>
+                  <strong>{k ? k.name : tl("À l'unité ({0})", [packChoice.unit])}</strong>
                   <div className="muted small">{k ? `${qty(k.quantity)} ${packChoice.unit} · ${k.barcode ?? ""}` : packChoice.barcode}</div>
                 </div>
                 <strong className="pack-price">{money(k ? k.sale_price : packChoice.sale_price)}</strong>
@@ -707,8 +706,8 @@ export default function PosPage() {
       {othersOpen && <OtherTillsModal onClose={() => setOthersOpen(false)} onTake={takeOver} />}
       {cameraOpen && (
         <CameraScanner
-          title="Scanner les articles"
-          hint="Visez le code-barres ou le QR code : chaque article lu est ajouté au ticket."
+          title={tl("Scanner les articles")}
+          hint={tl("Visez le code-barres ou le QR code : chaque article lu est ajouté au ticket.")}
           continuous
           onCode={(c) => addByCode(c)}
           onClose={() => {
@@ -727,9 +726,9 @@ export default function PosPage() {
         />
       )}
       {modal === "held" && (
-        <Modal title="Tickets en attente" onClose={() => setModal(null)} width={520}>
+        <Modal title={tl("Tickets en attente")} onClose={() => setModal(null)} width={520}>
           {held.length === 0 ? (
-            <div className="muted center pad">Aucun ticket en attente. Utilisez « Attente » pour mettre de côté le ticket en cours.</div>
+            <div className="muted center pad">{tl("Aucun ticket en attente. Utilisez « Attente » pour mettre de côté le ticket en cours.")}</div>
           ) : (
             <div className="pick-list">
               {held.map((t) => (
@@ -737,10 +736,10 @@ export default function PosPage() {
                   <PauseCircle size={20} className="muted" />
                   <div style={{ flex: 1 }}>
                     <strong>{t.label}</strong>
-                    <div className="muted small">{t.at} · {t.lines.length} ligne(s) · {money(t.total)}</div>
+                    <div className="muted small">{t.at} · {t.lines.length}  {tl("ligne(s) ·")} {money(t.total)}</div>
                   </div>
-                  <button className="btn btn-sm btn-primary" onClick={() => recall(t)}>Reprendre</button>
-                  <button className="icon-btn danger" title="Supprimer" onClick={() => setHeld((h) => h.filter((x) => x.id !== t.id))}><Trash2 size={15} /></button>
+                  <button className="btn btn-sm btn-primary" onClick={() => recall(t)}>{tl("Reprendre")}</button>
+                  <button className="icon-btn danger" title={tl("Supprimer")} onClick={() => setHeld((h) => h.filter((x) => x.id !== t.id))}><Trash2 size={15} /></button>
                 </div>
               ))}
             </div>
@@ -749,8 +748,8 @@ export default function PosPage() {
       )}
       {modal === "discount" && (
         <AmountModal
-          title="Remise sur le ticket"
-          label={`Montant de la remise (${currencySymbol()})`}
+          title={tl("Remise sur le ticket")}
+          label={tl("Montant de la remise ({0})", [currencySymbol()])}
           initial={discount}
           max={subtotal}
           percentBase={subtotal}
@@ -770,11 +769,11 @@ export default function PosPage() {
             const line = cart[modal.line];
             const p = line.product;
             if (p.track_stock && !allowNegative && baseInCart(p.id, modal.line) + quantity * lineFactor(line) > p.stock + 1e-9) {
-              toast.error(`Stock insuffisant (disponible : ${qty(p.stock)} ${p.unit}).`);
+              toast.error(tl("Stock insuffisant (disponible : {0} {1}).", [qty(p.stock), p.unit]));
               return;
             }
-            if (quantity < line.quantity && !(await guard("void", "Diminuer la quantité", `Diminution de quantité : ${p.name} (${qty(line.quantity)} → ${qty(quantity)})`))) return;
-            if (lineDiscount > line.discount && !(await guard("discount", "Remise sur l'article", `Remise article : ${p.name} ${money(lineDiscount)}`))) return;
+            if (quantity < line.quantity && !(await guard("void", tl("Diminuer la quantité"), tl("Diminution de quantité : {0} ({1} → {2})", [p.name, qty(line.quantity), qty(quantity)])))) return;
+            if (lineDiscount > line.discount && !(await guard("discount", tl("Remise sur l'article"), tl("Remise article : {0} {1}", [p.name, money(lineDiscount)])))) return;
             setCart((c) => c.map((l, i) => (i === modal.line ? { ...l, quantity, discount: lineDiscount } : l)));
             setModal(null);
           }}
@@ -818,7 +817,7 @@ export default function PosPage() {
       )}
       {lastSale && (
         <Modal
-          title={<><Check size={20} className="text-success" /> Vente {lastSale.number} enregistrée</>}
+          title={<><Check size={20} className="text-success" />  {tl("Vente")} {lastSale.number}  {tl("enregistrée")}</>}
           onClose={() => {
             setLastSale(null);
             searchRef.current?.focus();
@@ -827,8 +826,7 @@ export default function PosPage() {
           footer={
             <>
               <button className="btn" onClick={() => printReceipt(lastSale, settings)}>
-                <Printer size={16} /> Imprimer le ticket
-              </button>
+                <Printer size={16} />  {tl("Imprimer le ticket")}</button>
               <button
                 className="btn btn-primary"
                 autoFocus
@@ -837,13 +835,12 @@ export default function PosPage() {
                   searchRef.current?.focus();
                 }}
               >
-                Nouvelle vente
-              </button>
+                {tl("Nouvelle vente")}</button>
             </>
           }
         >
           <div className="sale-done">
-            <div className="kv kv-strong"><span>Total</span><span>{money(lastSale.total)}</span></div>
+            <div className="kv kv-strong"><span>{tl("Total")}</span><span>{money(lastSale.total)}</span></div>
             {lastSale.payments.map((p) => (
               <div key={p.id} className="kv">
                 <span>{paymentLabel(p.method)}{p.reference ? <span className="muted small"> · {p.reference}</span> : null}</span>
@@ -852,11 +849,11 @@ export default function PosPage() {
             ))}
             {lastSale.change_due > 0 && (
               <div className="change-due">
-                <span>Monnaie à rendre</span>
+                <span>{tl("Monnaie à rendre")}</span>
                 <strong>{money(lastSale.change_due)}</strong>
               </div>
             )}
-            {lastSale.credit_amount > 0 && <div className="alert alert-warning">Reste à crédit : {money(lastSale.credit_amount)}</div>}
+            {lastSale.credit_amount > 0 && <div className="alert alert-warning">{tl("Reste à crédit :")} {money(lastSale.credit_amount)}</div>}
           </div>
         </Modal>
       )}
@@ -888,18 +885,22 @@ function PaymentModal({
   customer: Customer | null;
   onClose: () => void;
   onPay: (payments: PaymentInput[], note: string | null) => Promise<boolean>;
-  onLive?: (info: { method: string | null; paid: number; remaining: number; change: number; show_om_qr: boolean }) => void;
+  onLive?: (info: { method: string | null; paid: number; remaining: number; change: number; show_om_qr: boolean; qr_method: string | null }) => void;
 }) {
   const { settings } = useApp();
   const omEnabled = settings.om_enabled !== "0";
   const omRequireRef = settings.om_require_reference !== "0";
-  const methods: { id: PaymentMethod | "credit"; label: string; icon: ReactNode; cls?: string }[] = [
-    { id: "cash", label: "Espèces", icon: <Banknote size={22} /> },
+  const operators = useMemo(() => parseOperators(settings.mobile_operators), [settings.mobile_operators]);
+  const methods: { id: PaymentMethod | "credit"; label: string; icon: ReactNode; cls?: string; color?: string }[] = [
+    { id: "cash", label: tl("Espèces"), icon: <Banknote size={22} /> },
     ...(omEnabled ? [{ id: "orange_money" as const, label: paymentLabel("orange_money"), icon: <Smartphone size={22} />, cls: "om" }] : []),
-    { id: "mobile_money", label: "Autre mobile money", icon: <Smartphone size={22} /> },
-    { id: "card", label: "Carte", icon: <CreditCard size={22} /> },
-    { id: "other", label: "Autre", icon: <CircleEllipsis size={22} /> },
-    { id: "credit", label: "Crédit client", icon: <HandCoins size={22} /> },
+    ...operators
+      .filter((o) => o.enabled)
+      .map((o) => ({ id: `mm:${o.id}` as const, label: o.name, icon: <Smartphone size={22} />, cls: "om", color: o.color })),
+    { id: "mobile_money", label: tl("Autre mobile money"), icon: <Smartphone size={22} /> },
+    { id: "card", label: tl("Carte"), icon: <CreditCard size={22} /> },
+    { id: "other", label: tl("Autre"), icon: <CircleEllipsis size={22} /> },
+    { id: "credit", label: tl("Crédit client"), icon: <HandCoins size={22} /> },
   ];
 
   const [added, setAdded] = useState<PaymentInput[]>([]);
@@ -931,20 +932,34 @@ function PaymentModal({
   const change = cash - cashApplied;
   const remaining = Math.max(0, total - nonCash - cashApplied);
   const canCredit = !!customer && customer.credit_limit > 0;
+  // Orange Money et opérateurs configurés : QR marchand + ID de transaction.
+  const operator = operatorOf(method, operators);
+  const qrPanel = method === "orange_money" || !!operator;
+  const refRequired = (m: string) => (m === "orange_money" ? omRequireRef : !!operatorOf(m, operators)?.require_ref);
+  const missingRef = all.find((p) => refRequired(p.method) && !p.reference);
 
   // L'écran client suit le paiement en direct (montant reçu, reste, monnaie, QR Orange Money).
   useEffect(() => {
-    onLive?.({ method: method === "credit" ? "credit" : method, paid: nonCash + cash, remaining, change, show_om_qr: method === "orange_money" });
+    onLive?.({
+      method: method === "credit" ? "credit" : method,
+      paid: nonCash + cash,
+      remaining,
+      change,
+      show_om_qr: method === "orange_money",
+      qr_method: qrPanel ? method : null,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, nonCash, cash, remaining, change]);
 
   const problem =
     nonCash > total
-      ? "Les paiements électroniques dépassent le total : la monnaie ne se rend qu'en espèces."
-      : all.some((p) => p.method === "orange_money" && omRequireRef && !p.reference)
-        ? "Saisissez ou scannez l'ID de transaction Orange Money (reçu par SMS)."
+      ? tl("Les paiements électroniques dépassent le total : la monnaie ne se rend qu'en espèces.")
+      : missingRef
+        ? missingRef.method === "orange_money"
+          ? tl("Saisissez ou scannez l'ID de transaction Orange Money (reçu par SMS).")
+          : tl("Saisissez ou scannez l'ID de transaction {0} (reçu par SMS).", [paymentLabel(missingRef.method)])
         : remaining > 0 && !canCredit
-          ? `Il manque ${money(remaining)}. Pour vendre à crédit, associez un client disposant d'un plafond de crédit.`
+          ? tl("Il manque {0}. Pour vendre à crédit, associez un client disposant d'un plafond de crédit.", [money(remaining)])
           : null;
 
   const selectMethod = (m: PaymentMethod | "credit") => {
@@ -953,7 +968,7 @@ function PaymentModal({
     setReference("");
     setPhone("");
     setAmount(m === "credit" ? "" : minorToInput(dueNow));
-    setTimeout(() => (m === "orange_money" ? refRef.current?.focus() : amountRef.current?.select()), 0);
+    setTimeout(() => (m === "orange_money" || m.startsWith("mm:") ? refRef.current?.focus() : amountRef.current?.select()), 0);
   };
 
   useEffect(() => {
@@ -980,29 +995,28 @@ function PaymentModal({
 
   return (
     <Modal
-      title="Encaissement"
+      title={tl("Encaissement")}
       onClose={onClose}
-      width={method === "orange_money" ? 820 : 680}
+      width={qrPanel ? 820 : 680}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Retour</button>
-          <button className="btn" disabled={!current || remaining === 0} onClick={addCurrent} title="Payer une partie avec ce moyen, puis compléter avec un autre">
-            <Plus size={16} /> Paiement partiel
-          </button>
+          <button className="btn" onClick={onClose}>{tl("Retour")}</button>
+          <button className="btn" disabled={!current || remaining === 0} onClick={addCurrent} title={tl("Payer une partie avec ce moyen, puis compléter avec un autre")}>
+            <Plus size={16} />  {tl("Paiement partiel")}</button>
           <HelpTip k="partial" side="top" />
           <button className="btn btn-primary btn-lg" disabled={!!problem || busy} onClick={submit}>
-            {busy ? "Enregistrement…" : "Valider la vente (Entrée)"}
+            {busy ? tl("Enregistrement…") : tl("Valider la vente (Entrée)")}
           </button>
         </>
       }
     >
       <div className="pay-head">
         <div className="pay-total">
-          <span>Total à payer</span>
+          <span>{tl("Total à payer")}</span>
           <strong>{money(total)}</strong>
         </div>
         <div className={`pay-side ${remaining > 0 ? "warn" : "ok"}`}>
-          <span>{remaining > 0 ? "Reste à payer" : change > 0 ? "Monnaie à rendre" : "Soldé"}</span>
+          <span>{remaining > 0 ? tl("Reste à payer") : change > 0 ? tl("Monnaie à rendre") : tl("Soldé")}</span>
           <strong>{money(remaining > 0 ? remaining : change)}</strong>
         </div>
       </div>
@@ -1014,7 +1028,7 @@ function PaymentModal({
               <span>{paymentLabel(p.method)}</span>
               <strong>{money(p.amount)}</strong>
               {p.reference && <span className="muted small">{p.reference}</span>}
-              <button className="icon-btn" onClick={() => setAdded((a) => a.filter((_, j) => j !== i))} aria-label="Retirer"><X size={14} /></button>
+              <button className="icon-btn" onClick={() => setAdded((a) => a.filter((_, j) => j !== i))} aria-label={tl("Retirer")}><X size={14} /></button>
             </div>
           ))}
         </div>
@@ -1025,9 +1039,10 @@ function PaymentModal({
           <button
             key={m.id}
             className={`method ${m.cls ?? ""} ${method === m.id ? "active" : ""}`}
+            style={operatorTheme(m.color)}
             onClick={() => selectMethod(m.id)}
             disabled={m.id === "credit" && !canCredit}
-            title={m.id === "credit" && !canCredit ? "Sélectionnez un client autorisé au crédit" : undefined}
+            title={m.id === "credit" && !canCredit ? tl("Sélectionnez un client autorisé au crédit") : undefined}
           >
             {m.icon}
             <span>{m.label}</span>
@@ -1037,22 +1052,22 @@ function PaymentModal({
 
       {method === "credit" && (
         <div className="alert alert-warning">
-          Le reste ({money(remaining)}) sera ajouté à la dette de <strong>{customer?.name}</strong> (dette actuelle {money(customer?.balance ?? 0)}, plafond {money(customer?.credit_limit ?? 0)}).
+          {tl("Le reste (")}{money(remaining)}{tl(") sera ajouté à la dette de")} <strong>{customer?.name}</strong>  {tl("(dette actuelle")} {money(customer?.balance ?? 0)}{tl(", plafond")} {money(customer?.credit_limit ?? 0)}).
         </div>
       )}
 
-      {method === "orange_money" ? (
-        <div className="om-pay">
-          <OrangeMoneyQr size={180} />
+      {qrPanel ? (
+        <div className="om-pay" style={operatorTheme(operator?.color)}>
+          <PaymentQr method={method} size={180} />
           <div className="om-fields">
             <div className="om-steps">
-              <span><b className="om-step-n">1</b> Le client scanne le QR code ou paie au numéro marchand.</span>
-              <span><b className="om-step-n">2</b> Il montre la confirmation ; saisissez ou scannez l'<strong>ID de transaction</strong>.</span>
+              <span><b className="om-step-n">1</b>  {tl("Le client scanne le QR code ou paie au numéro marchand.")}</span>
+              <span><b className="om-step-n">2</b>  {tl("Il montre la confirmation ; saisissez ou scannez l'")}<strong>{tl("ID de transaction")}</strong>.</span>
             </div>
-            <Field label={`Montant payé (${currencySymbol()})`}>
+            <Field label={tl("Montant payé ({0})", [currencySymbol()])}>
               <input ref={amountRef} className="input-lg" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </Field>
-            <Field label={<>ID de transaction {omRequireRef ? "*" : ""} <HelpTip k="om_reference" /></>} hint="Scannez le code de la confirmation avec la douchette ou recopiez-le depuis le SMS.">
+            <Field label={<>{tl("ID de transaction")} {refRequired(method) ? "*" : ""} <HelpTip k="om_reference" /></>} hint={tl("Scannez le code de la confirmation avec la douchette ou recopiez-le depuis le SMS.")}>
               <div className="input-group">
                 <input
                   ref={refRef}
@@ -1060,16 +1075,16 @@ function PaymentModal({
                   value={reference}
                   onChange={(e) => setReference(e.target.value.trim())}
                   onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Ex. MP251031.1542.C12345"
+                  placeholder={tl("Ex. MP251031.1542.C12345")}
                 />
-                <button type="button" className="btn" title="Scanner le code de la confirmation avec la caméra" onClick={() => setRefScan(true)}>
+                <button type="button" className="btn" title={tl("Scanner le code de la confirmation avec la caméra")} onClick={() => setRefScan(true)}>
                   <Camera size={18} />
                 </button>
               </div>
-              {refScan && <CameraScanner title="Scanner la confirmation" onCode={(c) => setReference(c)} onClose={() => setRefScan(false)} />}
+              {refScan && <CameraScanner title={tl("Scanner la confirmation")} onCode={(c) => setReference(c)} onClose={() => setRefScan(false)} />}
             </Field>
-            <Field label="N° de téléphone du client">
-              <input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Ex. 70 00 00 00" />
+            <Field label={tl("N° de téléphone du client")}>
+              <input inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={tl("Ex. 70 00 00 00")} />
             </Field>
           </div>
         </div>
@@ -1078,7 +1093,7 @@ function PaymentModal({
           <>
             <div className="pay-entry">
               <div className="pay-entry-main">
-                <Field label={method === "cash" ? `Montant reçu (${currencySymbol()})` : `Montant encaissé (${currencySymbol()})`}>
+                <Field label={method === "cash" ? tl("Montant reçu ({0})", [currencySymbol()]) : tl("Montant encaissé ({0})", [currencySymbol()])}>
                   <input
                     ref={amountRef}
                     className="input-xl"
@@ -1107,15 +1122,15 @@ function PaymentModal({
                     setAmount((v) => (k === "⌫" ? v.slice(0, -1) : (fresh ? "" : v) + k));
                   }}
                 />
-                <button className="btn btn-sm btn-block" onClick={() => setAmount("")}>Effacer</button>
+                <button className="btn btn-sm btn-block" onClick={() => setAmount("")}>{tl("Effacer")}</button>
               </div>
             </div>
             {(method === "mobile_money" || method === "card") && (
               <div className="form-grid">
-                <Field label="Référence de transaction">
+                <Field label={tl("Référence de transaction")}>
                   <input className="mono" value={reference} onChange={(e) => setReference(e.target.value.trim())} />
                 </Field>
-                <Field label={method === "card" ? "4 derniers chiffres (facultatif)" : "N° du client"}>
+                <Field label={method === "card" ? tl("4 derniers chiffres (facultatif)") : tl("N° du client")}>
                   <input value={phone} onChange={(e) => setPhone(e.target.value)} />
                 </Field>
               </div>
@@ -1126,7 +1141,7 @@ function PaymentModal({
 
       {change > 0 && remaining === 0 && (
         <div className="change-due">
-          <span>Monnaie à rendre</span>
+          <span>{tl("Monnaie à rendre")}</span>
           <strong>{money(change)}</strong>
         </div>
       )}
@@ -1135,12 +1150,12 @@ function PaymentModal({
       ) : (
         remaining > 0 && method !== "credit" && (
           <div className="alert alert-warning">
-            Reste {money(remaining)} à mettre au crédit de {customer!.name} (plafond {money(customer!.credit_limit)}).
+            {tl("Reste")} {money(remaining)}  {tl("à mettre au crédit de")} {customer!.name}  {tl("(plafond")} {money(customer!.credit_limit)}).
           </div>
         )
       )}
 
-      <Field label="Note (facultatif)">
+      <Field label={tl("Note (facultatif)")}>
         <input value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
     </Modal>
@@ -1170,17 +1185,16 @@ function CustomerPicker({ onClose, onPick }: { onClose: () => void; onPick: (c: 
   };
 
   return (
-    <Modal title="Choisir un client" onClose={onClose} width={560}>
+    <Modal title={tl("Choisir un client")} onClose={onClose} width={560}>
       {!creating ? (
         <>
           <div className="toolbar">
             <div className="search-box grow">
               <Search size={16} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom ou téléphone…" autoFocus />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tl("Nom ou téléphone…")} autoFocus />
             </div>
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
-              <UserPlus size={16} /> Nouveau
-            </button>
+              <UserPlus size={16} />  {tl("Nouveau")}</button>
           </div>
           <div className="pick-list">
             {list.map((c) => (
@@ -1190,25 +1204,25 @@ function CustomerPicker({ onClose, onPick }: { onClose: () => void; onPick: (c: 
                   <div className="muted small">{c.phone ?? "—"}</div>
                 </div>
                 <div className="right small">
-                  {c.balance > 0 && <Badge tone="warning">Dette {money(c.balance)}</Badge>}
-                  {c.credit_limit > 0 ? <div className="muted">Plafond {money(c.credit_limit)}</div> : <div className="muted">Sans crédit</div>}
+                  {c.balance > 0 && <Badge tone="warning">{tl("Dette")} {money(c.balance)}</Badge>}
+                  {c.credit_limit > 0 ? <div className="muted">{tl("Plafond")} {money(c.credit_limit)}</div> : <div className="muted">{tl("Sans crédit")}</div>}
                 </div>
               </button>
             ))}
-            {list.length === 0 && <div className="muted center pad">Aucun client trouvé.</div>}
+            {list.length === 0 && <div className="muted center pad">{tl("Aucun client trouvé.")}</div>}
           </div>
         </>
       ) : (
         <div className="form-grid one">
-          <Field label="Nom du client *">
+          <Field label={tl("Nom du client *")}>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
           </Field>
-          <Field label="Téléphone">
+          <Field label={tl("Téléphone")}>
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </Field>
           <div className="row-end">
-            <button className="btn" onClick={() => setCreating(false)}>Retour</button>
-            <button className="btn btn-primary" disabled={!form.name.trim()} onClick={create}>Créer et sélectionner</button>
+            <button className="btn" onClick={() => setCreating(false)}>{tl("Retour")}</button>
+            <button className="btn btn-primary" disabled={!form.name.trim()} onClick={create}>{tl("Créer et sélectionner")}</button>
           </div>
         </div>
       )}
@@ -1231,10 +1245,9 @@ function LineModal({ line, onClose, onSave }: { line: CartLine; onClose: () => v
       width={440}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Annuler</button>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
           <button className="btn btn-primary" disabled={!(quantity > 0)} onClick={() => onSave(+quantity.toFixed(3), disc)}>
-            Appliquer
-          </button>
+            {tl("Appliquer")}</button>
         </>
       }
     >
@@ -1249,13 +1262,13 @@ function LineModal({ line, onClose, onSave }: { line: CartLine; onClose: () => v
         </div>
       </div>
       <div className="form-grid one">
-        <Field label={`Quantité (${lineUnit(line)})`} hint={!line.packaging && ["kg", "g", "L", "m", "mètre"].includes(line.product.unit) ? `Les décimales sont acceptées : 0,750 ${line.product.unit}` : undefined}>
+        <Field label={tl("Quantité ({0})", [lineUnit(line)])} hint={!line.packaging && ["kg", "g", "L", "m", "mètre"].includes(line.product.unit) ? tl("Les décimales sont acceptées : 0,750 {0}", [line.product.unit]) : undefined}>
           <input className="input-lg" inputMode="decimal" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
         </Field>
-        <Field label={`Remise sur la ligne (${currencySymbol()})`}>
+        <Field label={tl("Remise sur la ligne ({0})", [currencySymbol()])}>
           <input inputMode="decimal" value={d} onChange={(e) => setD(e.target.value)} placeholder="0" />
         </Field>
-        <div className="kv kv-strong"><span>Total ligne</span><span>{money(gross - disc)}</span></div>
+        <div className="kv kv-strong"><span>{tl("Total ligne")}</span><span>{money(gross - disc)}</span></div>
       </div>
     </Modal>
   );
@@ -1287,8 +1300,8 @@ function AmountModal({
       width={420}
       footer={
         <>
-          <button className="btn" onClick={() => onSave(0)}>Supprimer la remise</button>
-          <button className="btn btn-primary" onClick={() => onSave(amount)}>Appliquer</button>
+          <button className="btn" onClick={() => onSave(0)}>{tl("Supprimer la remise")}</button>
+          <button className="btn btn-primary" onClick={() => onSave(amount)}>{tl("Appliquer")}</button>
         </>
       }
     >
@@ -1332,19 +1345,19 @@ function CodeEntryModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
   };
   return (
     <Modal
-      title={<>Saisir un code-barres <HelpTip k="code_entry" /></>}
+      title={<>{tl("Saisir un code-barres")} <HelpTip k="code_entry" /></>}
       onClose={onClose}
       width={420}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Fermer</button>
-          <button className="btn btn-primary btn-lg" disabled={busy || !code.trim()} onClick={submit}><Plus size={16} /> Ajouter au ticket</button>
+          <button className="btn" onClick={onClose}>{tl("Fermer")}</button>
+          <button className="btn btn-primary btn-lg" disabled={busy || !code.trim()} onClick={submit}><Plus size={16} />  {tl("Ajouter au ticket")}</button>
         </>
       }
     >
       <div className="code-entry">
         <label className={`code-field ${field === "code" ? "focus" : ""}`} onClick={() => setField("code")}>
-          <span className="field-label">Code (chiffres sous le code-barres)</span>
+          <span className="field-label">{tl("Code (chiffres sous le code-barres)")}</span>
           <input
             className="mono input-lg"
             value={code}
@@ -1355,7 +1368,7 @@ function CodeEntryModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: 
           />
         </label>
         <label className={`code-field qty ${field === "qty" ? "focus" : ""}`} onClick={() => setField("qty")}>
-          <span className="field-label">Quantité</span>
+          <span className="field-label">{tl("Quantité")}</span>
           <input className="input-lg" inputMode="decimal" value={q} onFocus={() => setField("qty")} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
         </label>
       </div>
@@ -1376,11 +1389,11 @@ function OtherTillsModal({ onClose, onTake }: { onClose: () => void; onTake: (c:
   }, []);
   const followed = list?.find((c) => c.poste_id === follow) ?? null;
   return (
-    <Modal title={<><Users size={18} /> Autres caisses <HelpTip k="other_tills" /></>} onClose={onClose} width={720}>
+    <Modal title={<><Users size={18} />  {tl("Autres caisses")} <HelpTip k="other_tills" /></>} onClose={onClose} width={720}>
       {list === null ? (
-        <div className="muted center pad">Chargement…</div>
+        <div className="muted center pad">{tl("Chargement…")}</div>
       ) : list.length === 0 ? (
-        <div className="muted center pad">Aucun autre ticket en cours. Les tickets des collègues apparaissent ici en direct.</div>
+        <div className="muted center pad">{tl("Aucun autre ticket en cours. Les tickets des collègues apparaissent ici en direct.")}</div>
       ) : (
         <div className="till-list">
           {list.map((c) => (
@@ -1389,9 +1402,9 @@ function OtherTillsModal({ onClose, onTake }: { onClose: () => void; onTake: (c:
                 <div>
                   <strong>{c.poste}</strong> · {c.user_name}
                   <div className="muted small">
-                    {c.status === "payment" ? <Badge tone="warning">Encaissement en cours</Badge> : <Badge tone="info">Saisie des articles</Badge>}{" "}
-                    {c.lines} ligne(s) · {c.seen_ago < 30 ? <>actif à l'instant</> : <span className="text-danger">inactif depuis {c.seen_ago < 120 ? `${c.seen_ago} s` : `${Math.floor(c.seen_ago / 60)} min`} (caisse fermée ?)</span>}
-                    {c.cart.customer && <> · client : {c.cart.customer.name}</>}
+                    {c.status === "payment" ? <Badge tone="warning">{tl("Encaissement en cours")}</Badge> : <Badge tone="info">{tl("Saisie des articles")}</Badge>}{" "}
+                    {c.lines}  {tl("ligne(s) ·")} {c.seen_ago < 30 ? <>{tl("actif à l'instant")}</> : <span className="text-danger">{tl("inactif depuis")} {c.seen_ago < 120 ? `${c.seen_ago} s` : tl("{0} min", [Math.floor(c.seen_ago / 60)])}  {tl("(caisse fermée ?)")}</span>}
+                    {c.cart.customer && <>  {tl("· client :")} {c.cart.customer.name}</>}
                   </div>
                 </div>
                 <strong className="till-total">{money(c.total)}</strong>
@@ -1402,32 +1415,29 @@ function OtherTillsModal({ onClose, onTake }: { onClose: () => void; onTake: (c:
                     {followed.cart.lines.map((l, i) => (
                       <tr key={i}>
                         <td>{l.name}</td>
-                        <td className="num muted">{qty(l.quantity)} × {money(l.unit_price)}</td>
+                        <td className="num muted">{qty(l.quantity)}  {tl("×")} {money(l.unit_price)}</td>
                         <td className="num"><strong>{money(l.total)}</strong></td>
                       </tr>
                     ))}
                     {followed.cart.discount > 0 && (
-                      <tr><td>Remise</td><td /><td className="num">-{money(followed.cart.discount)}</td></tr>
+                      <tr><td>{tl("Remise")}</td><td /><td className="num">-{money(followed.cart.discount)}</td></tr>
                     )}
                   </tbody>
                 </table>
               )}
               <div className="till-actions">
                 <button className="btn btn-sm" onClick={() => setFollow(follow === c.poste_id ? null : c.poste_id)}>
-                  <Eye size={14} /> {follow === c.poste_id ? "Ne plus suivre" : "Suivre en direct"}
+                  <Eye size={14} /> {follow === c.poste_id ? tl("Ne plus suivre") : tl("Suivre en direct")}
                 </button>
                 <button className="btn btn-sm btn-primary" onClick={() => onTake(c)}>
-                  <HandHelping size={14} /> Reprendre ce client
-                </button>
+                  <HandHelping size={14} />  {tl("Reprendre ce client")}</button>
               </div>
             </div>
           ))}
         </div>
       )}
       <p className="muted small">
-        Reprendre un client transfère son ticket sur votre caisse (articles, client, remise) : il disparaît de la caisse du collègue. Votre
-        ticket en cours éventuel est mis en attente. L'action est confirmée par votre code PIN et tracée dans le journal.
-      </p>
+        {tl("Reprendre un client transfère son ticket sur votre caisse (articles, client, remise) : il disparaît de la caisse du collègue. Votre ticket en cours éventuel est mis en attente. L'action est confirmée par votre code PIN et tracée dans le journal.")}</p>
     </Modal>
   );
 }

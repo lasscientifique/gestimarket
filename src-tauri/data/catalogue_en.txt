@@ -1,0 +1,689 @@
+# GestiMarket general catalogue: category / subcategory / family (2 spaces per level). Same lines as catalogue_fr.txt.
+General food and grocery
+  Staple foods
+    Rice
+    Millet, sorghum, maize
+    Fonio
+    Wheat flour
+    Maize flour
+    Sugar
+    Salt
+    Pasta
+    Couscous
+    Semolina
+    Beans and cowpeas
+    Lentils
+    Chickpeas
+  Oils and fats
+    Vegetable oil
+    Palm oil
+    Peanut oil
+    Olive oil
+    Butter
+    Margarine
+    Cooking fat
+  Canned and packaged foods
+    Canned fish
+    Canned meat
+    Tomato paste
+    Canned vegetables
+    Canned fruit
+    Condensed milk
+    Mayonnaise
+    Mustard
+    Ketchup
+    Cooking sauces
+  Spices and condiments
+    Pepper
+    Chili
+    Ginger
+    Garlic
+    Onion powder
+    Stock cubes
+    Mixed spices
+    Vinegar
+    Seasonings
+Beverages
+  Soft drinks
+    Mineral water
+    Sparkling water
+    Fruit juices
+    Sodas
+    Energy drinks
+    Malt drinks
+    Iced tea
+    Flavoured milk
+    Syrups
+    Local drinks
+  Hot drinks
+    Coffee
+    Tea
+    Cocoa
+    Chocolate powder
+    Herbal teas
+  Alcoholic drinks
+    Beers
+    Wines
+    Champagnes
+    Spirits
+    Liqueurs
+    Traditional drinks
+Dairy and eggs
+  Powdered milk
+  Fresh milk
+  UHT milk
+  Fermented milk
+  Yoghurts
+  Cheeses
+  Fresh cream
+  Butter
+  Hen eggs
+  Quail eggs
+  Dairy desserts
+Bakery and pastry
+  Bread
+  Baguettes
+  Sandwich bread
+  Croissants
+  Brioches
+  Cakes
+  Biscuits
+  Tarts
+  Doughnuts
+  Madeleines
+  Packaged pastries
+  Frozen bakery products
+Fruit and vegetables
+  Fresh fruit
+    Mango
+    Banana
+    Orange
+    Apple
+    Pineapple
+    Papaya
+    Watermelon
+    Lemon
+    Avocado
+    Grapes
+  Fresh vegetables
+    Tomato
+    Onion
+    Potato
+    Carrot
+    Cabbage
+    Aubergine
+    Cucumber
+    Bell pepper
+    Lettuce
+    Okra
+    Cassava
+    Sweet potato
+  Processed produce
+    Dried fruit
+    Dried vegetables
+    Frozen fruit
+    Frozen vegetables
+    Cut fruit
+    Vegetable purées
+Meat, fish and poultry
+  Beef
+  Mutton
+  Goat meat
+  Pork
+  Chicken
+  Turkey
+  Duck
+  Fresh fish
+  Smoked fish
+  Dried fish
+  Frozen fish
+  Shrimps
+  Crabs
+  Sausages
+  Cold cuts
+  Processed meats
+Frozen foods
+  Frozen meat
+  Frozen fish
+  Seafood
+  Frozen vegetables
+  Frozen chips
+  Frozen chicken
+  Ice lollies
+  Ice cream
+  Ready meals
+  Frozen pizzas
+Confectionery and snacks
+  Sweets
+  Chocolates
+  Chewing gum
+  Lollipops
+  Crackers
+  Crisps
+  Peanuts
+  Cashew nuts
+  Popcorn
+  Cereal bars
+  Dried fruit
+  Packaged snacks
+Personal care and beauty
+  Personal hygiene
+    Soaps
+    Shower gels
+    Shampoos
+    Conditioners
+    Toothpastes
+    Toothbrushes
+    Deodorants
+    Perfumes
+    Body creams
+    Body lotions
+  Facial care
+    Face creams
+    Cleansers
+    Serums
+    Face masks
+    Toners
+    Sun care
+  Make-up
+    Foundations
+    Powders
+    Lipsticks
+    Mascara
+    Eyeliners
+    Nail polish
+    Make-up accessories
+  Hair care
+    Hair oils
+    Styling creams
+    Hair gels
+    Hair dyes
+    Hair braids
+    Wigs
+    Hair extensions
+    Hair accessories
+  Shaving and men's care
+    Razors
+    Razor blades
+    Shaving foam
+    Aftershave
+    Beard care
+Household cleaning
+  Bleach
+  Detergents
+  Washing powder
+  Liquid laundry detergent
+  Laundry soaps
+  Washing-up liquid
+  Floor cleaners
+  Disinfectants
+  Glass cleaners
+  Deodorizers
+  Household insecticides
+  Room fresheners
+  Sponges
+  Brushes
+  Floor cloths
+  Brooms
+  Dustpans
+  Bin bags
+Baby and childcare
+  Nappies
+  Baby wipes
+  Infant formula
+  Baby cereals
+  Baby food jars
+  Feeding bottles
+  Teats
+  Pacifiers
+  Baby toiletries
+  Baby creams
+  Baby clothes
+  Baby shoes
+  Baby toys
+  Pushchairs
+  Baby carriers
+  Childcare accessories
+Pharmacy and health care
+  Over-the-counter medicines
+  First aid
+  Plasters
+  Compresses
+  Bandages
+  Antiseptics
+  Thermometers
+  Blood pressure monitors
+  Medical equipment
+  Vitamins and supplements
+  Dermatological products
+  Medical hygiene products
+  Orthopaedic products
+Clothing
+  Men's clothing
+    Shirts
+    T-shirts
+    Trousers
+    Jeans
+    Suits
+    Jackets
+    Shorts
+    Underwear
+  Women's clothing
+    Dresses
+    Skirts
+    Tunics
+    Blouses
+    Trousers
+    Jeans
+    Leggings
+    Outfits
+    Lingerie
+    Veils and headscarves
+  Children's clothing
+    Baby clothes
+    Boys' clothing
+    Girls' clothing
+    School uniforms
+    Pyjamas
+  Traditional clothing
+    Bazin
+    Wax print
+    Bogolan
+    Boubous
+    Traditional fabrics
+    Ceremonial outfits
+  Workwear
+    Uniforms
+    Work clothes
+    Work coats
+    Overalls
+    Safety vests
+Shoes and leather goods
+  Men's shoes
+  Women's shoes
+  Children's shoes
+  Sports shoes
+  Sandals
+  Slides
+  Boots
+  Safety shoes
+  Handbags
+  Backpacks
+  Wallets
+  Belts
+  Suitcases
+  Briefcases
+Fashion accessories and jewellery
+  Watches
+  Glasses
+  Jewellery
+  Rings
+  Bracelets
+  Necklaces
+  Earrings
+  Caps
+  Hats
+  Scarves
+  Headscarves
+  Ties
+  Belts
+  Hair accessories
+Electronics and computing
+  Phones and accessories
+    Smartphones
+    Basic phones
+    Chargers
+    USB cables
+    Earphones
+    Headphones
+    Power banks
+    Phone cases
+    Screen protectors
+    Memory cards
+  Computing
+    Laptops
+    Desktop computers
+    Tablets
+    Monitors
+    Keyboards
+    Mice
+    Printers
+    Scanners
+    Hard drives
+    SSDs
+    USB flash drives
+    Routers
+    Network switches
+    UPS units
+    Computer components
+  Consumer electronics
+    Televisions
+    Set-top boxes
+    Cameras
+    Video cameras
+    Speakers
+    Loudspeakers
+    Projectors
+    Game consoles
+    Controllers
+    Audio accessories
+Home appliances
+  Refrigerators
+  Freezers
+  Air conditioners
+  Fans
+  Televisions
+  Washing machines
+  Ovens
+  Microwaves
+  Hand mixers
+  Blenders
+  Kettles
+  Irons
+  Vacuum cleaners
+  Cookers
+  Gas stoves
+  Water heaters
+  Water dispensers
+Home and decoration
+  Furniture
+    Beds
+    Mattresses
+    Sofas
+    Armchairs
+    Tables
+    Chairs
+    Wardrobes
+    Shelves
+    Desks
+  Kitchen and tableware
+    Plates
+    Glasses
+    Cups
+    Saucepans
+    Cooking pots
+    Frying pans
+    Cutlery
+    Trays
+    Kitchen utensils
+    Food containers
+  Decoration
+    Curtains
+    Rugs
+    Frames
+    Mirrors
+    Paintings
+    Vases
+    Light fittings
+    Decorative items
+  Bedding
+    Sheets
+    Blankets
+    Pillows
+    Pillowcases
+    Duvets
+    Mosquito nets
+    Towels
+Hardware and DIY
+  Tools
+    Hammers
+    Screwdrivers
+    Pliers
+    Wrenches
+    Saws
+    Drills
+    Angle grinders
+    Welding machines
+    Tape measures
+    Spirit levels
+  Fasteners
+    Screws
+    Bolts
+    Nuts
+    Washers
+    Nails
+    Wall plugs
+    Hinges
+    Padlocks
+    Locks
+  Plumbing
+    PVC pipes
+    PPR pipes
+    Taps
+    Fittings
+    Valves
+    Seals
+    Traps
+    Water pumps
+    Sanitary accessories
+  Electrical
+    Electric cables
+    Sockets
+    Switches
+    Circuit breakers
+    Fuses
+    Distribution boards
+    Light bulbs
+    Lamp holders
+    Conduits
+    Lamps
+  Paint
+    Paints
+    Varnishes
+    Thinners
+    Solvents
+    Paintbrushes
+    Paint rollers
+    Scrapers
+Building materials
+  Cement
+  Sand
+  Gravel
+  Reinforcing steel
+  Bricks
+  Concrete blocks
+  Floor tiles
+  Wall tiles
+  Marble
+  Granite
+  Roofing sheets
+  Metal profiles
+  Construction timber
+  Planks
+  Plywood
+  Plaster
+  Lime
+  Waterproofing materials
+  Insulation materials
+  Doors
+  Windows
+  Glass panes
+Car, motorbike and accessories
+  Tyres
+  Inner tubes
+  Batteries
+  Engine oils
+  Lubricants
+  Filters
+  Spark plugs
+  Brake pads
+  Brake discs
+  Shock absorbers
+  Mirrors
+  Car bulbs
+  Bodywork accessories
+  Motorbike helmets
+  Motorbike parts
+  Car parts
+  Car wash products
+  Safety accessories
+Agriculture and livestock
+  Seeds
+  Fertilisers
+  Compost
+  Farm equipment
+  Hoes
+  Shovels
+  Watering cans
+  Sprayers
+  Motor pumps
+  Tractors and accessories
+  Livestock feed
+  Poultry feed
+  Fish feed
+  Livestock equipment
+  Drinkers
+  Feeders
+  Veterinary supplies
+School and office supplies
+  School supplies
+    Exercise books
+    Pens
+    Pencils
+    Erasers
+    Rulers
+    Compasses
+    School bags
+    Pencil cases
+    Paper sheets
+    School books
+  Office supplies
+    A4 paper
+    A3 paper
+    Binders
+    Folders
+    Staplers
+    Hole punches
+    Ink
+    Toners
+    Stamps
+    Calculators
+    Filing supplies
+Toys, leisure and entertainment
+  Educational toys
+  Dolls
+  Toy cars
+  Construction toys
+  Board games
+  Balls
+  Electronic games
+  Video games
+  Outdoor games
+  Musical instruments
+  Music accessories
+  Drawing supplies
+Sports and fitness
+  Footballs
+  Basketballs
+  Volleyballs
+  Jerseys
+  Sports shoes
+  Sportswear
+  Dumbbells
+  Weight benches
+  Exercise mats
+  Skipping ropes
+  Fitness accessories
+  Protective equipment
+Garden and outdoor
+  Plants
+  Flowers
+  Pots
+  Potting soil
+  Fertilisers
+  Seeds
+  Garden hoses
+  Watering cans
+  Lawn mowers
+  Pruning shears
+  Garden furniture
+  Outdoor lighting
+  Barbecues
+  Pool accessories
+Energy and solar equipment
+  Solar panels
+  Solar batteries
+  Charge controllers
+  Inverters
+  Converters
+  Generators
+  Solar lamps
+  Solar kits
+  Solar cables
+  Connectors
+  DC circuit breakers
+  Photovoltaic accessories
+Travel goods and luggage
+  Suitcases
+  Travel bags
+  Backpacks
+  Toiletry bags
+  Travel pillows
+  Plug adapters
+  Water bottles
+  Travel accessories
+  Camping gear
+  Tents
+  Camping lamps
+Religious and cultural items
+  Prayer mats
+  Prayer beads
+  Qurans
+  Religious books
+  Prayer veils
+  Bibles
+  Religious items
+  Incense
+  Cultural items
+  Local crafts
+  Traditional items
+Tobacco and regulated items
+  Cigarettes
+  Cigars
+  Tobacco
+  Licensed accessories
+  Smokers' articles
+Services
+  Computer repair
+  Phone repair
+  Electronics repair
+  Electrical installation
+  Plumbing installation
+  Air conditioning installation
+  Printing and photocopying
+  Photography
+  Delivery
+  Transport
+  Software installation
+  Maintenance
+  Miscellaneous services
+Other products
+  Miscellaneous products
+  Unclassified products
+  New products
+  Custom products
+  Seasonal products
+  Products to order
+Restaurant and pastry menu
+  Breakfast
+  Starters
+  Main dishes
+    Local dishes
+    Grills
+    Fish dishes
+    Poultry dishes
+    Vegetarian dishes
+  Side dishes
+  Fast food
+    Burgers
+    Sandwiches
+    Pizzas
+    Shawarmas
+  Desserts
+  Pastries
+    Cakes
+    Viennoiseries
+    Birthday cakes to order
+  Cold drinks
+  Hot drinks
+  Set menus

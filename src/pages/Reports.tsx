@@ -8,29 +8,30 @@ import { exportCsv } from "../lib/files";
 import { printHtml } from "../lib/receipt";
 import { addDays, csvMoney, dateOnly, fromMinor, isoDate, money, paymentLabel, percent, qty, toCsv } from "../lib/format";
 import type { Breakdown, SalesReport } from "../types";
+import { locale, tl } from "../lib/i18n";
 
 const PALETTE = ["#0f766e", "#2563eb", "#d97706", "#7c3aed", "#db2777", "#64748b"];
 
 const PRESETS: { label: string; range: () => [Date, Date] }[] = [
-  { label: "Aujourd'hui", range: () => [new Date(), new Date()] },
-  { label: "7 jours", range: () => [addDays(new Date(), -6), new Date()] },
-  { label: "30 jours", range: () => [addDays(new Date(), -29), new Date()] },
+  { label: tl("Aujourd'hui"), range: () => [new Date(), new Date()] },
+  { label: tl("7 jours"), range: () => [addDays(new Date(), -6), new Date()] },
+  { label: tl("30 jours"), range: () => [addDays(new Date(), -29), new Date()] },
   {
-    label: "Ce mois",
+    label: tl("Ce mois"),
     range: () => {
       const d = new Date();
       return [new Date(d.getFullYear(), d.getMonth(), 1), d];
     },
   },
   {
-    label: "Mois dernier",
+    label: tl("Mois dernier"),
     range: () => {
       const d = new Date();
       return [new Date(d.getFullYear(), d.getMonth() - 1, 1), new Date(d.getFullYear(), d.getMonth(), 0)];
     },
   },
   {
-    label: "Cette année",
+    label: tl("Cette année"),
     range: () => {
       const d = new Date();
       return [new Date(d.getFullYear(), 0, 1), d];
@@ -53,14 +54,14 @@ export default function ReportsPage() {
     if (!r) return;
     const rows: (string | number)[][] = [
       ["Synthèse", "", "", ""],
-      ["Chiffre d'affaires TTC", csvMoney(r.revenue), "", ""],
-      ["Nombre de ventes", r.sales_count, "", ""],
-      ["Coût des marchandises vendues", csvMoney(r.cost_total), "", ""],
-      ["Marge brute", csvMoney(r.margin), "", ""],
-      ["TVA collectée", csvMoney(r.tax_total), "", ""],
-      ["Remises accordées", csvMoney(r.discount_total), "", ""],
-      ["Ventes à crédit", csvMoney(r.credit_total), "", ""],
-      ["Achats fournisseurs", csvMoney(r.purchases_total), "", ""],
+      [tl("Chiffre d'affaires TTC"), csvMoney(r.revenue), "", ""],
+      [tl("Nombre de ventes"), r.sales_count, "", ""],
+      [tl("Coût des marchandises vendues"), csvMoney(r.cost_total), "", ""],
+      [tl("Marge brute"), csvMoney(r.margin), "", ""],
+      [tl("TVA collectée"), csvMoney(r.tax_total), "", ""],
+      [tl("Remises accordées"), csvMoney(r.discount_total), "", ""],
+      [tl("Ventes à crédit"), csvMoney(r.credit_total), "", ""],
+      [tl("Achats fournisseurs"), csvMoney(r.purchases_total), "", ""],
       [],
       ["Ventes par jour", "Nombre", "CA", "Marge"],
       ...r.by_day.map((d) => [d.date, d.count, csvMoney(d.revenue), csvMoney(d.margin)]),
@@ -78,7 +79,7 @@ export default function ReportsPage() {
       ...r.by_user.map((c) => [c.label, c.count, csvMoney(c.amount), csvMoney(c.margin)]),
     ];
     try {
-      if (await exportCsv(`rapport-${from}-au-${to}.csv`, toCsv([`Rapport du ${dateOnly(from)} au ${dateOnly(to)}`, "", "", ""], rows))) toast.success("Export terminé.");
+      if (await exportCsv(`rapport-${from}-au-${to}.csv`, toCsv([`Rapport du ${dateOnly(from)} au ${dateOnly(to)}`, "", "", ""], rows))) toast.success(tl("Export terminé."));
     } catch (e) {
       toast.error(e);
     }
@@ -90,24 +91,24 @@ export default function ReportsPage() {
       `<h3>${title}</h3><table><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
     printHtml(`
       <div class="report-print">
-        <h1>${settings.shop_name} — Rapport d'activité</h1>
-        <p>Période du ${dateOnly(from)} au ${dateOnly(to)} · édité le ${new Date().toLocaleString("fr-FR")}</p>
-        ${table("Synthèse", ["Indicateur", "Valeur"], [
-          ["Chiffre d'affaires TTC", money(r.revenue)],
-          ["Nombre de ventes", String(r.sales_count)],
-          ["Panier moyen", money(r.sales_count ? Math.round(r.revenue / r.sales_count) : 0)],
-          ["Marge brute", `${money(r.margin)} (${percent(r.revenue ? (r.margin / r.revenue) * 100 : 0)})`],
-          ["TVA collectée", money(r.tax_total)],
-          ["Remises", money(r.discount_total)],
-          ["Ventes à crédit", money(r.credit_total)],
-          ["Règlements clients encaissés", money(r.customer_payments_total)],
-          ["Achats fournisseurs", money(r.purchases_total)],
-          ["Ventes annulées", `${r.cancelled_count} (${money(r.cancelled_total)})`],
+        <h1>${settings.shop_name} — ${tl("Rapport d'activité")}</h1>
+        <p>${tl("Période du {0} au {1} · édité le {2}", [dateOnly(from), dateOnly(to), new Date().toLocaleString(locale())])}</p>
+        ${table(tl("Synthèse"), [tl("Indicateur"), tl("Valeur")], [
+          [tl("Chiffre d'affaires TTC"), money(r.revenue)],
+          [tl("Nombre de ventes"), String(r.sales_count)],
+          [tl("Panier moyen"), money(r.sales_count ? Math.round(r.revenue / r.sales_count) : 0)],
+          [tl("Marge brute"), `${money(r.margin)} (${percent(r.revenue ? (r.margin / r.revenue) * 100 : 0)})`],
+          [tl("TVA collectée"), money(r.tax_total)],
+          [tl("Remises"), money(r.discount_total)],
+          [tl("Ventes à crédit"), money(r.credit_total)],
+          [tl("Règlements clients encaissés"), money(r.customer_payments_total)],
+          [tl("Achats fournisseurs"), money(r.purchases_total)],
+          [tl("Ventes annulées"), `${r.cancelled_count} (${money(r.cancelled_total)})`],
         ])}
-        ${table("Par mode de paiement", ["Mode", "Ventes", "Montant"], r.by_payment.map((b) => [paymentLabel(b.label), String(b.count), money(b.amount)]))}
-        ${table("Par catégorie", ["Catégorie", "CA", "Marge"], r.by_category.map((b) => [b.label, money(b.amount), money(b.margin)]))}
-        ${table("Par caissier", ["Caissier", "Ventes", "CA"], r.by_user.map((b) => [b.label, String(b.count), money(b.amount)]))}
-        ${table("Meilleures ventes", ["Produit", "Quantité", "CA", "Marge"], r.top_products.map((p) => [p.name, `${qty(p.quantity)} ${p.unit}`, money(p.revenue), money(p.margin)]))}
+        ${table(tl("Par mode de paiement"), [tl("Mode"), tl("Ventes"), tl("Montant")], r.by_payment.map((b) => [paymentLabel(b.label), String(b.count), money(b.amount)]))}
+        ${table(tl("Par catégorie"), [tl("Catégorie"), tl("CA"), tl("Marge")], r.by_category.map((b) => [b.label, money(b.amount), money(b.margin)]))}
+        ${table(tl("Par caissier"), [tl("Caissier"), tl("Ventes"), tl("CA")], r.by_user.map((b) => [b.label, String(b.count), money(b.amount)]))}
+        ${table(tl("Meilleures ventes"), [tl("Produit"), tl("Quantité"), tl("CA"), tl("Marge")], r.top_products.map((p) => [p.name, `${qty(p.quantity)} ${p.unit}`, money(p.revenue), money(p.margin)]))}
       </div>`);
   };
 
@@ -119,12 +120,12 @@ export default function ReportsPage() {
     <div className="page">
       <PageHeader
         help="reports"
-        title="Rapports"
-        subtitle="Analyse des ventes, des marges et de l'activité sur une période."
+        title={tl("Rapports")}
+        subtitle={tl("Analyse des ventes, des marges et de l'activité sur une période.")}
         actions={
           <>
-            <button className="btn" onClick={doPrint}><Printer size={16} /> Imprimer</button>
-            <button className="btn" onClick={doExport}><Download size={16} /> Exporter (Excel)</button>
+            <button className="btn" onClick={doPrint}><Printer size={16} />  {tl("Imprimer")}</button>
+            <button className="btn" onClick={doExport}><Download size={16} />  {tl("Exporter (Excel)")}</button>
           </>
         }
       />
@@ -143,30 +144,30 @@ export default function ReportsPage() {
           </button>
         ))}
         <div className="spacer" />
-        <label className="inline">Du <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="inline">{tl("Du")} <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="inline">au <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
       </div>
 
       <div className="stats">
-        <StatCard label="Chiffre d'affaires TTC" value={money(r.revenue)} tone="accent" hint={`${r.sales_count} ventes`} />
-        <StatCard label="Panier moyen" value={money(r.sales_count ? Math.round(r.revenue / r.sales_count) : 0)} />
-        <StatCard label="Marge brute" value={money(r.margin)} tone="success" hint={`Taux de marge : ${percent(marginRate)}`} />
-        <StatCard label="TVA collectée" value={money(r.tax_total)} />
-        <StatCard label="Remises accordées" value={money(r.discount_total)} />
-        <StatCard label="Ventes à crédit" value={money(r.credit_total)} tone={r.credit_total ? "warning" : "default"} hint={`Règlements reçus : ${money(r.customer_payments_total)}`} />
-        <StatCard label="Achats fournisseurs" value={money(r.purchases_total)} />
-        <StatCard label="Ventes annulées" value={r.cancelled_count} tone={r.cancelled_count ? "danger" : "default"} hint={money(r.cancelled_total)} />
+        <StatCard label={tl("Chiffre d'affaires TTC")} value={money(r.revenue)} tone="accent" hint={`${r.sales_count} ventes`} />
+        <StatCard label={tl("Panier moyen")} value={money(r.sales_count ? Math.round(r.revenue / r.sales_count) : 0)} />
+        <StatCard label={tl("Marge brute")} value={money(r.margin)} tone="success" hint={tl("Taux de marge : {0}", [percent(marginRate)])} />
+        <StatCard label={tl("TVA collectée")} value={money(r.tax_total)} />
+        <StatCard label={tl("Remises accordées")} value={money(r.discount_total)} />
+        <StatCard label={tl("Ventes à crédit")} value={money(r.credit_total)} tone={r.credit_total ? "warning" : "default"} hint={tl("Règlements reçus : {0}", [money(r.customer_payments_total)])} />
+        <StatCard label={tl("Achats fournisseurs")} value={money(r.purchases_total)} />
+        <StatCard label={tl("Ventes annulées")} value={r.cancelled_count} tone={r.cancelled_count ? "danger" : "default"} hint={money(r.cancelled_total)} />
       </div>
 
       <div className="card">
-        <div className="card-header"><h3>Évolution journalière</h3></div>
+        <div className="card-header"><h3>{tl("Évolution journalière")}</h3></div>
         <div style={{ height: 280 }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={days} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={70} tickFormatter={(v) => Number(v).toLocaleString("fr-FR")} />
-              <Tooltip formatter={(v, n) => [Number(v).toLocaleString("fr-FR"), n === "ca" ? "Chiffre d'affaires" : "Marge"]} />
+              <YAxis tick={{ fontSize: 11, fill: "var(--muted)" }} tickLine={false} axisLine={false} width={70} tickFormatter={(v) => Number(v).toLocaleString(locale())} />
+              <Tooltip formatter={(v, n) => [Number(v).toLocaleString(locale()), n === "ca" ? tl("Chiffre d'affaires") : tl("Marge")]} />
               <Bar dataKey="ca" fill="var(--accent)" radius={[4, 4, 0, 0]} />
               <Bar dataKey="marge" fill="var(--success)" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -175,17 +176,17 @@ export default function ReportsPage() {
       </div>
 
       <div className="grid-2">
-        <BreakdownCard title="Par mode de paiement" data={r.by_payment} labelFn={paymentLabel} pie />
-        <BreakdownCard title="Par catégorie" data={r.by_category} />
+        <BreakdownCard title={tl("Par mode de paiement")} data={r.by_payment} labelFn={paymentLabel} pie />
+        <BreakdownCard title={tl("Par catégorie")} data={r.by_category} />
       </div>
       <div className="grid-2">
         <div className="card">
-          <div className="card-header"><h3>Meilleures ventes</h3></div>
+          <div className="card-header"><h3>{tl("Meilleures ventes")}</h3></div>
           {r.top_products.length === 0 ? (
-            <Empty title="Aucune vente" />
+            <Empty title={tl("Aucune vente")} />
           ) : (
             <table className="table compact">
-              <thead><tr><th>Produit</th><th className="num">Quantité</th><th className="num">CA</th><th className="num">Marge</th></tr></thead>
+              <thead><tr><th>{tl("Produit")}</th><th className="num">{tl("Quantité")}</th><th className="num">CA</th><th className="num">{tl("Marge")}</th></tr></thead>
               <tbody>
                 {r.top_products.map((p) => (
                   <tr key={p.product_id}>
@@ -199,7 +200,7 @@ export default function ReportsPage() {
             </table>
           )}
         </div>
-        <BreakdownCard title="Par caissier" data={r.by_user} />
+        <BreakdownCard title={tl("Par caissier")} data={r.by_user} />
       </div>
     </div>
   );
@@ -211,7 +212,7 @@ function BreakdownCard({ title, data, labelFn = (s) => s, pie }: { title: string
     <div className="card">
       <div className="card-header"><h3>{title}</h3></div>
       {data.length === 0 ? (
-        <Empty title="Aucune donnée" />
+        <Empty title={tl("Aucune donnée")} />
       ) : (
         <div className={pie ? "pie-layout" : ""}>
           {pie && (
@@ -221,7 +222,7 @@ function BreakdownCard({ title, data, labelFn = (s) => s, pie }: { title: string
                   <Pie data={data.map((d) => ({ name: labelFn(d.label), value: fromMinor(d.amount) }))} dataKey="value" innerRadius={50} outerRadius={80} paddingAngle={2}>
                     {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
                   </Pie>
-                  <Tooltip formatter={(v) => Number(v).toLocaleString("fr-FR")} />
+                  <Tooltip formatter={(v) => Number(v).toLocaleString(locale())} />
                 </PieChart>
               </ResponsiveContainer>
             </div>

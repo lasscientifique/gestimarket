@@ -19,6 +19,10 @@ fn setup() -> (Connection, SessionUser) {
             full_name: "Admin Test".into(),
             username: "admin".into(),
             password: "secret123".into(),
+            lang: None,
+            country: None,
+            currency_code: None,
+            currency_position: None,
         },
     )
     .unwrap();
@@ -30,7 +34,7 @@ fn cashier(conn: &Connection, admin: &SessionUser) -> SessionUser {
     let id = users::create(conn, admin, users::UserInput {
         username: Some("caisse".into()), full_name: "Caissière Test".into(), role: "cashier".into(), active: Some(true), password: Some("caisse123".into()),
     }).unwrap();
-    SessionUser { id, username: "caisse".into(), full_name: "Caissière Test".into(), role: "cashier".into(), has_pin: false }
+    SessionUser { id, username: "caisse".into(), full_name: "Caissière Test".into(), role: "cashier".into(), has_pin: false, lang: None }
 }
 
 fn product(conn: &mut Connection, user: &SessionUser, name: &str, cost: i64, price: i64, qty: f64) -> i64 {
@@ -360,6 +364,44 @@ fn split_payment_cash_and_orange_money_with_unique_reference() {
 }
 
 #[test]
+fn configured_mobile_operator_payment() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let p = product(&mut conn, &admin, "Riz 1 kg", 500, 800, 50.0);
+    cash::open(&conn, &caisse, 0).unwrap();
+    let ops = r#"[{"id":"wave","name":"Wave","require_ref":true},{"id":"moov","name":"Moov Money","enabled":false}]"#;
+    let mut values = std::collections::BTreeMap::new();
+    values.insert("mobile_operators".to_string(), ops.to_string());
+    settings::update(&mut conn, &admin, values).unwrap();
+    // Liste illisible ou identifiant en double → refusée.
+    let mut bad = std::collections::BTreeMap::new();
+    bad.insert("mobile_operators".to_string(), r#"[{"id":"wave","name":"A"},{"id":"wave","name":"B"}]"#.to_string());
+    assert!(settings::update(&mut conn, &admin, bad).is_err());
+
+    let pay = |method: &str, reference: Option<&str>| sales::PaymentInput {
+        method: method.into(),
+        amount: 800,
+        reference: reference.map(String::from),
+        phone: None,
+    };
+    let mut ok = sale_input(vec![(p, 1.0)], "cash", 0, None);
+    ok.payments = vec![pay("mm:wave", Some("T-WAVE-1"))];
+    let sale = sales::create_sale(&mut conn, &caisse, ok).unwrap();
+    assert_eq!(sale.payment_method, "mm:wave");
+
+    // ID de transaction exigé, opérateur désactivé ou inconnu → refusé.
+    for (method, reference) in [("mm:wave", None), ("mm:moov", Some("T2")), ("mm:mtn", Some("T3"))] {
+        let mut input = sale_input(vec![(p, 1.0)], "cash", 0, None);
+        input.payments = vec![pay(method, reference)];
+        assert!(sales::create_sale(&mut conn, &caisse, input).is_err(), "{method}");
+    }
+    let session = cash::current_session(&conn, &caisse).unwrap().unwrap();
+    assert_eq!(session.mobile_money_sales, 800);
+    let wave = sales::list_electronic(&conn, &sales::ElectronicFilter { method: Some("mm:wave".into()), ..Default::default() }).unwrap();
+    assert_eq!(wave.len(), 1);
+}
+
+#[test]
 fn locations_assignment_and_search() {
     let (mut conn, admin) = setup();
     let created = locations::generate(
@@ -483,7 +525,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 6);
+    assert_eq!(count("PRAGMA user_version"), 7);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -715,6 +757,14 @@ fn catalogue_business_types_and_category_tree() {
     // Pas de doublon au second chargement
     assert_eq!(templates::seed(&mut conn, &admin, &[1, 2]).unwrap(), 0);
     assert!(templates::seed(&mut conn, &admin, &[999]).is_err());
+    // Catalogue anglais : même arborescence (les index des profils restent valables).
+    fn shape(n: &templates::TemplateNode) -> Vec<usize> {
+        std::iter::once(n.children.len()).chain(n.children.iter().flat_map(shape)).collect()
+    }
+    let en = templates::catalogue_in("en");
+    assert_eq!(en.len(), tree.len());
+    assert!(en.iter().zip(&tree).all(|(a, b)| shape(a) == shape(b)));
+    assert_eq!(en[1].name, "Beverages");
     // Import de chemins sur plusieurs niveaux
     let n = templates::import_paths(&mut conn, &admin, vec!["Quincaillerie > Plomberie > Tuyaux PVC".into(), "Quincaillerie > Plomberie".into()]).unwrap();
     assert_eq!(n, 3);
@@ -977,7 +1027,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 6);
+    assert_eq!(count("PRAGMA user_version"), 7);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).

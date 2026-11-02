@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import type { Location } from "../types";
+import { tl, tm } from "../lib/i18n";
 
 /** Liste déroulante des cases du plan, regroupées par meuble (« Réfrigérateur FR1 — Rez-de-chaussée »). */
 export function LocationSelect({
   locations,
   value,
   onChange,
-  emptyLabel = "— Non rangé —",
+  emptyLabel = tl("— Non rangé —"),
   className,
 }: {
   locations: Location[];
@@ -30,10 +31,10 @@ export function LocationSelect({
       {groups.map((list) => {
         const f = list[0];
         return (
-          <optgroup key={f.fixture_id} label={`${f.fixture_name} (${f.bloc})${floors > 1 ? " — " + f.floor_name : ""}`}>
+          <optgroup key={f.fixture_id} label={`${tm(f.fixture_name)} (${f.bloc})${floors > 1 ? " — " + tm(f.floor_name) : ""}`}>
             {list.map((l) => (
               <option key={l.id} value={l.id}>
-                {[l.bloc, l.etage ? `Étage ${l.etage}` : "", l.rangee ? `Case ${l.rangee}` : ""].filter(Boolean).join(" · ")}
+                {[l.bloc, l.etage ? tl("Étage {0}", [l.etage]) : "", l.rangee ? tl("Case {0}", [l.rangee]) : ""].filter(Boolean).join(" · ")}
                 {l.label ? ` (${l.label})` : ""}
               </option>
             ))}

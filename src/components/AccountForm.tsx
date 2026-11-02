@@ -5,6 +5,8 @@ import { errorMessage } from "../context/AppContext";
 import { Badge } from "./ui";
 import { isoDateTime } from "../lib/license";
 import type { AccountLinkResult, AccountOptions, AccountStore, StoreInput } from "../types";
+import { tl } from "../lib/i18n";
+import { countryName } from "../lib/countries";
 
 const EMPTY_STORE: StoreInput = { name: "", owner_name: "", phone: "", country: "ML", city: "", address: "", shop_type: "" };
 
@@ -14,37 +16,37 @@ function StoreFields({ value, onChange, options }: { value: StoreInput; onChange
   return (
     <div className="form-grid">
       <label className="field span-2">
-        <span className="field-label">Nom de la boutique *</span>
-        <input value={value.name} onChange={set("name")} placeholder="Ex. Eden Superrette" />
+        <span className="field-label">{tl("Nom de la boutique *")}</span>
+        <input value={value.name} onChange={set("name")} placeholder={tl("Ex. Eden Superrette")} />
       </label>
       <label className="field">
-        <span className="field-label">Nom complet de la propriétaire *</span>
+        <span className="field-label">{tl("Nom complet de la propriétaire *")}</span>
         <input value={value.owner_name} onChange={set("owner_name")} />
       </label>
       <label className="field">
-        <span className="field-label">Téléphone</span>
+        <span className="field-label">{tl("Téléphone")}</span>
         <input value={value.phone} onChange={set("phone")} inputMode="tel" />
       </label>
       <label className="field">
-        <span className="field-label">Pays *</span>
+        <span className="field-label">{tl("Pays *")}</span>
         <select value={value.country} onChange={set("country")}>
           {options.countries.map((c) => (
-            <option key={c.code} value={c.code}>{c.label}</option>
+            <option key={c.code} value={c.code}>{countryName(c.code, c.label)}</option>
           ))}
         </select>
       </label>
       <label className="field">
-        <span className="field-label">Ville *</span>
+        <span className="field-label">{tl("Ville *")}</span>
         <input value={value.city} onChange={set("city")} />
       </label>
       <label className="field span-2">
-        <span className="field-label">Adresse *</span>
-        <input value={value.address} onChange={set("address")} placeholder="Quartier, rue, repère" />
+        <span className="field-label">{tl("Adresse *")}</span>
+        <input value={value.address} onChange={set("address")} placeholder={tl("Quartier, rue, repère")} />
       </label>
       <label className="field span-2">
-        <span className="field-label">Type de boutique *</span>
+        <span className="field-label">{tl("Type de boutique *")}</span>
         <select value={value.shop_type} onChange={set("shop_type")}>
-          <option value="">Choisir…</option>
+          <option value="">{tl("Choisir…")}</option>
           {options.shop_types.map((t) => (
             <option key={t.code} value={t.code}>{t.label}</option>
           ))}
@@ -55,11 +57,11 @@ function StoreFields({ value, onChange, options }: { value: StoreInput; onChange
 }
 
 function missing(s: StoreInput): string | null {
-  if (!s.name.trim()) return "Renseignez le nom de la boutique.";
-  if (!s.owner_name.trim()) return "Renseignez le nom complet de la propriétaire.";
-  if (!s.city.trim()) return "Renseignez la ville.";
-  if (!s.address.trim()) return "Renseignez l'adresse.";
-  if (!s.shop_type) return "Choisissez le type de boutique.";
+  if (!s.name.trim()) return tl("Renseignez le nom de la boutique.");
+  if (!s.owner_name.trim()) return tl("Renseignez le nom complet de la propriétaire.");
+  if (!s.city.trim()) return tl("Renseignez la ville.");
+  if (!s.address.trim()) return tl("Renseignez l'adresse.");
+  if (!s.shop_type) return tl("Choisissez le type de boutique.");
   return null;
 }
 
@@ -102,7 +104,7 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
   const linked = (r: AccountLinkResult) => {
     if (r.status === "confirm_email") {
       setMode("login");
-      setInfo("Compte créé. Ouvrez le lien de confirmation reçu par e-mail, puis connectez-vous ici.");
+      setInfo(tl("Compte créé. Ouvrez le lien de confirmation reçu par e-mail, puis connectez-vous ici."));
       return;
     }
     onLinked(r);
@@ -110,8 +112,8 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
 
   const signup = (e: FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) return setError("Le mot de passe doit contenir au moins 8 caractères.");
-    if (password !== confirmPwd) return setError("Les mots de passe ne correspondent pas.");
+    if (password.length < 8) return setError(tl("Le mot de passe doit contenir au moins 8 caractères."));
+    if (password !== confirmPwd) return setError(tl("Les mots de passe ne correspondent pas."));
     const m = missing(store);
     if (m) return setError(m);
     run(async () => linked(await api.accountSignup({ ...store, email, password })));
@@ -123,7 +125,7 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
       const r = await api.accountLogin(email, password);
       setStores(r.stores);
       setMode(r.stores.length ? "choose" : "new-store");
-      if (!r.stores.length) setInfo("Aucune boutique sur ce compte : créez-la.");
+      if (!r.stores.length) setInfo(tl("Aucune boutique sur ce compte : créez-la."));
     });
   };
 
@@ -138,10 +140,10 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
     return optionsError ? (
       <div className="alert alert-danger">
         {optionsError}{" "}
-        <button type="button" className="link-btn" onClick={loadOptions}><RefreshCw size={14} /> Réessayer</button>
+        <button type="button" className="link-btn" onClick={loadOptions}><RefreshCw size={14} />  {tl("Réessayer")}</button>
       </div>
     ) : (
-      <p className="muted">Connexion au service Eden Dev…</p>
+      <p className="muted">{tl("Connexion au service Eden Dev…")}</p>
     );
   }
 
@@ -150,11 +152,9 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
       {(mode === "signup" || mode === "login") && (
         <div className="segmented">
           <button type="button" className={mode === "signup" ? "active" : ""} onClick={() => { setMode("signup"); setError(""); }}>
-            <UserPlus size={15} /> Créer un compte
-          </button>
+            <UserPlus size={15} />  {tl("Créer un compte")}</button>
           <button type="button" className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setError(""); }}>
-            <LogIn size={15} /> J'ai déjà un compte
-          </button>
+            <LogIn size={15} />  {tl("J'ai déjà un compte")}</button>
         </div>
       )}
       {info && <div className="alert alert-info">{info}</div>}
@@ -162,28 +162,28 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
       {mode === "signup" && (
         <form onSubmit={signup}>
           {options.trial_days > 0 && (
-            <p className="muted small">{options.trial_days} jours d'essai gratuit de la formule PRO, sans engagement.</p>
+            <p className="muted small">{options.trial_days}  {tl("jours d'essai gratuit de la formule PRO, sans engagement.")}</p>
           )}
-          <h4 className="section-title">Compte</h4>
+          <h4 className="section-title">{tl("Compte")}</h4>
           <div className="form-grid">
             <label className="field span-2">
-              <span className="field-label">E-mail (identifiant) *</span>
+              <span className="field-label">{tl("E-mail (identifiant) *")}</span>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
             </label>
             <label className="field">
-              <span className="field-label">Mot de passe * (8 caractères min.)</span>
+              <span className="field-label">{tl("Mot de passe * (8 caractères min.)")}</span>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
             </label>
             <label className="field">
-              <span className="field-label">Confirmation *</span>
+              <span className="field-label">{tl("Confirmation *")}</span>
               <input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)} autoComplete="new-password" />
             </label>
           </div>
-          <h4 className="section-title">Boutique</h4>
+          <h4 className="section-title">{tl("Boutique")}</h4>
           <StoreFields value={store} onChange={setStore} options={options} />
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-lg btn-block" disabled={busy}>
-            {busy ? "Création du compte…" : "Créer le compte et activer l'essai"}
+            {busy ? tl("Création du compte…") : tl("Créer le compte et activer l'essai")}
           </button>
         </form>
       )}
@@ -192,24 +192,24 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
         <form onSubmit={login}>
           <div className="form-grid">
             <label className="field span-2">
-              <span className="field-label">E-mail</span>
+              <span className="field-label">{tl("E-mail")}</span>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
             </label>
             <label className="field span-2">
-              <span className="field-label">Mot de passe</span>
+              <span className="field-label">{tl("Mot de passe")}</span>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </label>
           </div>
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-lg btn-block" disabled={busy || !email || !password}>
-            {busy ? "Connexion…" : "Se connecter"}
+            {busy ? tl("Connexion…") : tl("Se connecter")}
           </button>
         </form>
       )}
 
       {mode === "choose" && (
         <div>
-          <p className="muted">Quelle boutique utilise ce PC ?</p>
+          <p className="muted">{tl("Quelle boutique utilise ce PC ?")}</p>
           <div className="boutique-list">
             {stores.map((s) => (
               <div key={s.code} className="boutique-row">
@@ -217,23 +217,21 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
                 <div className="boutique-main">
                   <strong>{s.name}</strong>
                   <span className="small muted">
-                    {s.code} · {s.city} · {s.plan_label ? `${s.plan_label}${s.trial ? " (essai)" : ""} jusqu'au ${isoDateTime(s.ends_at)}` : "aucun abonnement en cours"}
+                    {s.code} · {s.city} · {s.plan_label ? tl("{0}{1} jusqu'au {2}", [s.plan_label, s.trial ? " (essai)" : "", isoDateTime(s.ends_at)]) : tl("aucun abonnement en cours")}
                   </span>
                 </div>
                 {s.status !== "active" ? (
                   <Badge tone="danger">suspendue</Badge>
                 ) : (
                   <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(async () => linked(await api.accountLink(s.code)))}>
-                    Utiliser
-                  </button>
+                    {tl("Utiliser")}</button>
                 )}
               </div>
             ))}
           </div>
           {stores.length < 5 && (
             <button className="btn" style={{ marginTop: 12 }} onClick={() => { setStore(EMPTY_STORE); setMode("new-store"); }}>
-              <Plus size={16} /> Nouvelle boutique sur ce compte
-            </button>
+              <Plus size={16} />  {tl("Nouvelle boutique sur ce compte")}</button>
           )}
           {error && <div className="alert alert-danger">{error}</div>}
         </div>
@@ -244,8 +242,8 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
           <StoreFields value={store} onChange={setStore} options={options} />
           {error && <div className="alert alert-danger">{error}</div>}
           <div className="row-end">
-            {stores.length > 0 && <button type="button" className="btn" onClick={() => setMode("choose")}>Retour</button>}
-            <button className="btn btn-primary" disabled={busy}>{busy ? "Création…" : "Créer la boutique"}</button>
+            {stores.length > 0 && <button type="button" className="btn" onClick={() => setMode("choose")}>{tl("Retour")}</button>}
+            <button className="btn btn-primary" disabled={busy}>{busy ? tl("Création…") : tl("Créer la boutique")}</button>
           </div>
         </form>
       )}

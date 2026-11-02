@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleHelp, X, Lightbulb, ListChecks, Target } from "lucide-react";
 import { PAGE_HELP, TIPS } from "../lib/help";
+import { tl } from "../lib/i18n";
 
 /**
  * Petit « ? » à côté d'un bouton ou d'un champ : explique son rôle.
@@ -22,7 +23,7 @@ export function HelpTip({ k, text, side = "bottom" }: { k?: keyof typeof TIPS | 
       <button
         type="button"
         className="help-tip-btn"
-        aria-label="Aide"
+        aria-label={tl("Aide")}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -49,32 +50,31 @@ export function PageHelpButton({ page }: { page: string }) {
   if (!help) return null;
   return (
     <>
-      <button className="btn btn-help" onClick={() => setOpen(true)} title="Aide sur cet écran">
-        <CircleHelp size={16} /> Aide
-      </button>
+      <button className="btn btn-help" onClick={() => setOpen(true)} title={tl("Aide sur cet écran")}>
+        <CircleHelp size={16} />  {tl("Aide")}</button>
       {open && (
         <div className="help-backdrop" onMouseDown={() => setOpen(false)}>
-          <aside className="help-panel" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={`Aide : ${help.title}`}>
+          <aside className="help-panel" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={tl("Aide : {0}", [help.title])}>
             <div className="help-panel-head">
               <CircleHelp size={20} />
               <h2>{help.title}</h2>
-              <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Fermer"><X size={18} /></button>
+              <button className="icon-btn" onClick={() => setOpen(false)} aria-label={tl("Fermer")}><X size={18} /></button>
             </div>
             <section>
-              <h4><Target size={15} /> À quoi sert cet écran ?</h4>
+              <h4><Target size={15} />  {tl("À quoi sert cet écran ?")}</h4>
               <p>{help.purpose}</p>
             </section>
             <section>
-              <h4><ListChecks size={15} /> Comment faire</h4>
+              <h4><ListChecks size={15} />  {tl("Comment faire")}</h4>
               <ol>{help.steps.map((s) => <li key={s}>{s}</li>)}</ol>
             </section>
             {help.tips && (
               <section>
-                <h4><Lightbulb size={15} /> Astuces</h4>
+                <h4><Lightbulb size={15} />  {tl("Astuces")}</h4>
                 <ul>{help.tips.map((s) => <li key={s}>{s}</li>)}</ul>
               </section>
             )}
-            <p className="muted small">Les petits boutons <span className="help-tip-btn inline">?</span> à côté des actions expliquent chaque fonction.</p>
+            <p className="muted small">{tl("Les petits boutons")} <span className="help-tip-btn inline">?</span>  {tl("à côté des actions expliquent chaque fonction.")}</p>
           </aside>
         </div>
       )}

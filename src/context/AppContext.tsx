@@ -2,8 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
 import { api } from "../api";
 import { configureCurrency, configurePaymentLabels } from "../lib/format";
+import { parseOperators } from "../lib/mobile";
 import type { Role, SessionUser, Settings } from "../types";
 import { PinDialog } from "../components/PinPad";
+import { configureLocale, getLang, hasStoredLang, isLang, setLang, tl, tm } from "../lib/i18n";
 
 // ───────────── Notifications (toasts) ─────────────
 
@@ -70,12 +72,17 @@ interface AppContextValue {
 const Ctx = createContext<AppContextValue | null>(null);
 
 export function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  return typeof e === "string" ? e : "Une erreur inattendue est survenue.";
+  if (e instanceof Error) return tm(e.message);
+  return typeof e === "string" ? tm(e) : tl("Une erreur inattendue est survenue.");
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const [user, setUserState] = useState<SessionUser | null>(null);
+  // Utilisateur connecté : sa langue (s'il en a choisi une) s'applique à ce poste.
+  const setUser = useCallback((u: SessionUser | null) => {
+    setUserState(u);
+    if (u && isLang(u.lang) && u.lang !== getLang()) setLang(u.lang);
+  }, []);
   const [settings, setSettingsState] = useState<Settings>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirmState, setConfirmState] = useState<(ConfirmOptions & { resolve: (v: boolean) => void }) | null>(null);
@@ -118,8 +125,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const setSettings = useCallback((s: Settings) => {
-    configureCurrency(s.currency_symbol, Number(s.currency_decimals ?? 0));
-    configurePaymentLabels(s.om_label);
+    configureCurrency(s.currency_symbol, Number(s.currency_decimals ?? 0), s.currency_position);
+    const operators = parseOperators(s.mobile_operators);
+    configurePaymentLabels(
+      {
+        ...(s.om_label?.trim() ? { orange_money: s.om_label.trim() } : {}),
+        ...Object.fromEntries(operators.map((o) => [`mm:${o.id}`, o.name])),
+      },
+      operators.filter((o) => o.enabled).map((o) => `mm:${o.id}`),
+    );
+    configureLocale(s.shop_lang, s.country);
+    // Poste sans langue choisie : celle de la boutique.
+    if (!hasStoredLang() && isLang(s.shop_lang) && s.shop_lang !== getLang()) setLang(s.shop_lang);
     setSettingsState(s);
   }, []);
 
@@ -195,7 +212,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           <div key={t.id} className={`toast toast-${t.kind}`}>
             {t.kind === "success" ? <CheckCircle2 size={18} /> : t.kind === "error" ? <AlertTriangle size={18} /> : <Info size={18} />}
             <span>{t.message}</span>
-            <button className="icon-btn" onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))} aria-label="Fermer">
+            <button className="icon-btn" onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))} aria-label={tl("Fermer")}>
               <X size={14} />
             </button>
           </div>
@@ -230,14 +247,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
             <div className="modal-body">{confirmState.message}</div>
             <div className="modal-footer">
               <button className="btn" onClick={() => closeConfirm(false)}>
-                Annuler
-              </button>
+                {tl("Annuler")}</button>
               <button
                 autoFocus
                 className={`btn ${confirmState.danger ? "btn-danger" : "btn-primary"}`}
                 onClick={() => closeConfirm(true)}
               >
-                {confirmState.confirmLabel ?? "Confirmer"}
+                {confirmState.confirmLabel ?? tl("Confirmer")}
               </button>
             </div>
           </div>

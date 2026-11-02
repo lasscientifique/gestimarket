@@ -69,6 +69,10 @@ export const api = {
     full_name: string;
     username: string;
     password: string;
+    lang?: string;
+    country?: string;
+    currency_code?: string;
+    currency_position?: string;
   }) => withSession(call("initial_setup", { input })),
   login: (username: string, password: string) => withSession(call("login", { username, password })),
   loginPin: (user_id: number, pin: string) => withSession(call("login_pin", { user_id, pin })),
@@ -80,6 +84,7 @@ export const api = {
     setToken(null);
   },
   currentUser: () => call<SessionUser | null>("current_user"),
+  setMyLang: (lang: string) => call<SessionUser>("set_my_lang", { lang }),
   changePassword: (current: string, password: string) => call<void>("change_password", { current, password }),
 
   // Utilisateurs

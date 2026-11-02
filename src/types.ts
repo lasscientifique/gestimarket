@@ -2,7 +2,8 @@
 // Les montants sont des entiers dans la plus petite unité de la devise.
 
 export type Role = "admin" | "manager" | "cashier";
-export type PaymentMethod = "cash" | "orange_money" | "mobile_money" | "card" | "other";
+/** « mm:<id> » : opérateur de mobile money configuré par la boutique (Wave, MTN MoMo…). */
+export type PaymentMethod = "cash" | "orange_money" | "mobile_money" | "card" | "other" | `mm:${string}`;
 /** Mode de paiement résumé d'une vente : un moyen, « mixed » (plusieurs) ou « credit » (rien payé). */
 export type SaleMethod = PaymentMethod | "credit" | "mixed";
 
@@ -12,6 +13,8 @@ export interface SessionUser {
   full_name: string;
   role: Role;
   has_pin: boolean;
+  /** Langue choisie (fr, en) ; vide : langue de la boutique. */
+  lang?: string | null;
 }
 
 export interface User extends SessionUser {
@@ -702,6 +705,8 @@ export interface PlanInfo {
   max_postes: number;
   features: LicenseFeature[];
   description: string;
+  /** Prix mensuel par devise (XOF et XAF = price_month), fixés par Eden Dev. */
+  prices?: Record<string, number>;
 }
 
 export interface AccountOptions {
@@ -716,6 +721,9 @@ export interface AccountOptions {
     om_merchant_name: string;
     om_qr_payload: string;
     card_enabled: boolean;
+    /** Devise par défaut de la carte Visa, et devises acceptées par le profil Cybersource. */
+    card_currency?: string;
+    card_currencies?: string[];
   };
 }
 
@@ -730,6 +738,7 @@ export interface SubscriptionPayment {
   plan_label: string;
   months: number | null;
   amount: number;
+  currency?: string;
   /** pending (carte en cours), declared (à valider par Eden Dev), validated, refused */
   status: "pending" | "declared" | "validated" | "refused";
   note: string;

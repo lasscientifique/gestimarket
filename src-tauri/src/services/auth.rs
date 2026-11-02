@@ -59,6 +59,22 @@ pub struct SetupInput {
     pub full_name: String,
     pub username: String,
     pub password: String,
+    /// Langue de la boutique et de l'administrateur (fr, en).
+    #[serde(default)]
+    pub lang: Option<String>,
+    /// Pays de la boutique (code ISO à 2 lettres).
+    #[serde(default)]
+    pub country: Option<String>,
+    /// Devise (code ISO 4217, ex. XOF) et place du symbole (before, after).
+    #[serde(default)]
+    pub currency_code: Option<String>,
+    #[serde(default)]
+    pub currency_position: Option<String>,
+}
+
+/// Langue acceptée (fr, en), sinon aucune.
+pub fn valid_lang(lang: &Option<String>) -> Option<String> {
+    lang.as_deref().map(str::trim).filter(|l| matches!(*l, "fr" | "en")).map(String::from)
 }
 
 /// Premier démarrage : crée le compte administrateur et les paramètres du commerce.
@@ -83,9 +99,10 @@ pub fn initial_setup(conn: &mut Connection, input: SetupInput) -> AppResult<Sess
     let hash = hash_password(&input.password)?;
 
     let tx = conn.transaction()?;
+    let lang = valid_lang(&input.lang);
     tx.execute(
-        "INSERT INTO users (username, full_name, password_hash, role, created_at) VALUES (?1, ?2, ?3, 'admin', ?4)",
-        params![username, input.full_name.trim(), hash, db::now()],
+        "INSERT INTO users (username, full_name, password_hash, role, created_at, lang) VALUES (?1, ?2, ?3, 'admin', ?4, ?5)",
+        params![username, input.full_name.trim(), hash, db::now(), lang],
     )?;
     let user = SessionUser {
         id: tx.last_insert_rowid(),
@@ -93,7 +110,20 @@ pub fn initial_setup(conn: &mut Connection, input: SetupInput) -> AppResult<Sess
         full_name: input.full_name.trim().to_string(),
         role: "admin".into(),
         has_pin: false,
+        lang: lang.clone(),
     };
+    if let Some(l) = &lang {
+        settings::set(&tx, "shop_lang", l)?;
+    }
+    if let Some(c) = db::clean(&input.country).map(|c| c.to_uppercase()).filter(|c| c.len() == 2 && c.chars().all(|x| x.is_ascii_uppercase())) {
+        settings::set(&tx, "country", &c)?;
+    }
+    if let Some(code) = db::clean(&input.currency_code).map(|c| c.to_uppercase()).filter(|c| c.len() == 3 && c.chars().all(|x| x.is_ascii_uppercase())) {
+        settings::set(&tx, "currency_code", &code)?;
+    }
+    if let Some(pos) = db::clean(&input.currency_position).filter(|p| p == "before" || p == "after") {
+        settings::set(&tx, "currency_position", &pos)?;
+    }
     settings::set(&tx, "shop_name", input.shop_name.trim())?;
     settings::set(&tx, "currency_symbol", input.currency_symbol.trim())?;
     settings::set(&tx, "currency_decimals", &input.currency_decimals.to_string())?;
@@ -109,16 +139,16 @@ pub fn initial_setup(conn: &mut Connection, input: SetupInput) -> AppResult<Sess
 }
 
 pub fn login(conn: &Connection, username: &str, password: &str) -> AppResult<SessionUser> {
-    let row: Option<(i64, String, String, String, String, bool, bool)> = conn
+    let row: Option<(i64, String, String, String, String, bool, bool, Option<String>)> = conn
         .query_row(
-            "SELECT id, username, full_name, role, password_hash, active, pin_hash IS NOT NULL FROM users WHERE username = ?1",
+            "SELECT id, username, full_name, role, password_hash, active, pin_hash IS NOT NULL, lang FROM users WHERE username = ?1",
             [username.trim()],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
         )
         .optional()?;
 
     let bad = || invalid("Identifiant ou mot de passe incorrect.");
-    let Some((id, username, full_name, role, hash, active, has_pin)) = row else {
+    let Some((id, username, full_name, role, hash, active, has_pin, lang)) = row else {
         return bad();
     };
     if !verify_password(password, &hash) {
@@ -128,7 +158,7 @@ pub fn login(conn: &Connection, username: &str, password: &str) -> AppResult<Ses
         return invalid("Ce compte est désactivé. Contactez l'administrateur.");
     }
     conn.execute("UPDATE users SET last_login_at = ?1 WHERE id = ?2", params![db::now(), id])?;
-    let user = SessionUser { id, username, full_name, role, has_pin };
+    let user = SessionUser { id, username, full_name, role, has_pin, lang };
     audit::log(conn, &user, "Connexion", "user", Some(id), "")?;
     Ok(user)
 }
@@ -200,21 +230,21 @@ pub fn login_users(conn: &Connection) -> AppResult<Vec<LoginUser>> {
 
 /// Connexion rapide par code PIN.
 pub fn login_pin(conn: &Connection, user_id: i64, pin: &str) -> AppResult<Option<SessionUser>> {
-    let row: Option<(String, String, String, Option<String>, bool)> = conn
+    let row: Option<(String, String, String, Option<String>, bool, Option<String>)> = conn
         .query_row(
-            "SELECT username, full_name, role, pin_hash, active FROM users WHERE id = ?1",
+            "SELECT username, full_name, role, pin_hash, active, lang FROM users WHERE id = ?1",
             [user_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
         )
         .optional()?;
-    let Some((username, full_name, role, Some(hash), true)) = row else {
+    let Some((username, full_name, role, Some(hash), true, lang)) = row else {
         return invalid("Ce compte n'a pas de code PIN : connectez-vous avec le mot de passe.");
     };
     if !verify_password(pin, &hash) {
         return Ok(None);
     }
     conn.execute("UPDATE users SET last_login_at = ?1 WHERE id = ?2", params![db::now(), user_id])?;
-    let user = SessionUser { id: user_id, username, full_name, role, has_pin: true };
+    let user = SessionUser { id: user_id, username, full_name, role, has_pin: true, lang };
     audit::log(conn, &user, "Connexion par PIN", "user", Some(user_id), "")?;
     Ok(Some(user))
 }
@@ -233,7 +263,7 @@ pub fn pin_approver(conn: &Connection, current: &SessionUser, pin: &str, min_lev
         .collect::<Result<Vec<_>, _>>()?;
     for (id, username, full_name, role, hash) in rows {
         if crate::state::role_level(&role) >= min_level && verify_password(pin, &hash) {
-            return Ok(Some(SessionUser { id, username, full_name, role, has_pin: true }));
+            return Ok(Some(SessionUser { id, username, full_name, role, has_pin: true, lang: None }));
         }
     }
     Ok(None)

@@ -5,8 +5,9 @@ import { useApp } from "../context/AppContext";
 import { Badge, Empty, PageHeader } from "../components/ui";
 import { SaleDetailModal } from "../components/SaleDetail";
 import { exportCsv } from "../lib/files";
-import { csvMoney, dateTime, isoDate, money, PAYMENT_LABELS, paymentLabel, qty, toCsv } from "../lib/format";
+import { csvMoney, dateTime, isoDate, money, paymentLabel, paymentMethods, qty, toCsv } from "../lib/format";
 import type { Sale } from "../types";
+import { tl } from "../lib/i18n";
 
 export default function SalesPage() {
   const { toast, isAdmin: isManager } = useApp();
@@ -33,11 +34,11 @@ export default function SalesPage() {
 
   const doExport = async () => {
     const csv = toCsv(
-      ["N°", "Date", "Client", "Caissier", "Paiement", "Sous-total", "Remise", "Total", "TVA", "À crédit", "Statut"],
-      list.map((s) => [s.number, s.created_at, s.customer_name, s.user_name, paymentLabel(s.payment_method), csvMoney(s.subtotal), csvMoney(s.discount), csvMoney(s.total), csvMoney(s.tax_total), csvMoney(s.credit_amount), s.status === "completed" ? "Validée" : "Annulée"]),
+      [tl("N°"), tl("Date"), tl("Client"), tl("Caissier"), tl("Paiement"), tl("Sous-total"), tl("Remise"), tl("Total"), "TVA", tl("À crédit"), tl("Statut")],
+      list.map((s) => [s.number, s.created_at, s.customer_name, s.user_name, paymentLabel(s.payment_method), csvMoney(s.subtotal), csvMoney(s.discount), csvMoney(s.total), csvMoney(s.tax_total), csvMoney(s.credit_amount), s.status === "completed" ? tl("Validée") : tl("Annulée")]),
     );
     try {
-      if (await exportCsv(`ventes-${from}-au-${to}.csv`, csv)) toast.success("Export terminé.");
+      if (await exportCsv(`ventes-${from}-au-${to}.csv`, csv)) toast.success(tl("Export terminé."));
     } catch (e) {
       toast.error(e);
     }
@@ -47,40 +48,40 @@ export default function SalesPage() {
     <div className="page">
       <PageHeader
         help="sales"
-        title="Historique des ventes"
-        subtitle={isManager ? "Toutes les ventes de la boutique" : "Vos ventes"}
-        actions={isManager && <button className="btn" onClick={doExport}><Download size={16} /> Exporter</button>}
+        title={tl("Historique des ventes")}
+        subtitle={isManager ? tl("Toutes les ventes de la boutique") : tl("Vos ventes")}
+        actions={isManager && <button className="btn" onClick={doExport}><Download size={16} />  {tl("Exporter")}</button>}
       />
       <div className="toolbar">
-        <label className="inline">Du <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="inline">{tl("Du")} <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="inline">au <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        <div className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="N° de ticket ou client…" /></div>
+        <div className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tl("N° de ticket ou client…")} /></div>
         <select value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="">Tous les paiements</option>
-          {Object.entries(PAYMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          <option value="">{tl("Tous les paiements")}</option>
+          {paymentMethods().map((k) => <option key={k} value={k}>{paymentLabel(k)}</option>)}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Tous les statuts</option>
-          <option value="completed">Validées</option>
-          <option value="cancelled">Annulées</option>
+          <option value="">{tl("Tous les statuts")}</option>
+          <option value="completed">{tl("Validées")}</option>
+          <option value="cancelled">{tl("Annulées")}</option>
         </select>
       </div>
       <div className="summary-bar">
-        <span><strong>{completed.length}</strong> vente(s) validée(s)</span>
-        <span>Total : <strong>{money(total)}</strong></span>
-        {completed.length > 0 && <span>Panier moyen : <strong>{money(Math.round(total / completed.length))}</strong></span>}
-        {list.length !== completed.length && <span className="text-danger">{list.length - completed.length} annulée(s)</span>}
+        <span><strong>{completed.length}</strong>  {tl("vente(s) validée(s)")}</span>
+        <span>{tl("Total :")} <strong>{money(total)}</strong></span>
+        {completed.length > 0 && <span>{tl("Panier moyen :")} <strong>{money(Math.round(total / completed.length))}</strong></span>}
+        {list.length !== completed.length && <span className="text-danger">{list.length - completed.length}  {tl("annulée(s)")}</span>}
       </div>
       <div className="card no-pad">
         {list.length === 0 ? (
-          <Empty title="Aucune vente sur la période" />
+          <Empty title={tl("Aucune vente sur la période")} />
         ) : (
           <table className="table">
-            <thead><tr><th>N° ticket</th><th>Date</th><th>Client</th><th>Caissier</th><th className="num">Articles</th><th>Paiement</th><th className="num">Total</th><th></th></tr></thead>
+            <thead><tr><th>{tl("N° ticket")}</th><th>{tl("Date")}</th><th>{tl("Client")}</th><th>{tl("Caissier")}</th><th className="num">{tl("Articles")}</th><th>{tl("Paiement")}</th><th className="num">{tl("Total")}</th><th></th></tr></thead>
             <tbody>
               {list.map((s) => (
                 <tr key={s.id} className={s.status === "cancelled" ? "row-cancelled" : ""} onDoubleClick={() => open(s)}>
-                  <td><strong>{s.number}</strong> {s.status === "cancelled" && <Badge tone="danger">Annulée</Badge>}</td>
+                  <td><strong>{s.number}</strong> {s.status === "cancelled" && <Badge tone="danger">{tl("Annulée")}</Badge>}</td>
                   <td className="nowrap">{dateTime(s.created_at)}</td>
                   <td>{s.customer_name ?? <span className="muted">—</span>}</td>
                   <td>{s.user_name}</td>

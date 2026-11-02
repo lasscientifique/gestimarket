@@ -30,6 +30,7 @@ import PaymentsPage from "./pages/Payments";
 import CustomerDisplayPage from "./pages/CustomerDisplay";
 import LicencePage from "./pages/Licence";
 import { useLocation } from "react-router-dom";
+import { tl } from "./lib/i18n";
 
 function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { can } = useApp();
@@ -67,7 +68,7 @@ function MainApp() {
     })();
   }, [setUser]);
 
-  if (state === "loading") return <Loading label="Démarrage de GestiMarket…" />;
+  if (state === "loading") return <Loading label={tl("Démarrage de GestiMarket…")} />;
   if (state === "setup") return <SetupPage onDone={() => setState("ready")} />;
   if (!user) return <LoginPage />;
   // Chaque utilisateur doit avoir un code PIN pour confirmer les actions critiques.

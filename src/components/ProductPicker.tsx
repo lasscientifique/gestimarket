@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { money, qty } from "../lib/format";
 import type { Product } from "../types";
+import { tl } from "../lib/i18n";
 
 /** Champ de recherche de produit avec liste déroulante (compatible douchette code-barres). */
 export function ProductPicker({ onPick, placeholder = "Rechercher ou scanner un produit…", autoFocus }: { onPick: (p: Product) => void; placeholder?: string; autoFocus?: boolean }) {
@@ -84,7 +85,7 @@ export function ProductPicker({ onPick, placeholder = "Rechercher ou scanner un 
               </div>
               <div className="right small">
                 <div>{money(p.sale_price)}</div>
-                <div className="muted">Stock : {qty(p.stock)} {p.unit}</div>
+                <div className="muted">{tl("Stock :")} {qty(p.stock)} {p.unit}</div>
               </div>
             </button>
           ))}

@@ -9,6 +9,77 @@ use crate::state::SessionUser;
 /// Moyens de paiement réels (le crédit est le reste non payé, il n'est pas un « paiement »).
 pub const PAYMENT_METHODS: &[&str] = &["cash", "orange_money", "mobile_money", "card", "other"];
 
+/// Opérateur de mobile money configuré en caisse (paramètre « mobile_operators », liste JSON).
+/// Ses paiements ont pour mode « mm:<id> » (ex. « mm:wave »).
+#[derive(Debug, Deserialize)]
+pub struct MobileOperator {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub require_ref: bool,
+    #[serde(default = "enabled_default")]
+    pub enabled: bool,
+}
+
+fn enabled_default() -> bool {
+    true
+}
+
+/// Vérifie la liste des opérateurs avant enregistrement des paramètres.
+pub fn validate_operators(json: &str) -> AppResult<()> {
+    if json.trim().is_empty() {
+        return Ok(());
+    }
+    let ops: Vec<MobileOperator> = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(_) => return invalid("Liste des opérateurs de paiement mobile illisible."),
+    };
+    for (i, op) in ops.iter().enumerate() {
+        let id_ok = (1..=20).contains(&op.id.len())
+            && op.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+        if !id_ok {
+            return invalid("Identifiant d'opérateur invalide (lettres minuscules, chiffres, - ou _).");
+        }
+        if op.name.trim().is_empty() {
+            return invalid("Chaque opérateur de paiement mobile doit avoir un nom.");
+        }
+        if ops[..i].iter().any(|o| o.id == op.id) {
+            return invalid("Deux opérateurs de paiement mobile ont le même identifiant.");
+        }
+    }
+    Ok(())
+}
+
+fn mobile_operators(conn: &Connection) -> AppResult<Vec<MobileOperator>> {
+    let raw = settings::get(conn, "mobile_operators")?;
+    Ok(if raw.trim().is_empty() { Vec::new() } else { serde_json::from_str(&raw).unwrap_or_default() })
+}
+
+/// Contrôle le mode de paiement (fixe ou opérateur actif « mm:<id> ») et l'ID de transaction
+/// lorsque l'opérateur l'exige.
+pub fn check_payment(conn: &Connection, method: &str, reference: Option<&str>) -> AppResult<()> {
+    if method == "orange_money" {
+        if reference.is_none() && settings::get_bool(conn, "om_require_reference")? {
+            return invalid("Saisissez ou scannez l'ID de transaction Orange Money.");
+        }
+        return Ok(());
+    }
+    if PAYMENT_METHODS.contains(&method) {
+        return Ok(());
+    }
+    let op = match method.strip_prefix("mm:") {
+        Some(id) => mobile_operators(conn)?.into_iter().find(|o| o.id == id && o.enabled),
+        None => None,
+    };
+    match op {
+        None => invalid("Mode de paiement invalide."),
+        Some(op) if op.require_ref && reference.is_none() => {
+            invalid(format!("Saisissez ou scannez l'ID de transaction {}.", op.name))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SaleItemInput {
     pub product_id: i64,
@@ -237,7 +308,6 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
     let allow_negative = settings::get_bool(conn, "allow_negative_stock")?;
     let require_session = settings::get_bool(conn, "require_cash_session")?;
     let loyalty_step = settings::get_i64(conn, "loyalty_step")?;
-    let om_require_ref = settings::get_bool(conn, "om_require_reference")?;
 
     cash::ensure_cashier(user)?;
     let tx = conn.transaction()?;
@@ -312,14 +382,9 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
     // 3. Paiements
     let mut payments: Vec<PaymentInput> = Vec::new();
     for p in input.payments.iter().filter(|p| p.amount > 0) {
-        if !PAYMENT_METHODS.contains(&p.method.as_str()) {
-            return invalid("Mode de paiement invalide.");
-        }
         let reference = db::clean(&p.reference);
         let phone = clean_phone(&p.phone)?;
-        if p.method == "orange_money" && om_require_ref && reference.is_none() {
-            return invalid("Saisissez ou scannez l'ID de transaction Orange Money.");
-        }
+        check_payment(&tx, &p.method, reference.as_deref())?;
         if let Some(r) = &reference {
             if payments.iter().any(|x| x.reference.as_deref() == Some(r.as_str())) {
                 return invalid("Le même ID de transaction est saisi deux fois.");

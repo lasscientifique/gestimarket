@@ -5,11 +5,12 @@ import { useApp } from "../context/AppContext";
 import { getNetwork, local, pingServer, type NetworkConfig } from "../lib/transport";
 import { Field } from "./ui";
 import { HelpTip } from "./Help";
+import { tl } from "../lib/i18n";
 
 const MODES: { id: NetworkConfig["mode"]; title: string; text: string; icon: React.ReactNode }[] = [
-  { id: "local", title: "Poste unique", text: "Une seule caisse : la base de données est sur ce PC.", icon: <Monitor size={22} /> },
-  { id: "server", title: "Poste serveur", text: "Ce PC garde la base et la partage aux autres caisses du réseau (Wi-Fi ou câble).", icon: <Server size={22} /> },
-  { id: "client", title: "Poste client", text: "Ce PC travaille sur la base du poste serveur.", icon: <Laptop size={22} /> },
+  { id: "local", title: tl("Poste unique"), text: tl("Une seule caisse : la base de données est sur ce PC."), icon: <Monitor size={22} /> },
+  { id: "server", title: tl("Poste serveur"), text: tl("Ce PC garde la base et la partage aux autres caisses du réseau (Wi-Fi ou câble)."), icon: <Server size={22} /> },
+  { id: "client", title: tl("Poste client"), text: tl("Ce PC travaille sur la base du poste serveur."), icon: <Laptop size={22} /> },
 ];
 
 /** Choix du mode multi-postes. Enregistrer redémarre l'application. */
@@ -28,19 +29,19 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
     setTest(null);
     try {
       const r = await pingServer(c.server_url);
-      setTest(`Connecté à « ${r.shop_name} » (version ${r.version}).`);
+      setTest(tl("Connecté à « {0} » (version {1}).", [r.shop_name, r.version]));
     } catch (e) {
       toast.error(e);
     }
   };
 
   const save = async () => {
-    if (c.mode === "client" && !c.server_url.trim()) return toast.error("Indiquez l'adresse du poste serveur.");
-    if (!(await confirm({ title: "Changer le mode réseau", message: "L'application va redémarrer pour appliquer le nouveau mode.", confirmLabel: "Enregistrer et redémarrer" }))) return;
+    if (c.mode === "client" && !c.server_url.trim()) return toast.error(tl("Indiquez l'adresse du poste serveur."));
+    if (!(await confirm({ title: tl("Changer le mode réseau"), message: tl("L'application va redémarrer pour appliquer le nouveau mode."), confirmLabel: tl("Enregistrer et redémarrer") }))) return;
     // Poste qui détient la base (serveur / poste unique) : code PIN d'un responsable, sauf administrateur connecté.
     let pin: string | null = null;
     if (user && user.role !== "admin" && info?.config.mode !== "client") {
-      pin = await askPin({ title: "Modifier le réseau de ce poste", level: "manager" });
+      pin = await askPin({ title: tl("Modifier le réseau de ce poste"), level: "manager" });
       if (!pin) return;
     }
     setBusy(true);
@@ -70,19 +71,19 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
       </div>
 
       <div className="form-grid">
-        <Field label={<>Nom de ce poste <HelpTip text="Ex. « Caisse 1 », « Caisse 2 ». Sert à afficher le bon panier sur l'écran client de chaque caisse." /></>}>
+        <Field label={<>{tl("Nom de ce poste")} <HelpTip text={tl("Ex. « Caisse 1 », « Caisse 2 ». Sert à afficher le bon panier sur l'écran client de chaque caisse.")} /></>}>
           <input value={c.poste_name} onChange={(e) => setC({ ...c, poste_name: e.target.value })} />
         </Field>
         {c.mode === "server" && (
-          <Field label="Port réseau" hint="7878 par défaut. Autorisez-le dans le pare-feu Windows si demandé.">
+          <Field label={tl("Port réseau")} hint={tl("7878 par défaut. Autorisez-le dans le pare-feu Windows si demandé.")}>
             <input inputMode="numeric" value={c.port} onChange={(e) => setC({ ...c, port: Number(e.target.value) || 7878 })} />
           </Field>
         )}
         {c.mode === "client" && (
-          <Field label="Adresse du poste serveur" hint="Affichée sur le poste serveur (Paramètres → Réseau). Ex. 192.168.1.10:7878">
+          <Field label={tl("Adresse du poste serveur")} hint={tl("Affichée sur le poste serveur (Paramètres → Réseau). Ex. 192.168.1.10:7878")}>
             <div className="input-group">
               <input value={c.server_url} onChange={(e) => setC({ ...c, server_url: e.target.value })} placeholder="192.168.1.10:7878" />
-              <button className="btn" type="button" onClick={testServer}><Wifi size={16} /> Tester</button>
+              <button className="btn" type="button" onClick={testServer}><Wifi size={16} />  {tl("Tester")}</button>
             </div>
           </Field>
         )}
@@ -91,31 +92,26 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
 
       {c.mode === "server" && info?.config.mode === "server" && (
         <div className="alert alert-info">
-          <strong>Adresse à saisir sur les postes clients (PC) :</strong>
-          <ul>{serverUrls.length ? serverUrls.map((u) => <li key={u} className="mono">{u}</li>) : <li>Adresse IP introuvable : vérifiez la connexion Wi-Fi / câble.</li>}</ul>
-          Fonctionne aussi avec le point d'accès (partage de connexion) d'un téléphone : tous les appareils se connectent à ce point d'accès.
-        </div>
+          <strong>{tl("Adresse à saisir sur les postes clients (PC) :")}</strong>
+          <ul>{serverUrls.length ? serverUrls.map((u) => <li key={u} className="mono">{u}</li>) : <li>{tl("Adresse IP introuvable : vérifiez la connexion Wi-Fi / câble.")}</li>}</ul>
+          {tl("Fonctionne aussi avec le point d'accès (partage de connexion) d'un téléphone : tous les appareils se connectent à ce point d'accès.")}</div>
       )}
       {c.mode === "server" && info?.config.mode === "server" && (info?.local_ips ?? []).length > 0 && (
         <div className="phone-access">
-          <h4 className="section-title">Téléphones et tablettes : scannez ce QR code</h4>
+          <h4 className="section-title">{tl("Téléphones et tablettes : scannez ce QR code")}</h4>
           <div className="phone-qr-list">
             {info!.local_ips.map((ip) => (
               <AddressQr key={ip} url={`https://${ip}:${c.port + 1}`} plain={`http://${ip}:${c.port}`} />
             ))}
           </div>
           <p className="muted small">
-            L'adresse <strong>https</strong> (port {c.port + 1}) active la caméra du téléphone pour scanner les codes-barres. À la première ouverture, le
-            navigateur affiche « connexion non privée » : touchez « Paramètres avancés » puis « Continuer » (le certificat est créé par ce PC). L'interface
-            s'adapte automatiquement à l'écran du téléphone ou de la tablette.
-          </p>
+            {tl("L'adresse")} <strong>https</strong>  {tl("(port")} {c.port + 1}{tl(") active la caméra du téléphone pour scanner les codes-barres. À la première ouverture, le navigateur affiche « connexion non privée » : touchez « Paramètres avancés » puis « Continuer » (le certificat est créé par ce PC). L'interface s'adapte automatiquement à l'écran du téléphone ou de la tablette.")}</p>
         </div>
       )}
 
       <div className="row-start">
         <button className="btn btn-primary" disabled={busy || !changed} onClick={save}>
-          <RotateCw size={16} /> Enregistrer et redémarrer
-        </button>
+          <RotateCw size={16} />  {tl("Enregistrer et redémarrer")}</button>
       </div>
     </div>
   );
@@ -132,9 +128,9 @@ function AddressQr({ url, plain }: { url: string; plain: string }) {
       {src && <img src={src} alt={url} width={150} height={150} />}
       <div>
         <div className="mono"><strong>{url}</strong></div>
-        <div className="muted small">caméra et scanner</div>
+        <div className="muted small">{tl("caméra et scanner")}</div>
         <div className="mono small" style={{ marginTop: 6 }}>{plain}</div>
-        <div className="muted small">sans caméra</div>
+        <div className="muted small">{tl("sans caméra")}</div>
       </div>
     </div>
   );

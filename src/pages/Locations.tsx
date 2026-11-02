@@ -22,22 +22,23 @@ import { DRAG_TYPE, StoreMap, geometryOf, type Geometry } from "../components/pl
 import { FixtureFront } from "../components/plan/FixtureFront";
 import { printHtml } from "../lib/receipt";
 import type { Fixture, FixtureCategory, FixtureType, Floor, StorePlanData } from "../types";
+import { tl, tm } from "../lib/i18n";
 
 const GROUPS: { key: FixtureCategory; label: string }[] = [
-  { key: "rayon", label: "Rayons" },
-  { key: "froid", label: "Froid" },
-  { key: "presentation", label: "Présentation" },
-  { key: "rangement", label: "Rangement et réserve" },
-  { key: "zone", label: "Pièces" },
-  { key: "batiment", label: "Bâtiment" },
+  { key: "rayon", label: tl("Rayons") },
+  { key: "froid", label: tl("Froid") },
+  { key: "presentation", label: tl("Présentation") },
+  { key: "rangement", label: tl("Rangement et réserve") },
+  { key: "zone", label: tl("Pièces") },
+  { key: "batiment", label: tl("Bâtiment") },
 ];
 const CATEGORY_LABELS: Record<FixtureCategory, string> = {
-  rayon: "Rayon",
-  froid: "Froid",
-  presentation: "Présentation",
-  rangement: "Rangement",
-  zone: "Pièce / zone",
-  batiment: "Bâtiment (mur, porte…)",
+  rayon: tl("Rayon"),
+  froid: tl("Froid"),
+  presentation: tl("Présentation"),
+  rangement: tl("Rangement"),
+  zone: tl("Pièce / zone"),
+  batiment: tl("Bâtiment (mur, porte…)"),
 };
 const meters = (n: number) => `${String(Math.round(n * 100) / 100).replace(".", ",")} m`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -133,7 +134,7 @@ export default function LocationsPage() {
       const f = await api.planSaveFixture(null, { type_id: t.id, floor_id: floor.id, ...pos });
       setPlan((p) => p && { ...p, fixtures: [...p.fixtures, f], types: p.types.map((x) => (x.id === t.id ? { ...x, used: x.used + 1 } : x)) });
       setSelectedId(f.id);
-      if (f.storage) toast.success(`${f.name} posé sur le plan. Double-cliquez dessus pour y ranger des produits.`);
+      if (f.storage) toast.success(tl("{0} posé sur le plan. Double-cliquez dessus pour y ranger des produits.", [tm(f.name)]));
       // Le niveau a pu s'agrandir (plus de place libre).
       if (!at) load();
     } catch (e) {
@@ -165,13 +166,13 @@ export default function LocationsPage() {
 
   const remove = async (f: Fixture) => {
     const msg = f.product_count
-      ? `Supprimer ${f.name} ? Les ${f.product_count} produit(s) rangés dedans gardent leurs autres emplacements, sinon deviennent « non rangés ».`
-      : `Supprimer ${f.name} du plan ?`;
-    if (!(await confirm({ title: "Supprimer du plan", message: msg, danger: true, confirmLabel: "Supprimer" }))) return;
+      ? tl("Supprimer {0} ? Les {1} produit(s) rangés dedans gardent leurs autres emplacements, sinon deviennent « non rangés ».", [f.name, f.product_count])
+      : tl("Supprimer {0} du plan ?", [f.name]);
+    if (!(await confirm({ title: tl("Supprimer du plan"), message: msg, danger: true, confirmLabel: tl("Supprimer") }))) return;
     try {
       let pin: string | null = null;
       if (f.product_count) {
-        pin = await askPin({ title: "Supprimer un meuble garni", level: "manager" });
+        pin = await askPin({ title: tl("Supprimer un meuble garni"), level: "manager" });
         if (!pin) return;
       }
       await api.planDeleteFixture(f.id, pin);
@@ -222,22 +223,22 @@ export default function LocationsPage() {
     const svg = svgRef.current.outerHTML;
     const rows = fixtures
       .filter((f) => f.storage)
-      .sort((a, b) => a.code.localeCompare(b.code, "fr", { numeric: true }))
-      .map((f) => `<tr><td><strong>${f.code}</strong></td><td>${f.name}</td><td>${f.type_name}</td><td>${f.levels} × ${f.sections}</td><td>${f.product_count}</td></tr>`)
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+      .map((f) => `<tr><td><strong>${f.code}</strong></td><td>${tm(f.name)}</td><td>${tm(f.type_name)}</td><td>${f.levels} × ${f.sections}</td><td>${f.product_count}</td></tr>`)
       .join("");
     printHtml(`
       <div class="report-print plan-print">
-        <h1>${settings.shop_name ?? ""} — plan : ${floor.name}</h1>
+        <h1>${settings.shop_name ?? ""} — ${tl("Plan : {0}", [tm(floor.name)])}</h1>
         <div class="plan-print-svg">${svg}</div>
-        <table><thead><tr><th>Code</th><th>Meuble</th><th>Type</th><th>Étages × cases</th><th>Produits</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>${tl("Code")}</th><th>${tl("Meuble")}</th><th>${tl("Type")}</th><th>${tl("Étages × cases")}</th><th>${tl("Produits")}</th></tr></thead><tbody>${rows}</tbody></table>
       </div>`);
   };
 
   if (!plan || !floor) {
     return (
       <div className="page">
-        <PageHeader title="Plan de la boutique" />
-        <p className="muted">Chargement…</p>
+        <PageHeader title={tl("Plan de la boutique")} />
+        <p className="muted">{tl("Chargement…")}</p>
       </div>
     );
   }
@@ -246,40 +247,40 @@ export default function LocationsPage() {
     <div className="page plan-page">
       <PageHeader
         help="locations"
-        title="Plan de la boutique"
-        subtitle="Dessinez votre boutique à l'échelle, posez vos meubles, puis rangez-y les produits : il suffit de regarder le plan pour trouver un produit."
+        title={tl("Plan de la boutique")}
+        subtitle={tl("Dessinez votre boutique à l'échelle, posez vos meubles, puis rangez-y les produits : il suffit de regarder le plan pour trouver un produit.")}
         actions={
           <>
-            <button className="btn" onClick={printPlan}><Printer size={16} /> Imprimer le plan</button>
+            <button className="btn" onClick={printPlan}><Printer size={16} />  {tl("Imprimer le plan")}</button>
             {edit ? (
-              <button className="btn btn-primary" onClick={() => setEdit(false)}>Terminer la modification</button>
+              <button className="btn btn-primary" onClick={() => setEdit(false)}>{tl("Terminer la modification")}</button>
             ) : (
-              <button className="btn btn-primary" onClick={() => setEdit(true)}><Pencil size={16} /> Modifier le plan</button>
+              <button className="btn btn-primary" onClick={() => setEdit(true)}><Pencil size={16} />  {tl("Modifier le plan")}</button>
             )}
           </>
         }
       />
 
       <div className="stats">
-        <StatCard label="Meubles de rangement" value={storage.length} icon={<LayoutGrid size={18} />} tone="accent" />
-        <StatCard label="Cases" value={slots} icon={<Boxes size={18} />} />
-        <StatCard label="Produits rangés" value={placed} tone="success" />
-        <StatCard label="Produits non rangés" value={unplaced} tone={unplaced ? "warning" : "default"} />
+        <StatCard label={tl("Meubles de rangement")} value={storage.length} icon={<LayoutGrid size={18} />} tone="accent" />
+        <StatCard label={tl("Cases")} value={slots} icon={<Boxes size={18} />} />
+        <StatCard label={tl("Produits rangés")} value={placed} tone="success" />
+        <StatCard label={tl("Produits non rangés")} value={unplaced} tone={unplaced ? "warning" : "default"} />
       </div>
 
       <div className="plan-floors">
         {plan.floors.map((f) => (
           <button key={f.id} className={`chip ${f.id === floorId ? "active" : ""}`} onClick={() => { setFloorId(f.id); setSelectedId(null); }}>
-            {f.name}
+            {tm(f.name)}
           </button>
         ))}
         {edit && (
           <>
-            <button className="chip" onClick={() => setModal("floor-new")}><Plus size={14} /> Niveau</button>
-            <button className="icon-btn" title="Nom et dimensions de ce niveau" onClick={() => setModal(floor)}><Settings2 size={16} /></button>
+            <button className="chip" onClick={() => setModal("floor-new")}><Plus size={14} />  {tl("Niveau")}</button>
+            <button className="icon-btn" title={tl("Nom et dimensions de ce niveau")} onClick={() => setModal(floor)}><Settings2 size={16} /></button>
             <span className="plan-undo">
-              <button className="icon-btn" title="Annuler (Ctrl+Z)" disabled={!undo.length} onClick={doUndo}><Undo2 size={16} /></button>
-              <button className="icon-btn" title="Rétablir (Ctrl+Y)" disabled={!redo.length} onClick={doRedo}><Redo2 size={16} /></button>
+              <button className="icon-btn" title={tl("Annuler (Ctrl+Z)")} disabled={!undo.length} onClick={doUndo}><Undo2 size={16} /></button>
+              <button className="icon-btn" title={tl("Rétablir (Ctrl+Y)")} disabled={!redo.length} onClick={doRedo}><Redo2 size={16} /></button>
             </span>
           </>
         )}
@@ -315,8 +316,8 @@ export default function LocationsPage() {
           />
           <p className="muted small plan-hint">
             {edit
-              ? "Glissez un meuble de la palette sur le plan (ou cliquez dessus), déplacez-le, agrandissez-le par son coin, tournez-le avec R. Flèches : déplacer de 10 cm (Maj : 1 m)."
-              : "Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette : zoom ; glisser le fond : déplacer la vue."}
+              ? tl("Glissez un meuble de la palette sur le plan (ou cliquez dessus), déplacez-le, agrandissez-le par son coin, tournez-le avec R. Flèches : déplacer de 10 cm (Maj : 1 m).")
+              : tl("Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette : zoom ; glisser le fond : déplacer la vue.")}
           </p>
         </div>
         <aside className="card plan-side">
@@ -334,9 +335,9 @@ export default function LocationsPage() {
           ) : (
             <div className="plan-side-empty">
               <LayoutGrid size={28} strokeWidth={1.4} />
-              <strong>Aucun meuble sélectionné</strong>
+              <strong>{tl("Aucun meuble sélectionné")}</strong>
               <span className="muted small">
-                {edit ? "Prenez un meuble dans la palette et posez-le sur le plan." : "Cliquez sur un meuble du plan. Passez en « Modifier le plan » pour dessiner votre boutique."}
+                {edit ? tl("Prenez un meuble dans la palette et posez-le sur le plan.") : tl("Cliquez sur un meuble du plan. Passez en « Modifier le plan » pour dessiner votre boutique.")}
               </span>
             </div>
           )}
@@ -344,7 +345,7 @@ export default function LocationsPage() {
       </div>
 
       {front && (
-        <Modal title="Vue de face et rangement" onClose={() => setFront(null)} width={1180}>
+        <Modal title={tl("Vue de face et rangement")} onClose={() => setFront(null)} width={1180}>
           <FixtureFront fixtureId={front} editable onChanged={load} />
         </Modal>
       )}
@@ -395,18 +396,18 @@ function Palette({
         e.dataTransfer.effectAllowed = "copy";
       }}
       onClick={() => onAdd(t)}
-      title="Glissez sur le plan, ou cliquez pour le poser à une place libre"
+      title={tl("Glissez sur le plan, ou cliquez pour le poser à une place libre")}
     >
       <span className={`palette-swatch cat-${t.category}`} style={{ background: t.color }} />
       <span className="palette-name">
-        {t.name}
-        <small>{t.storage ? `${meters(t.width)} × ${meters(t.depth)} · ${t.levels} ét. × ${t.sections}` : `${meters(t.width)} × ${meters(t.depth)}`}</small>
+        {tm(t.name)}
+        <small>{t.storage ? tl("{0} × {1} · {2} ét. × {3}", [meters(t.width), meters(t.depth), t.levels, t.sections]) : tl("{0} × {1}", [meters(t.width), meters(t.depth)])}</small>
       </span>
       {!t.builtin && (
         <button
           type="button"
           className="icon-btn"
-          title="Modifier ce meuble personnalisé"
+          title={tl("Modifier ce meuble personnalisé")}
           onClick={(e) => {
             e.stopPropagation();
             onEditType(t);
@@ -420,18 +421,18 @@ function Palette({
   return (
     <aside className="card palette">
       <div className="palette-actions">
-        <button className="btn btn-sm" onClick={onNewType}><Plus size={14} /> Meuble personnalisé</button>
-        <button className="btn btn-sm" onClick={onGenerate} title="Plusieurs gondoles d'un coup (rayons A à F…)"><LayoutGrid size={14} /> Série de rayons</button>
+        <button className="btn btn-sm" onClick={onNewType}><Plus size={14} />  {tl("Meuble personnalisé")}</button>
+        <button className="btn btn-sm" onClick={onGenerate} title={tl("Plusieurs gondoles d'un coup (rayons A à F…)")}><LayoutGrid size={14} />  {tl("Série de rayons")}</button>
       </div>
       {suggested.length > 0 && (
         <div className="palette-group">
-          <h5>Pour votre commerce</h5>
+          <h5>{tl("Pour votre commerce")}</h5>
           {suggested.map((t) => item(t, "s"))}
         </div>
       )}
       {custom.length > 0 && (
         <div className="palette-group">
-          <h5>Mes meubles</h5>
+          <h5>{tl("Mes meubles")}</h5>
           {custom.map((t) => item(t))}
         </div>
       )}
@@ -492,7 +493,7 @@ function FixturePanel({
         notes: v.notes,
       });
       onSaved(saved);
-      toast.success("Meuble enregistré.");
+      toast.success(tl("Meuble enregistré."));
     } catch (e) {
       toast.error(e);
     }
@@ -503,47 +504,47 @@ function FixturePanel({
       <div className="fixture-panel-head">
         <span className="front-swatch" style={{ background: f.color }} />
         <div>
-          <strong>{f.name}</strong>
-          <span className="muted small">{f.type_name} · {f.code}</span>
+          <strong>{tm(f.name)}</strong>
+          <span className="muted small">{tm(f.type_name)} · {f.code}</span>
         </div>
       </div>
       {f.storage && (
         <div className="fixture-panel-stats">
-          <span><strong>{f.levels}</strong> étage(s) × <strong>{f.sections}</strong> case(s)</span>
-          <span><strong>{f.product_count}</strong> produit(s)</span>
+          <span><strong>{f.levels}</strong>  {tl("étage(s) ×")} <strong>{f.sections}</strong>  {tl("case(s)")}</span>
+          <span><strong>{f.product_count}</strong>  {tl("produit(s)")}</span>
         </div>
       )}
       {f.storage && (
-        <button className="btn btn-primary btn-block" onClick={onOpen}><Eye size={16} /> Vue de face et rangement</button>
+        <button className="btn btn-primary btn-block" onClick={onOpen}><Eye size={16} />  {tl("Vue de face et rangement")}</button>
       )}
       {edit && (
         <>
           <div className="form-grid">
-            <Field label="Nom" span={2}><input value={v.name} onChange={set("name")} /></Field>
-            <Field label="Code"><input value={v.code} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} /></Field>
-            <Field label="Couleur">
+            <Field label={tl("Nom")} span={2}><input value={v.name} onChange={set("name")} /></Field>
+            <Field label={tl("Code")}><input value={v.code} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} /></Field>
+            <Field label={tl("Couleur")}>
               <span className="color-field">
                 <input type="color" value={v.color || f.color} onChange={set("color")} />
-                {v.color && <button type="button" className="link-btn small" onClick={() => setV({ ...v, color: "" })}>Par défaut</button>}
+                {v.color && <button type="button" className="link-btn small" onClick={() => setV({ ...v, color: "" })}>{tl("Par défaut")}</button>}
               </span>
             </Field>
-            <Field label="Largeur (m)"><input inputMode="decimal" value={v.w} onChange={set("w")} /></Field>
-            <Field label="Profondeur (m)"><input inputMode="decimal" value={v.h} onChange={set("h")} /></Field>
+            <Field label={tl("Largeur (m)")}><input inputMode="decimal" value={v.w} onChange={set("w")} /></Field>
+            <Field label={tl("Profondeur (m)")}><input inputMode="decimal" value={v.h} onChange={set("h")} /></Field>
             {f.storage && (
               <>
-                <Field label="Étages"><input inputMode="numeric" value={v.levels} onChange={set("levels")} /></Field>
-                <Field label="Cases par étage"><input inputMode="numeric" value={v.sections} onChange={set("sections")} /></Field>
+                <Field label={tl("Étages")}><input inputMode="numeric" value={v.levels} onChange={set("levels")} /></Field>
+                <Field label={tl("Cases par étage")}><input inputMode="numeric" value={v.sections} onChange={set("sections")} /></Field>
               </>
             )}
-            <Field label="Notes" span={2}><input value={v.notes} onChange={set("notes")} placeholder="Ex. boissons fraîches, porte à gauche" /></Field>
+            <Field label={tl("Notes")} span={2}><input value={v.notes} onChange={set("notes")} placeholder={tl("Ex. boissons fraîches, porte à gauche")} /></Field>
           </div>
-          <button className="btn btn-primary btn-block" onClick={save}>Enregistrer</button>
+          <button className="btn btn-primary btn-block" onClick={save}>{tl("Enregistrer")}</button>
           <div className="fixture-panel-actions">
-            <button className="btn btn-sm" onClick={onRotate} title="Tourner de 90° (R)"><RotateCw size={14} /> Tourner</button>
-            <button className="btn btn-sm" onClick={onDuplicate} title="Dupliquer (Ctrl+D)"><Copy size={14} /> Dupliquer</button>
-            <button className="btn btn-sm btn-danger-outline" onClick={onDelete} title="Supprimer (Suppr)"><Trash2 size={14} /> Supprimer</button>
+            <button className="btn btn-sm" onClick={onRotate} title={tl("Tourner de 90° (R)")}><RotateCw size={14} />  {tl("Tourner")}</button>
+            <button className="btn btn-sm" onClick={onDuplicate} title={tl("Dupliquer (Ctrl+D)")}><Copy size={14} />  {tl("Dupliquer")}</button>
+            <button className="btn btn-sm btn-danger-outline" onClick={onDelete} title={tl("Supprimer (Suppr)")}><Trash2 size={14} />  {tl("Supprimer")}</button>
           </div>
-          <p className="muted small">Position : {meters(f.x)} ; {meters(f.y)} · rotation {f.rotation}°</p>
+          <p className="muted small">{tl("Position :")} {meters(f.x)} ; {meters(f.y)}  {tl("· rotation")} {f.rotation}°</p>
         </>
       )}
       {!edit && f.notes && <p className="muted small">{f.notes}</p>}
@@ -553,7 +554,7 @@ function FixturePanel({
 
 function FloorForm({ floor, canDelete, onClose, onSaved }: { floor: Floor | null; canDelete: boolean; onClose: () => void; onSaved: (id: number | null) => void }) {
   const { toast, askPin, confirm } = useApp();
-  const [f, setF] = useState({ name: floor?.name ?? "1er étage", width: String(floor?.width ?? 20), depth: String(floor?.depth ?? 12) });
+  const [f, setF] = useState({ name: floor?.name ?? tl("1er étage"), width: String(floor?.width ?? 20), depth: String(floor?.depth ?? 12) });
   const num = (s: string) => Number(s.replace(",", "."));
   const submit = async () => {
     try {
@@ -565,9 +566,9 @@ function FloorForm({ floor, canDelete, onClose, onSaved }: { floor: Floor | null
   };
   const remove = async () => {
     if (!floor) return;
-    if (!(await confirm({ title: "Supprimer le niveau", message: `Supprimer « ${floor.name} » et ses meubles (vides) ?`, danger: true, confirmLabel: "Supprimer" }))) return;
+    if (!(await confirm({ title: tl("Supprimer le niveau"), message: tl("Supprimer « {0} » et ses meubles (vides) ?", [floor.name]), danger: true, confirmLabel: tl("Supprimer") }))) return;
     try {
-      const pin = await askPin({ title: "Supprimer un niveau du plan", level: "manager" });
+      const pin = await askPin({ title: tl("Supprimer un niveau du plan"), level: "manager" });
       if (!pin) return;
       await api.planDeleteFloor(floor.id, pin);
       onSaved(null);
@@ -577,21 +578,21 @@ function FloorForm({ floor, canDelete, onClose, onSaved }: { floor: Floor | null
   };
   return (
     <Modal
-      title={floor ? "Niveau du bâtiment" : "Nouveau niveau"}
+      title={floor ? tl("Niveau du bâtiment") : tl("Nouveau niveau")}
       onClose={onClose}
       width={460}
       footer={
         <>
-          {floor && canDelete && <button className="btn btn-danger-outline" onClick={remove}><Trash2 size={15} /> Supprimer</button>}
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" onClick={submit}>Enregistrer</button>
+          {floor && canDelete && <button className="btn btn-danger-outline" onClick={remove}><Trash2 size={15} />  {tl("Supprimer")}</button>}
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" onClick={submit}>{tl("Enregistrer")}</button>
         </>
       }
     >
       <div className="form-grid">
-        <Field label="Nom *" span={2} hint="Ex. Rez-de-chaussée, 1er étage, Entrepôt, Magasin 2"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
-        <Field label="Largeur (m)"><input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} /></Field>
-        <Field label="Profondeur (m)"><input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} /></Field>
+        <Field label={tl("Nom *")} span={2} hint={tl("Ex. Rez-de-chaussée, 1er étage, Entrepôt, Magasin 2")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
+        <Field label={tl("Largeur (m)")}><input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} /></Field>
+        <Field label={tl("Profondeur (m)")}><input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} /></Field>
       </div>
     </Modal>
   );
@@ -624,14 +625,14 @@ function TypeForm({ type, onClose, onSaved }: { type: FixtureType | null; onClos
         levels: Number(f.levels) || 1,
         sections: Number(f.sections) || 1,
       });
-      toast.success("Meuble personnalisé enregistré : il est dans la palette.");
+      toast.success(tl("Meuble personnalisé enregistré : il est dans la palette."));
       onSaved();
     } catch (e) {
       toast.error(e);
     }
   };
   const remove = async () => {
-    if (!type || !(await confirm({ title: "Supprimer ce meuble de la palette", message: `Supprimer « ${type.name} » ?`, danger: true, confirmLabel: "Supprimer" }))) return;
+    if (!type || !(await confirm({ title: tl("Supprimer ce meuble de la palette"), message: tl("Supprimer « {0} » ?", [type.name]), danger: true, confirmLabel: tl("Supprimer") }))) return;
     try {
       await api.planDeleteType(type.id);
       onSaved();
@@ -641,42 +642,42 @@ function TypeForm({ type, onClose, onSaved }: { type: FixtureType | null; onClos
   };
   return (
     <Modal
-      title={type ? "Meuble personnalisé" : "Nouveau meuble personnalisé"}
+      title={type ? tl("Meuble personnalisé") : tl("Nouveau meuble personnalisé")}
       onClose={onClose}
       width={560}
       footer={
         <>
-          {type && <button className="btn btn-danger-outline" onClick={remove}><Trash2 size={15} /> Supprimer</button>}
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" disabled={!f.name.trim()} onClick={submit}>Enregistrer</button>
+          {type && <button className="btn btn-danger-outline" onClick={remove}><Trash2 size={15} />  {tl("Supprimer")}</button>}
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" disabled={!f.name.trim()} onClick={submit}>{tl("Enregistrer")}</button>
         </>
       }
     >
       <div className="form-grid">
-        <Field label="Nom *" span={2} hint="Ex. Frigo à boissons Coca, Étagère à épices, Vitrine à pain, Casier à bouteilles de gaz">
+        <Field label={tl("Nom *")} span={2} hint={tl("Ex. Frigo à boissons Coca, Étagère à épices, Vitrine à pain, Casier à bouteilles de gaz")}>
           <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus />
         </Field>
-        <Field label="Famille">
+        <Field label={tl("Famille")}>
           <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as FixtureCategory })}>
             {Object.entries(CATEGORY_LABELS).map(([k, label]) => (
               <option key={k} value={k}>{label}</option>
             ))}
           </select>
         </Field>
-        <Field label="Début des codes" hint="1 à 3 lettres : FB → FB1, FB2…">
+        <Field label={tl("Début des codes")} hint={tl("1 à 3 lettres : FB → FB1, FB2…")}>
           <input value={f.prefix} maxLength={3} onChange={(e) => setF({ ...f, prefix: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") })} />
         </Field>
-        <Field label="Largeur (m)"><input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} /></Field>
-        <Field label="Profondeur (m)"><input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} /></Field>
+        <Field label={tl("Largeur (m)")}><input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} /></Field>
+        <Field label={tl("Profondeur (m)")}><input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} /></Field>
         {storage && (
           <>
-            <Field label="Étages"><input inputMode="numeric" value={f.levels} onChange={(e) => setF({ ...f, levels: e.target.value })} /></Field>
-            <Field label="Cases par étage"><input inputMode="numeric" value={f.sections} onChange={(e) => setF({ ...f, sections: e.target.value })} /></Field>
+            <Field label={tl("Étages")}><input inputMode="numeric" value={f.levels} onChange={(e) => setF({ ...f, levels: e.target.value })} /></Field>
+            <Field label={tl("Cases par étage")}><input inputMode="numeric" value={f.sections} onChange={(e) => setF({ ...f, sections: e.target.value })} /></Field>
           </>
         )}
-        <Field label="Couleur sur le plan"><input type="color" value={f.color} onChange={(e) => setF({ ...f, color: e.target.value })} /></Field>
+        <Field label={tl("Couleur sur le plan")}><input type="color" value={f.color} onChange={(e) => setF({ ...f, color: e.target.value })} /></Field>
       </div>
-      {!storage && <p className="muted small">Les pièces et les éléments du bâtiment (murs, portes…) servent à se repérer : ils ne reçoivent pas de produits.</p>}
+      {!storage && <p className="muted small">{tl("Les pièces et les éléments du bâtiment (murs, portes…) servent à se repérer : ils ne reçoivent pas de produits.")}</p>}
     </Modal>
   );
 }
@@ -706,7 +707,7 @@ function GenerateModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
         rangee_from: n(f.rangee_from),
         rangee_to: n(f.rangee_to),
       });
-      toast.success(`${count} rayon(s) posé(s) sur le plan, ${created} case(s).`);
+      toast.success(tl("{0} rayon(s) posé(s) sur le plan, {1} case(s).", [count, created]));
       onDone();
     } catch (e) {
       toast.error(e);
@@ -714,21 +715,21 @@ function GenerateModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
   };
   return (
     <Modal
-      title={<>Série de rayons (gondoles) <HelpTip k="generate_blocs" /></>}
+      title={<>{tl("Série de rayons (gondoles)")} <HelpTip k="generate_blocs" /></>}
       onClose={onClose}
       width={520}
-      footer={<><button className="btn" onClick={onClose}>Annuler</button><button className="btn btn-primary" disabled={!f.bloc.trim() || count === 0} onClick={submit}>Créer {count} rayon(s)</button></>}
+      footer={<><button className="btn" onClick={onClose}>{tl("Annuler")}</button><button className="btn btn-primary" disabled={!f.bloc.trim() || count === 0} onClick={submit}>{tl("Créer")} {count}  {tl("rayon(s)")}</button></>}
     >
       <div className="form-grid">
-        <Field label="Premier rayon *" hint="Lettre (A, B…) ou numéro"><input value={f.bloc} onChange={(e) => setF({ ...f, bloc: e.target.value.toUpperCase() })} autoFocus /></Field>
-        <Field label="…jusqu'au rayon (facultatif)" hint="Ex. A à F : 6 rayons d'un coup"><input value={f.bloc_to} onChange={(e) => setF({ ...f, bloc_to: e.target.value.toUpperCase() })} placeholder="—" /></Field>
-        <Field label="Nom (facultatif)" span={2}><input value={f.label} onChange={set("label")} placeholder="Ex. Épicerie, Boissons…" /></Field>
-        <Field label="Étages : du"><input inputMode="numeric" value={f.etage_from} onChange={set("etage_from")} /></Field>
+        <Field label={tl("Premier rayon *")} hint={tl("Lettre (A, B…) ou numéro")}><input value={f.bloc} onChange={(e) => setF({ ...f, bloc: e.target.value.toUpperCase() })} autoFocus /></Field>
+        <Field label={tl("…jusqu'au rayon (facultatif)")} hint={tl("Ex. A à F : 6 rayons d'un coup")}><input value={f.bloc_to} onChange={(e) => setF({ ...f, bloc_to: e.target.value.toUpperCase() })} placeholder="—" /></Field>
+        <Field label={tl("Nom (facultatif)")} span={2}><input value={f.label} onChange={set("label")} placeholder={tl("Ex. Épicerie, Boissons…")} /></Field>
+        <Field label={tl("Étages : du")}><input inputMode="numeric" value={f.etage_from} onChange={set("etage_from")} /></Field>
         <Field label="au"><input inputMode="numeric" value={f.etage_to} onChange={set("etage_to")} /></Field>
-        <Field label="Cases : de"><input inputMode="numeric" value={f.rangee_from} onChange={set("rangee_from")} /></Field>
-        <Field label="à"><input inputMode="numeric" value={f.rangee_to} onChange={set("rangee_to")} /></Field>
+        <Field label={tl("Cases : de")}><input inputMode="numeric" value={f.rangee_from} onChange={set("rangee_from")} /></Field>
+        <Field label={tl("à")}><input inputMode="numeric" value={f.rangee_to} onChange={set("rangee_to")} /></Field>
       </div>
-      <p className="muted small">Les rayons sont posés aux places libres du plan : déplacez-les ensuite où ils sont réellement.</p>
+      <p className="muted small">{tl("Les rayons sont posés aux places libres du plan : déplacez-les ensuite où ils sont réellement.")}</p>
     </Modal>
   );
 }

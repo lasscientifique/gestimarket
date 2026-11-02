@@ -7,6 +7,7 @@ import { useApp } from "../context/AppContext";
 import { Badge, Empty, Loading, PageHeader, StatCard } from "../components/ui";
 import { dateTime, fromMinor, money, qty } from "../lib/format";
 import type { CashierStats } from "../types";
+import { locale, tl } from "../lib/i18n";
 
 /** Tableau de bord du caissier : statistiques de sa session de caisse. */
 export default function CashierDashboardPage() {
@@ -30,39 +31,39 @@ export default function CashierDashboardPage() {
     <div className="page">
       <PageHeader
         help="my_dashboard"
-        title={`Bonjour ${user?.full_name.split(" ")[0] ?? ""}`}
+        title={tl("Bonjour {0}", [user?.full_name.split(" ")[0] ?? ""])}
         subtitle={
           s ? (
             <>
-              {open ? <Badge tone="success">Caisse ouverte</Badge> : <Badge>Dernière session (clôturée)</Badge>} depuis le {dateTime(s.opened_at)}
-              {!open && s.closed_at && <> — clôturée le {dateTime(s.closed_at)}</>}
+              {open ? <Badge tone="success">{tl("Caisse ouverte")}</Badge> : <Badge>{tl("Dernière session (clôturée)")}</Badge>}  {tl("depuis le")} {dateTime(s.opened_at)}
+              {!open && s.closed_at && <>  {tl("— clôturée le")} {dateTime(s.closed_at)}</>}
             </>
           ) : (
-            "Aucune session de caisse pour l'instant."
+            tl("Aucune session de caisse pour l'instant.")
           )
         }
         actions={
           <>
-            <button className="btn" onClick={load}><RefreshCw size={16} /> Actualiser</button>
-            <Link className="btn btn-primary" to="/pos"><ShoppingCart size={16} /> {open ? "Retour à la caisse" : "Ouvrir la caisse"}</Link>
+            <button className="btn" onClick={load}><RefreshCw size={16} />  {tl("Actualiser")}</button>
+            <Link className="btn btn-primary" to="/pos"><ShoppingCart size={16} /> {open ? tl("Retour à la caisse") : tl("Ouvrir la caisse")}</Link>
           </>
         }
       />
 
       {!s ? (
         <div className="card">
-          <Empty title="Pas encore de vente">Ouvrez votre caisse pour commencer : vos statistiques s'afficheront ici en direct.</Empty>
+          <Empty title={tl("Pas encore de vente")}>{tl("Ouvrez votre caisse pour commencer : vos statistiques s'afficheront ici en direct.")}</Empty>
         </div>
       ) : (
         <>
           <div className="stats">
-            <StatCard label="Ventes de la session" value={money(s.sales_total)} hint={`${s.sales_count} ticket(s)`} icon={<ShoppingBag size={20} />} tone="accent" />
-            <StatCard label="Panier moyen" value={money(data.average_basket)} hint={`Plus gros ticket : ${money(data.biggest_sale)}`} icon={<Receipt size={20} />} />
-            <StatCard label="Articles vendus" value={qty(data.items_sold)} hint={`${data.customers_count} client(s) identifié(s)`} icon={<Trophy size={20} />} />
+            <StatCard label={tl("Ventes de la session")} value={money(s.sales_total)} hint={tl("{0} ticket(s)", [s.sales_count])} icon={<ShoppingBag size={20} />} tone="accent" />
+            <StatCard label={tl("Panier moyen")} value={money(data.average_basket)} hint={tl("Plus gros ticket : {0}", [money(data.biggest_sale)])} icon={<Receipt size={20} />} />
+            <StatCard label={tl("Articles vendus")} value={qty(data.items_sold)} hint={tl("{0} client(s) identifié(s)", [data.customers_count])} icon={<Trophy size={20} />} />
             <StatCard
-              label="Espèces attendues dans le tiroir"
+              label={tl("Espèces attendues dans le tiroir")}
               value={money(s.expected_now)}
-              hint={`Fond ${money(s.opening_amount)} + espèces ${money(s.cash_sales + s.customer_payments_cash)}${s.cash_out ? ` − sorties ${money(s.cash_out)}` : ""}`}
+              hint={tl("Fond {0} + espèces {1}{2}", [money(s.opening_amount), money(s.cash_sales + s.customer_payments_cash), s.cash_out ? ` − sorties ${money(s.cash_out)}` : ""])}
               icon={<Wallet size={20} />}
               tone="success"
             />
@@ -70,37 +71,37 @@ export default function CashierDashboardPage() {
 
           <div className="grid-2">
             <div className="card">
-              <h3 className="card-title">Encaissements par moyen de paiement</h3>
+              <h3 className="card-title">{tl("Encaissements par moyen de paiement")}</h3>
               <div className="pay-split">
-                <PayRow icon={<Banknote size={18} />} label="Espèces" value={s.cash_sales} total={s.sales_total} />
-                <PayRow icon={<Smartphone size={18} />} label={settings.om_label || "Orange Money"} value={electronic} total={s.sales_total} tone="om" />
-                <PayRow icon={<CreditCard size={18} />} label="Carte" value={s.card_sales} total={s.sales_total} />
-                <PayRow icon={<HandCoins size={18} />} label="À crédit" value={s.credit_sales} total={s.sales_total} />
+                <PayRow icon={<Banknote size={18} />} label={tl("Espèces")} value={s.cash_sales} total={s.sales_total} />
+                <PayRow icon={<Smartphone size={18} />} label={settings.om_label || tl("Orange Money")} value={electronic} total={s.sales_total} tone="om" />
+                <PayRow icon={<CreditCard size={18} />} label={tl("Carte")} value={s.card_sales} total={s.sales_total} />
+                <PayRow icon={<HandCoins size={18} />} label={tl("À crédit")} value={s.credit_sales} total={s.sales_total} />
               </div>
               {(s.customer_payments_cash > 0 || s.customer_payments_electronic > 0) && (
                 <div className="kv muted" style={{ marginTop: 10 }}>
-                  <span>Règlements de dettes clients</span>
+                  <span>{tl("Règlements de dettes clients")}</span>
                   <span>{money(s.customer_payments_cash + s.customer_payments_electronic)}</span>
                 </div>
               )}
               <div className="kv" style={{ marginTop: 6 }}>
-                <span><XCircle size={14} /> Annulations</span>
-                <span>{data.cancelled_count ? <Badge tone="danger">{data.cancelled_count} · {money(data.cancelled_total)}</Badge> : "aucune"}</span>
+                <span><XCircle size={14} />  {tl("Annulations")}</span>
+                <span>{data.cancelled_count ? <Badge tone="danger">{data.cancelled_count} · {money(data.cancelled_total)}</Badge> : tl("aucune")}</span>
               </div>
               <div className="kv">
-                <span>Remises accordées</span>
-                <span>{data.discounts_total ? money(data.discounts_total) : "aucune"}</span>
+                <span>{tl("Remises accordées")}</span>
+                <span>{data.discounts_total ? money(data.discounts_total) : tl("aucune")}</span>
               </div>
               <div className="kv">
-                <span>Aujourd'hui (toutes mes sessions)</span>
-                <strong>{money(data.today_total)} · {data.today_count} ticket(s)</strong>
+                <span>{tl("Aujourd'hui (toutes mes sessions)")}</span>
+                <strong>{money(data.today_total)} · {data.today_count}  {tl("ticket(s)")}</strong>
               </div>
             </div>
 
             <div className="card">
-              <h3 className="card-title">Ventes par heure</h3>
+              <h3 className="card-title">{tl("Ventes par heure")}</h3>
               {hours.length === 0 ? (
-                <Empty title="Aucune vente pour l'instant" />
+                <Empty title={tl("Aucune vente pour l'instant")} />
               ) : (
                 <div style={{ height: 240 }}>
                   <ResponsiveContainer>
@@ -109,7 +110,7 @@ export default function CashierDashboardPage() {
                       <XAxis dataKey="label" tick={{ fontSize: 12, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 12, fill: "var(--muted)" }} axisLine={false} tickLine={false} width={60} />
                       <Tooltip
-                        formatter={(v) => [`${Number(v).toLocaleString("fr-FR")} ${settings.currency_symbol ?? ""}`, "Ventes"]}
+                        formatter={(v) => [`${Number(v).toLocaleString(locale())} ${settings.currency_symbol ?? ""}`, tl("Ventes")]}
                         contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}
                       />
                       <Bar dataKey="total" fill="var(--accent)" radius={[6, 6, 0, 0]} />
@@ -122,9 +123,9 @@ export default function CashierDashboardPage() {
 
           <div className="grid-2">
             <div className="card">
-              <h3 className="card-title">Mes meilleurs articles</h3>
+              <h3 className="card-title">{tl("Mes meilleurs articles")}</h3>
               {data.top_products.length === 0 ? (
-                <Empty title="Aucun article vendu" />
+                <Empty title={tl("Aucun article vendu")} />
               ) : (
                 <table className="table compact">
                   <tbody>
@@ -141,9 +142,9 @@ export default function CashierDashboardPage() {
               )}
             </div>
             <div className="card">
-              <h3 className="card-title">Derniers tickets</h3>
+              <h3 className="card-title">{tl("Derniers tickets")}</h3>
               {data.recent.length === 0 ? (
-                <Empty title="Aucun ticket" />
+                <Empty title={tl("Aucun ticket")} />
               ) : (
                 <table className="table compact">
                   <tbody>
@@ -151,9 +152,9 @@ export default function CashierDashboardPage() {
                       <tr key={r.id} className={r.status === "cancelled" ? "row-cancelled" : ""}>
                         <td className="mono small">{r.number}</td>
                         <td className="muted small nowrap">{dateTime(r.created_at).slice(-5)}</td>
-                        <td className="small">{r.customer_name ?? `${r.items} article(s)`}</td>
+                        <td className="small">{r.customer_name ?? tl("{0} article(s)", [r.items])}</td>
                         <td className="num">
-                          {r.status === "cancelled" ? <Badge tone="danger">Annulée</Badge> : <strong>{money(r.total)}</strong>}
+                          {r.status === "cancelled" ? <Badge tone="danger">{tl("Annulée")}</Badge> : <strong>{money(r.total)}</strong>}
                         </td>
                       </tr>
                     ))}

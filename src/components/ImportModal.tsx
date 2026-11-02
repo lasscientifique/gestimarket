@@ -8,6 +8,7 @@ import { normalizeHeader, parseCsv, parseDate } from "../lib/csv";
 import { parseNumber, toCsv, toMinor } from "../lib/format";
 import type { ImportResult, ImportRow } from "../types";
 import { Modal } from "./ui";
+import { tl } from "../lib/i18n";
 
 type Key = keyof ImportRow;
 
@@ -32,22 +33,22 @@ const SYNONYMS: Record<Key, string[]> = {
 };
 
 const LABELS: Record<Key, string> = {
-  barcode: "Code-barres",
-  name: "Désignation",
-  category: "Catégorie",
-  subcategory: "Sous-catégorie",
-  unit: "Unité",
-  purchase_price: "Prix d'achat",
-  sale_price: "Prix de vente",
-  tax_rate: "TVA %",
-  stock: "Stock",
-  min_stock: "Seuil d'alerte",
-  bloc: "Bloc",
-  etage: "Étage",
-  rangee: "Rangée",
-  expiry_date: "Péremption",
-  brand: "Marque",
-  sku: "Référence",
+  barcode: tl("Code-barres"),
+  name: tl("Désignation"),
+  category: tl("Catégorie"),
+  subcategory: tl("Sous-catégorie"),
+  unit: tl("Unité"),
+  purchase_price: tl("Prix d'achat"),
+  sale_price: tl("Prix de vente"),
+  tax_rate: tl("TVA %"),
+  stock: tl("Stock"),
+  min_stock: tl("Seuil d'alerte"),
+  bloc: tl("Bloc"),
+  etage: tl("Étage"),
+  rangee: tl("Rangée"),
+  expiry_date: tl("Péremption"),
+  brand: tl("Marque"),
+  sku: tl("Référence"),
 };
 
 export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
@@ -117,7 +118,7 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
       [["6001234567890", "Riz parfumé 5kg", "Épicerie", "Riz et céréales", "pce", "3000", "3750", "0", "40", "5", "A", "2", "4", "31/12/2027"]],
     );
     try {
-      if (await exportCsv("modele-import-produits.csv", csv)) toast.success("Modèle enregistré. Ouvrez-le avec Excel.");
+      if (await exportCsv("modele-import-produits.csv", csv)) toast.success(tl("Modèle enregistré. Ouvrez-le avec Excel."));
     } catch (e) {
       toast.error(e);
     }
@@ -126,7 +127,7 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
   const submit = async () => {
     setBusy(true);
     try {
-      const pin = await askPin({ title: "Confirmer l'import", level: "manager", message: <>Import de <strong>{data.length}</strong> ligne(s) : confirmez avec votre code PIN.</> });
+      const pin = await askPin({ title: tl("Confirmer l'import"), level: "manager", message: <>{tl("Import de")} <strong>{data.length}</strong>  {tl("ligne(s) : confirmez avec votre code PIN.")}</> });
       if (!pin) return;
       const r = await api.importProducts(data, pin);
       setResult(r);
@@ -142,19 +143,18 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
 
   return (
     <Modal
-      title="Importer des produits (Excel / CSV)"
+      title={tl("Importer des produits (Excel / CSV)")}
       onClose={onClose}
       width={900}
       footer={
         result ? (
-          <button className="btn btn-primary" onClick={onClose}>Terminer</button>
+          <button className="btn btn-primary" onClick={onClose}>{tl("Terminer")}</button>
         ) : (
           <>
-            <button className="btn" style={{ marginRight: "auto" }} onClick={template}><Download size={16} /> Télécharger le modèle</button>
-            <button className="btn" onClick={onClose}>Annuler</button>
+            <button className="btn" style={{ marginRight: "auto" }} onClick={template}><Download size={16} />  {tl("Télécharger le modèle")}</button>
+            <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
             <button className="btn btn-primary" disabled={busy || !data.length || missingName} onClick={submit}>
-              Importer {data.length} ligne(s)
-            </button>
+              {tl("Importer")} {data.length}  {tl("ligne(s)")}</button>
           </>
         )
       }
@@ -162,11 +162,11 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
       {result ? (
         <div className="import-result">
           <CheckCircle2 size={40} className="text-success" />
-          <h3>Import terminé</h3>
-          <p>{result.created} produit(s) créé(s) · {result.updated} mis à jour</p>
+          <h3>{tl("Import terminé")}</h3>
+          <p>{result.created}  {tl("produit(s) créé(s) ·")} {result.updated}  {tl("mis à jour")}</p>
           {result.errors.length > 0 && (
             <div className="alert alert-warning" style={{ textAlign: "left" }}>
-              <strong>{result.errors.length} ligne(s) ignorée(s) :</strong>
+              <strong>{result.errors.length}  {tl("ligne(s) ignorée(s) :")}</strong>
               <ul>{result.errors.slice(0, 20).map((e) => <li key={e}>{e}</li>)}</ul>
             </div>
           )}
@@ -174,14 +174,14 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
       ) : (
         <>
           <ol className="steps">
-            <li>Dans Excel : <b>Fichier → Enregistrer sous → CSV (séparateur : point-virgule)</b>. Le modèle donne les colonnes attendues.</li>
-            <li>Un produit existant (même code-barres) est <b>mis à jour</b> ; sinon il est créé. La colonne « Stock » fixe le stock (inventaire tracé).</li>
-            <li>Les catégories inconnues sont créées automatiquement ; un meuble inconnu (colonne bloc : code du meuble, ex. A ou FR1) est posé sur le plan avec ses étages et ses cases.</li>
+            <li>{tl("Dans Excel :")} <b>{tl("Fichier → Enregistrer sous → CSV (séparateur : point-virgule)")}</b>{tl(". Le modèle donne les colonnes attendues.")}</li>
+            <li>{tl("Un produit existant (même code-barres) est")} <b>{tl("mis à jour")}</b>  {tl("; sinon il est créé. La colonne « Stock » fixe le stock (inventaire tracé).")}</li>
+            <li>{tl("Les catégories inconnues sont créées automatiquement ; un meuble inconnu (colonne bloc : code du meuble, ex. A ou FR1) est posé sur le plan avec ses étages et ses cases.")}</li>
           </ol>
           <button className="file-drop" onClick={choose}>
             <FileUp size={26} />
-            <strong>{file || "Choisir un fichier CSV…"}</strong>
-            {file && <span className="muted">{data.length} ligne(s) détectée(s)</span>}
+            <strong>{file || tl("Choisir un fichier CSV…")}</strong>
+            {file && <span className="muted">{data.length}  {tl("ligne(s) détectée(s)")}</span>}
           </button>
           {rows.length > 0 && (
             <>
@@ -192,10 +192,10 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
                   </span>
                 ))}
               </div>
-              {missingName && <div className="alert alert-danger">Colonne « Désignation » introuvable dans le fichier.</div>}
+              {missingName && <div className="alert alert-danger">{tl("Colonne « Désignation » introuvable dans le fichier.")}</div>}
               <div className="table-scroll">
                 <table className="table compact">
-                  <thead><tr><th>Code-barres</th><th>Désignation</th><th>Catégorie</th><th className="num">Achat</th><th className="num">Vente</th><th className="num">Stock</th><th>Emplacement</th><th>Péremption</th></tr></thead>
+                  <thead><tr><th>{tl("Code-barres")}</th><th>{tl("Désignation")}</th><th>{tl("Catégorie")}</th><th className="num">{tl("Achat")}</th><th className="num">{tl("Vente")}</th><th className="num">{tl("Stock")}</th><th>{tl("Emplacement")}</th><th>{tl("Péremption")}</th></tr></thead>
                   <tbody>
                     {data.slice(0, 12).map((r, i) => (
                       <tr key={i}>
@@ -205,14 +205,14 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
                         <td className="num">{rows[i + 1]?.[mapping.purchase_price ?? -1]}</td>
                         <td className="num">{rows[i + 1]?.[mapping.sale_price ?? -1]}</td>
                         <td className="num">{r.stock ?? ""}</td>
-                        <td>{r.bloc ? `B${r.bloc} É${r.etage ?? ""} R${r.rangee ?? ""}` : ""}</td>
+                        <td>{r.bloc ? tl("B{0} É{1} R{2}", [r.bloc, r.etage ?? "", r.rangee ?? ""]) : ""}</td>
                         <td className={r.expiry_date === "invalide" ? "text-danger" : ""}>{r.expiry_date}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {data.length > 12 && <p className="muted small">… et {data.length - 12} autre(s) ligne(s).</p>}
+              {data.length > 12 && <p className="muted small">{tl("… et")} {data.length - 12}  {tl("autre(s) ligne(s).")}</p>}
             </>
           )}
         </>

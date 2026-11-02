@@ -31,6 +31,7 @@ import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { FEATURE_LABELS } from "../lib/format";
 import type { BusinessProfile, CatalogueSummary } from "../types";
+import { tl, tm } from "../lib/i18n";
 
 const ICONS: Record<string, ReactNode> = {
   boutique: <Store size={22} />,
@@ -80,8 +81,8 @@ export function BusinessTypeGrid({
       {profiles.map((p) => (
         <button type="button" key={p.id} className={`biz-card ${value === p.id ? "active" : ""}`} onClick={() => onChange(p)}>
           <span className="biz-icon">{ICONS[p.id] ?? <Building2 size={22} />}</span>
-          <span className="biz-label">{p.label}</span>
-          <span className="biz-desc">{p.description}</span>
+          <span className="biz-label">{tm(p.label)}</span>
+          <span className="biz-desc">{tm(p.description)}</span>
           {value === p.id && <span className="biz-check"><Check size={14} /></span>}
         </button>
       ))}
@@ -121,7 +122,7 @@ export function CataloguePicker({ onDone }: { onDone: (created: number) => void 
     if (data) setSelected(new Set(profile?.categories ?? []));
   }, [data, profile]);
 
-  if (!data) return <div className="muted pad">Chargement du catalogue…</div>;
+  if (!data) return <div className="muted pad">{tl("Chargement du catalogue…")}</div>;
 
   const toggle = (i: number) =>
     setSelected((s) => {
@@ -146,16 +147,14 @@ export function CataloguePicker({ onDone }: { onDone: (created: number) => void 
   return (
     <div>
       <p className="muted">
-        Cochez les catégories à ajouter. {profile ? <>Les catégories recommandées pour « {profile.label} » sont pré-cochées.</> : null} Les catégories déjà
-        présentes ne sont pas dupliquées ; vous pourrez tout renommer, masquer ou supprimer ensuite.
-      </p>
+        {tl("Cochez les catégories à ajouter.")} {profile ? <>{tl("Les catégories recommandées pour «")} {tm(profile.label)}  {tl("» sont pré-cochées.")}</> : null}  {tl("Les catégories déjà présentes ne sont pas dupliquées ; vous pourrez tout renommer, masquer ou supprimer ensuite.")}</p>
       <div className="row-between" style={{ margin: "8px 0" }}>
         <div className="row-gap">
-          <button className="btn btn-sm" onClick={() => setSelected(new Set(data.catalogue.map((c) => c.index)))}>Tout cocher</button>
-          <button className="btn btn-sm" onClick={() => setSelected(new Set())}>Tout décocher</button>
-          {profile && <button className="btn btn-sm" onClick={() => setSelected(new Set(profile.categories))}>Recommandées</button>}
+          <button className="btn btn-sm" onClick={() => setSelected(new Set(data.catalogue.map((c) => c.index)))}>{tl("Tout cocher")}</button>
+          <button className="btn btn-sm" onClick={() => setSelected(new Set())}>{tl("Tout décocher")}</button>
+          {profile && <button className="btn btn-sm" onClick={() => setSelected(new Set(profile.categories))}>{tl("Recommandées")}</button>}
         </div>
-        <span className="muted small">{selected.size} catégorie(s) · {total} élément(s) au total</span>
+        <span className="muted small">{selected.size}  {tl("catégorie(s) ·")} {total}  {tl("élément(s) au total")}</span>
       </div>
       <div className="catalogue-grid">
         {data.catalogue.map((c) => (
@@ -164,7 +163,7 @@ export function CataloguePicker({ onDone }: { onDone: (created: number) => void 
             <span>
               <strong>{c.name}</strong>
               <span className="muted small">
-                {c.subcategories} sous-cat. — {c.examples.join(", ")}
+                {c.subcategories}  {tl("sous-cat. —")} {c.examples.join(", ")}
                 {c.subcategories > c.examples.length ? "…" : ""}
               </span>
             </span>
@@ -173,7 +172,7 @@ export function CataloguePicker({ onDone }: { onDone: (created: number) => void 
       </div>
       <div className="row-end" style={{ marginTop: 12 }}>
         <button className="btn btn-primary" disabled={busy || selected.size === 0} onClick={load}>
-          <Library size={16} /> {busy ? "Chargement…" : `Charger ${selected.size} catégorie(s)`}
+          <Library size={16} /> {busy ? tl("Chargement…") : tl("Charger {0} catégorie(s)", [selected.size])}
         </button>
       </div>
     </div>

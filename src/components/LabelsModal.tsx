@@ -7,6 +7,7 @@ import { locationText, money } from "../lib/format";
 import { printHtml } from "../lib/receipt";
 import type { Product } from "../types";
 import { Field, Modal } from "./ui";
+import { tl } from "../lib/i18n";
 
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -91,38 +92,37 @@ export function LabelsModal({ products, onClose }: { products: Product[]; onClos
 
   return (
     <Modal
-      title="Imprimer des étiquettes"
+      title={tl("Imprimer des étiquettes")}
       onClose={onClose}
       width={560}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" disabled={!withCode.length} onClick={print}><Printer size={16} /> Imprimer</button>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" disabled={!withCode.length} onClick={print}><Printer size={16} />  {tl("Imprimer")}</button>
         </>
       }
     >
       <div className="method-grid two">
         <button className={`method ${template === "product" ? "active" : ""}`} onClick={() => setTemplate("product")}>
           <LayoutGrid size={22} />
-          <span>Étiquettes produit</span>
-          <span className="small muted">Planche A4 — 24 étiquettes (70 × 37 mm)</span>
+          <span>{tl("Étiquettes produit")}</span>
+          <span className="small muted">{tl("Planche A4 — 24 étiquettes (70 × 37 mm)")}</span>
         </button>
         <button className={`method ${template === "shelf" ? "active" : ""}`} onClick={() => setTemplate("shelf")}>
           <Tag size={22} />
-          <span>Étiquettes de rayon</span>
-          <span className="small muted">Prix, code-barres et emplacement</span>
+          <span>{tl("Étiquettes de rayon")}</span>
+          <span className="small muted">{tl("Prix, code-barres et emplacement")}</span>
         </button>
       </div>
       <div className="segmented" style={{ margin: "12px 0" }}>
-        <button className={format === "barcode" ? "active" : ""} onClick={() => setFormat("barcode")}><Barcode size={15} /> Code-barres</button>
-        <button className={format === "qr" ? "active" : ""} onClick={() => setFormat("qr")}><QrCode size={15} /> QR code</button>
+        <button className={format === "barcode" ? "active" : ""} onClick={() => setFormat("barcode")}><Barcode size={15} />  {tl("Code-barres")}</button>
+        <button className={format === "qr" ? "active" : ""} onClick={() => setFormat("qr")}><QrCode size={15} />  {tl("QR code")}</button>
       </div>
-      <Field label="Nombre d'exemplaires par produit">
+      <Field label={tl("Nombre d'exemplaires par produit")}>
         <input inputMode="numeric" value={copies} onChange={(e) => setCopies(e.target.value)} />
       </Field>
       <p className="muted">
-        {withCode.length} produit(s) avec code-barres sélectionné(s)
-        {products.length > withCode.length && ` — ${products.length - withCode.length} sans code-barres ignoré(s) (utilisez « générer » dans la fiche produit).`}
+        {withCode.length}  {tl("produit(s) avec code-barres sélectionné(s)")}{products.length > withCode.length && tl(" — {0} sans code-barres ignoré(s) (utilisez « générer » dans la fiche produit).", [products.length - withCode.length])}
       </p>
     </Modal>
   );

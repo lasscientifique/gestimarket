@@ -8,10 +8,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::error::{invalid, AppResult};
-use crate::services::audit;
+use crate::services::{audit, settings};
 use crate::state::SessionUser;
 
-const CATALOGUE: &str = include_str!("../../data/catalogue_fr.txt");
+// Mêmes lignes et même arborescence dans les deux langues : les index des profils restent valables.
+const CATALOGUE_FR: &str = include_str!("../../data/catalogue_fr.txt");
+const CATALOGUE_EN: &str = include_str!("../../data/catalogue_en.txt");
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TemplateNode {
@@ -19,8 +21,18 @@ pub struct TemplateNode {
     pub children: Vec<TemplateNode>,
 }
 
-/// Lit le catalogue (une ligne par catégorie, 2 espaces d'indentation par niveau).
+/// Catalogue en français.
 pub fn catalogue() -> Vec<TemplateNode> {
+    catalogue_in("fr")
+}
+
+/// Catalogue dans la langue de la boutique (paramètre « shop_lang »).
+pub fn shop_catalogue(conn: &Connection) -> AppResult<Vec<TemplateNode>> {
+    Ok(catalogue_in(&settings::get(conn, "shop_lang")?))
+}
+
+/// Lit le catalogue d'une langue (une ligne par catégorie, 2 espaces d'indentation par niveau).
+pub fn catalogue_in(lang: &str) -> Vec<TemplateNode> {
     fn insert(tree: &mut Vec<TemplateNode>, depth: usize, name: String) {
         if depth == 0 {
             tree.push(TemplateNode { name, children: Vec::new() });
@@ -29,7 +41,8 @@ pub fn catalogue() -> Vec<TemplateNode> {
         }
     }
     let mut roots = Vec::new();
-    for line in CATALOGUE.lines() {
+    let text = if lang == "en" { CATALOGUE_EN } else { CATALOGUE_FR };
+    for line in text.lines() {
         if line.trim().is_empty() || line.trim_start().starts_with('#') {
             continue;
         }
@@ -130,8 +143,8 @@ fn count(n: &TemplateNode) -> usize {
     1 + n.children.iter().map(count).sum::<usize>()
 }
 
-pub fn summaries() -> Vec<TemplateSummary> {
-    catalogue()
+pub fn summaries(tree: &[TemplateNode]) -> Vec<TemplateSummary> {
+    tree
         .iter()
         .enumerate()
         .map(|(i, n)| TemplateSummary {
@@ -171,7 +184,7 @@ pub fn find_or_create(conn: &Connection, name: &str, parent: Option<i64>, color:
 
 /// Charge les catégories choisies du catalogue (sans doublon). Retourne le nombre de catégories créées.
 pub fn seed(conn: &mut Connection, user: &SessionUser, indexes: &[usize]) -> AppResult<i64> {
-    let tree = catalogue();
+    let tree = shop_catalogue(conn)?;
     if indexes.iter().any(|&i| i == 0 || i > tree.len()) {
         return invalid("Catégorie du catalogue inconnue.");
     }

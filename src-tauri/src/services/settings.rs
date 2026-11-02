@@ -22,6 +22,16 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("loyalty_step", "0"),
     ("default_tax_rate", "0"),
     ("shop_logo_id", ""),
+    // International : langue des tickets et du catalogue, pays (formats), devise (code ISO 4217)
+    ("shop_lang", "fr"),
+    ("country", "ML"),
+    ("currency_code", "XOF"),
+    ("currency_position", "after"),
+    // Taxes : taux nommés (une ligne « Nom=taux »), prix TTC (1) ou HT (0)
+    ("tax_rates", ""),
+    ("prices_include_tax", "1"),
+    // Opérateurs de mobile money proposés en caisse (JSON), en plus d'Orange Money
+    ("mobile_operators", ""),
     // Orange Money / Sarali
     ("om_enabled", "1"),
     ("om_label", "Orange Money / Sarali"),
@@ -134,6 +144,9 @@ pub fn update(
                     );
                 }
             }
+        }
+        if key == "mobile_operators" {
+            crate::services::sales::validate_operators(value)?;
         }
         if key == "shop_name" && value.trim().is_empty() {
             return invalid("Le nom du commerce est obligatoire.");

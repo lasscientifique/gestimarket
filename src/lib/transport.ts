@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { browserPosteName } from "./presence";
+import { tl } from "./i18n";
 
 /**
  * Couche de transport : où envoyer les opérations ?
@@ -111,16 +112,16 @@ export async function rpc<T>(cmd: string, args?: Record<string, unknown>): Promi
       body: JSON.stringify(args ?? {}),
     });
   } catch {
-    throw new Error(`Serveur injoignable (${remoteBase}). Vérifiez que le poste serveur est allumé et sur le même réseau.`);
+    throw new Error(tl("Serveur injoignable ({0}). Vérifiez que le poste serveur est allumé et sur le même réseau.", [remoteBase]));
   }
-  const data = await res.json().catch(() => ({ error: `Réponse invalide du serveur (${res.status}).` }));
+  const data = await res.json().catch(() => ({ error: tl("Réponse invalide du serveur ({0}).", [res.status]) }));
   if (data.error) throw new Error(data.error);
   return data.ok as T;
 }
 
 /** Commande propre à ce PC (fichiers locaux, réseau, fenêtres). */
 export async function local<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri) throw new Error("Fonction disponible uniquement dans l'application de bureau.");
+  if (!isTauri) throw new Error(tl("Fonction disponible uniquement dans l'application de bureau."));
   try {
     return await invoke<T>(cmd, args);
   } catch (e) {
@@ -132,7 +133,7 @@ export async function local<T>(cmd: string, args?: Record<string, unknown>): Pro
 export async function pingServer(url: string): Promise<{ shop_name: string; version: string }> {
   const base = (url.startsWith("http") ? url : `http://${url}`).replace(/\/+$/, "");
   const res = await fetch(`${base}/api/ping`).catch(() => {
-    throw new Error("Serveur injoignable : vérifiez l'adresse, le port et que le poste serveur est allumé.");
+    throw new Error(tl("Serveur injoignable : vérifiez l'adresse, le port et que le poste serveur est allumé."));
   });
   const data = await res.json();
   if (data.app !== "GestiMarket") throw new Error("Ce n'est pas un serveur GestiMarket.");

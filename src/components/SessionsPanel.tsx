@@ -5,9 +5,10 @@ import { useApp } from "../context/AppContext";
 import { Badge } from "./ui";
 import { ROLE_LABELS } from "../lib/format";
 import type { SessionInfo } from "../types";
+import { tl } from "../lib/i18n";
 
 function idle(secs: number): string {
-  if (secs < 60) return "à l'instant";
+  if (secs < 60) return tl("à l'instant");
   if (secs < 3600) return `il y a ${Math.floor(secs / 60)} min`;
   return `il y a ${Math.floor(secs / 3600)} h`;
 }
@@ -30,10 +31,10 @@ export function SessionsPanel() {
   if (user?.role !== "admin" || !data) return null;
 
   const kick = async (s: SessionInfo) => {
-    if (!(await confirm({ title: "Déconnecter ce poste", message: `Fermer la session de ${s.user} (${s.ip}) ? L'appareil reviendra à l'écran de connexion.`, confirmLabel: "Déconnecter", danger: true }))) return;
+    if (!(await confirm({ title: tl("Déconnecter ce poste"), message: tl("Fermer la session de {0} ({1}) ? L'appareil reviendra à l'écran de connexion.", [s.user, s.ip]), confirmLabel: tl("Déconnecter"), danger: true }))) return;
     try {
       await api.kickSession(s.id);
-      toast.success(`Session de ${s.user} fermée.`);
+      toast.success(tl("Session de {0} fermée.", [s.user]));
       load();
     } catch (e) {
       toast.error(e);
@@ -43,20 +44,19 @@ export function SessionsPanel() {
   return (
     <div className="card">
       <h3 className="card-title">
-        <Users size={18} /> Postes connectés <Badge tone={data.used >= data.max ? "warning" : "success"}>{data.used} / {data.max}</Badge>
-        <button className="icon-btn" onClick={load} title="Actualiser" style={{ marginLeft: "auto" }}><RefreshCw size={14} /></button>
+        <Users size={18} />  {tl("Postes connectés")} <Badge tone={data.used >= data.max ? "warning" : "success"}>{data.used} / {data.max}</Badge>
+        <button className="icon-btn" onClick={load} title={tl("Actualiser")} style={{ marginLeft: "auto" }}><RefreshCw size={14} /></button>
       </h3>
       <p className="muted small">
-        Chaque appareil connecté (ce PC compris) occupe une place de la formule. Un appareil éteint libère sa place au bout de 3 minutes.
-      </p>
+        {tl("Chaque appareil connecté (ce PC compris) occupe une place de la formule. Un appareil éteint libère sa place au bout de 3 minutes.")}</p>
       <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
-              <th>Utilisateur</th>
-              <th>Appareil</th>
-              <th>Depuis</th>
-              <th>Dernier signal</th>
+              <th>{tl("Utilisateur")}</th>
+              <th>{tl("Appareil")}</th>
+              <th>{tl("Depuis")}</th>
+              <th>{tl("Dernier signal")}</th>
               <th />
             </tr>
           </thead>
@@ -67,20 +67,20 @@ export function SessionsPanel() {
                   <strong>{s.user}</strong> <span className="small muted">{ROLE_LABELS[s.role] ?? s.role}</span>
                 </td>
                 <td>
-                  {s.local ? "Ce PC" : s.ip} <Badge tone={s.route === "internet" ? "info" : "default"}>{s.route === "internet" ? "Internet" : "Réseau local"}</Badge>
+                  {s.local ? tl("Ce PC") : s.ip} <Badge tone={s.route === "internet" ? "info" : "default"}>{s.route === "internet" ? tl("Internet") : tl("Réseau local")}</Badge>
                 </td>
                 <td>{s.since}</td>
-                <td>{s.local ? "—" : s.active ? idle(s.idle_secs) : `inactif (${idle(s.idle_secs)})`}</td>
+                <td>{s.local ? "—" : s.active ? idle(s.idle_secs) : tl("inactif ({0})", [idle(s.idle_secs)])}</td>
                 <td className="row-end">
                   {!s.local && (
-                    <button className="btn btn-sm" onClick={() => kick(s)}><LogOut size={14} /> Déconnecter</button>
+                    <button className="btn btn-sm" onClick={() => kick(s)}><LogOut size={14} />  {tl("Déconnecter")}</button>
                   )}
                 </td>
               </tr>
             ))}
             {data.sessions.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">Aucune session ouverte.</td>
+                <td colSpan={5} className="muted">{tl("Aucune session ouverte.")}</td>
               </tr>
             )}
           </tbody>

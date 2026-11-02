@@ -79,7 +79,7 @@ fn fill_summary(conn: &Connection, s: &mut CashSession) -> AppResult<()> {
     (s.cash_sales, s.orange_money_sales, s.mobile_money_sales, s.card_sales, s.other_sales) = conn.query_row(
         "SELECT COALESCE(SUM(CASE WHEN sp.method = 'cash' THEN sp.amount END), 0),
                 COALESCE(SUM(CASE WHEN sp.method = 'orange_money' THEN sp.amount END), 0),
-                COALESCE(SUM(CASE WHEN sp.method = 'mobile_money' THEN sp.amount END), 0),
+                COALESCE(SUM(CASE WHEN sp.method = 'mobile_money' OR sp.method LIKE 'mm:%' THEN sp.amount END), 0),
                 COALESCE(SUM(CASE WHEN sp.method = 'card' THEN sp.amount END), 0),
                 COALESCE(SUM(CASE WHEN sp.method = 'other' THEN sp.amount END), 0)
          FROM sale_payments sp JOIN sales sa ON sa.id = sp.sale_id

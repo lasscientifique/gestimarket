@@ -448,7 +448,7 @@ pub fn set_sync_result(result: &Result<String, String>) {
 /// paramètres (dossier de sauvegarde…) et clôture des caisses ouvertes avant l'expiration.
 const ALWAYS: &[&str] = &[
     "needs_setup", "initial_setup", "login", "logout", "current_user", "list_login_users", "login_pin",
-    "get_settings", "update_settings", "server_info", "display_state", "display_update", "set_my_pin", "verify_pin", "change_password",
+    "get_settings", "update_settings", "set_my_lang", "server_info", "display_state", "display_update", "set_my_pin", "verify_pin", "change_password",
     "close_cash_session", "force_close_cash_session",
     "save_user", "reset_user_password", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",

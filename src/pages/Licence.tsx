@@ -6,8 +6,9 @@ import { Badge, Modal, PageHeader } from "../components/ui";
 import { AccountForm } from "../components/AccountForm";
 import { PaymentsHistory, SubscriptionPay } from "../components/SubscriptionPay";
 import { isRemote, isTauri } from "../lib/transport";
-import { FEATURE_LABELS, fcfa, isoDateTime, refreshLicense, setLicense, useLicense } from "../lib/license";
+import { FEATURE_LABELS, isoDateTime, planPrice, price, refreshLicense, setLicense, useLicense } from "../lib/license";
 import type { AccountLinkResult, AccountOptions, LicenseFeature, PlanCode } from "../types";
+import { tl, tm } from "../lib/i18n";
 
 const FEATURES = Object.keys(FEATURE_LABELS) as LicenseFeature[];
 
@@ -32,7 +33,7 @@ export default function LicencePage() {
     try {
       const s = await api.licenseSync();
       setLicense(s);
-      toast.success(s.read_only ? "Vérification faite : aucune licence active pour l'instant." : `Licence à jour : ${s.plan_label}.`);
+      toast.success(s.read_only ? tl("Vérification faite : aucune licence active pour l'instant.") : tl("Licence à jour : {0}.", [s.plan_label]));
     } catch (e) {
       toast.error(e);
     } finally {
@@ -51,7 +52,7 @@ export default function LicencePage() {
       try {
         const s = await api.licenseImport(await file.text());
         setLicense(s);
-        toast.success(`Licence installée : ${s.plan_label}, jusqu'au ${isoDateTime(s.expires_at)}.`);
+        toast.success(tl("Licence installée : {0}, jusqu'au {1}.", [s.plan_label, isoDateTime(s.expires_at)]));
       } catch (e) {
         toast.error(e);
       }
@@ -61,16 +62,16 @@ export default function LicencePage() {
 
   const linked = (r: AccountLinkResult) => {
     setAccountOpen(false);
-    toast.success(`Ce PC est relié à la boutique ${r.store?.name ?? ""} (${r.store?.code ?? ""}).`);
-    if (r.sync_error) toast.error(`Licence pas encore téléchargée : ${r.sync_error}`);
+    toast.success(tl("Ce PC est relié à la boutique {0} ({1}).", [r.store?.name ?? "", r.store?.code ?? ""]));
+    if (r.sync_error) toast.error(tl("Licence pas encore téléchargée : {0}", [tm(r.sync_error)]));
     refreshLicense();
   };
 
   if (!lic) {
     return (
       <div className="page narrow">
-        <PageHeader title="Abonnement & licence" />
-        <p className="muted">Chargement…</p>
+        <PageHeader title={tl("Abonnement & licence")} />
+        <p className="muted">{tl("Chargement…")}</p>
       </div>
     );
   }
@@ -79,13 +80,13 @@ export default function LicencePage() {
   return (
     <div className="page narrow">
       <PageHeader
-        title="Abonnement & licence"
-        subtitle="Formule de la boutique, licence de ce PC et compte Eden Dev. Aucune donnée commerciale n'est envoyée à Eden Dev."
+        title={tl("Abonnement & licence")}
+        subtitle={tl("Formule de la boutique, licence de ce PC et compte Eden Dev. Aucune donnée commerciale n'est envoyée à Eden Dev.")}
         actions={
           onThisPc && (
             <>
-              <button className="btn" onClick={importFile}><FileUp size={16} /> Importer un fichier</button>
-              <button className="btn btn-primary" onClick={sync} disabled={busy}><RefreshCw size={16} /> {busy ? "Vérification…" : "Vérifier maintenant"}</button>
+              <button className="btn" onClick={importFile}><FileUp size={16} />  {tl("Importer un fichier")}</button>
+              <button className="btn btn-primary" onClick={sync} disabled={busy}><RefreshCw size={16} /> {busy ? tl("Vérification…") : tl("Vérifier maintenant")}</button>
             </>
           )
         }
@@ -93,39 +94,38 @@ export default function LicencePage() {
 
       <div className="card">
         <h3 className="card-title">
-          <BadgeCheck size={18} /> Formule {lic.plan_label}
+          <BadgeCheck size={18} />  {tl("Formule")} {lic.plan_label}
           <Badge tone={lic.read_only ? "danger" : lic.level === "warning" ? "warning" : "success"}>
-            {lic.phase === "expired" ? "expirée" : lic.read_only ? "lecture seule" : "active"}
+            {lic.phase === "expired" ? tl("expirée") : lic.read_only ? tl("lecture seule") : tl("active")}
           </Badge>
         </h3>
         <div className={`alert ${lic.read_only || lic.level === "danger" ? "alert-danger" : lic.level === "warning" ? "alert-warning" : "alert-success"}`}>
-          {lic.warning && lic.warning !== lic.message ? `${lic.message} ${lic.warning}` : lic.message}
+          {lic.warning && lic.warning !== lic.message ? `${tm(lic.message)} ${tm(lic.warning)}` : tm(lic.message)}
         </div>
-        {lic.clock_warning && <div className="alert alert-warning">{lic.clock_warning}</div>}
-        {lic.load_error && <div className="alert alert-danger">Licence enregistrée refusée : {lic.load_error}</div>}
+        {lic.clock_warning && <div className="alert alert-warning">{tm(lic.clock_warning)}</div>}
+        {lic.load_error && <div className="alert alert-danger">{tl("Licence enregistrée refusée :")} {tm(lic.load_error)}</div>}
         <div className="licence-grid">
           <div>
-            <span className="muted small">Boutique</span>
+            <span className="muted small">{tl("Boutique")}</span>
             <strong>{lic.store_name || lic.account.store_name || "—"}</strong>
             <span className="small">{lic.store_code || lic.account.store_code}</span>
           </div>
           <div>
-            <span className="muted small">Valable jusqu'au</span>
+            <span className="muted small">{tl("Valable jusqu'au")}</span>
             <strong>{isoDateTime(lic.expires_at)}</strong>
-            {lic.days_left !== null && lic.phase === "active" && <span className="small">{lic.days_left} jour(s) restant(s)</span>}
+            {lic.days_left !== null && lic.phase === "active" && <span className="small">{lic.days_left}  {tl("jour(s) restant(s)")}</span>}
           </div>
           <div>
-            <span className="muted small">Postes connectés</span>
+            <span className="muted small">{tl("Postes connectés")}</span>
             <strong>{lic.postes_used ?? "—"} / {lic.max_postes}</strong>
-            <span className="small">PC, téléphones et tablettes</span>
+            <span className="small">{tl("PC, téléphones et tablettes")}</span>
           </div>
           <div>
-            <span className="muted small">Identifiant de ce PC</span>
+            <span className="muted small">{tl("Identifiant de ce PC")}</span>
             <strong className="mono">{lic.pc_id || "—"}</strong>
             {lic.pc_id && (
-              <button className="link-btn small" onClick={() => navigator.clipboard?.writeText(lic.pc_id).then(() => toast.info("Identifiant copié."))}>
-                <Copy size={13} /> Copier
-              </button>
+              <button className="link-btn small" onClick={() => navigator.clipboard?.writeText(lic.pc_id).then(() => toast.info(tl("Identifiant copié.")))}>
+                <Copy size={13} />  {tl("Copier")}</button>
             )}
           </div>
         </div>
@@ -140,35 +140,31 @@ export default function LicencePage() {
           })}
         </ul>
         <p className="muted small">
-          {lic.last_sync ? `Dernière vérification auprès d'Eden Dev : ${lic.last_sync}.` : "Pas encore vérifiée auprès d'Eden Dev."}
-          {lic.last_sync_error ? ` Dernière erreur : ${lic.last_sync_error}` : ""}
-          {lic.remote_status === "none" && " Aucun abonnement en cours chez Eden Dev."}
-          {lic.remote_status === "suspended" && " Boutique suspendue par Eden Dev."}
-          {" "}La licence est vérifiée sur ce PC, même sans Internet ; elle se met à jour toute seule après un paiement.
-        </p>
+          {lic.last_sync ? tl("Dernière vérification auprès d'Eden Dev : {0}.", [lic.last_sync]) : tl("Pas encore vérifiée auprès d'Eden Dev.")}
+          {lic.last_sync_error ? tl(" Dernière erreur : {0}", [tm(lic.last_sync_error)]) : ""}
+          {lic.remote_status === "none" && tl(" Aucun abonnement en cours chez Eden Dev.")}
+          {lic.remote_status === "suspended" && tl(" Boutique suspendue par Eden Dev.")}
+          {" "}{tl("La licence est vérifiée sur ce PC, même sans Internet ; elle se met à jour toute seule après un paiement.")}</p>
       </div>
 
       {!onThisPc ? (
         <div className="alert alert-info">
-          Le compte boutique, le paiement et l'import de licence se font sur le PC serveur de la boutique (menu Abonnement & licence).
-        </div>
+          {tl("Le compte boutique, le paiement et l'import de licence se font sur le PC serveur de la boutique (menu Abonnement & licence).")}</div>
       ) : (
         <>
           <div className="card">
-            <h3 className="card-title"><Store size={18} /> Compte boutique Eden Dev</h3>
+            <h3 className="card-title"><Store size={18} />  {tl("Compte boutique Eden Dev")}</h3>
             {linkedAccount ? (
               <>
                 <p>
-                  Ce PC est relié à <strong>{lic.account.store_name}</strong> ({lic.account.store_code}), compte <strong>{lic.account.email}</strong>.
+                  {tl("Ce PC est relié à")} <strong>{lic.account.store_name}</strong> ({lic.account.store_code}{tl("), compte")} <strong>{lic.account.email}</strong>.
                 </p>
-                <button className="btn" onClick={() => setAccountOpen(true)}>Changer de boutique ou de compte</button>
+                <button className="btn" onClick={() => setAccountOpen(true)}>{tl("Changer de boutique ou de compte")}</button>
               </>
             ) : (
               <>
                 <p className="muted">
-                  Créez le compte de la boutique (essai gratuit) ou connectez-vous à votre compte pour relier ce PC. Internet est nécessaire
-                  pour cette étape ; ensuite la licence fonctionne aussi hors ligne.
-                </p>
+                  {tl("Créez le compte de la boutique (essai gratuit) ou connectez-vous à votre compte pour relier ce PC. Internet est nécessaire pour cette étape ; ensuite la licence fonctionne aussi hors ligne.")}</p>
                 <AccountForm onLinked={linked} />
               </>
             )}
@@ -182,7 +178,7 @@ export default function LicencePage() {
       {options && <PlansCard options={options} current={lic.plan} />}
 
       {accountOpen && (
-        <Modal title="Compte boutique" onClose={() => setAccountOpen(false)} width={720}>
+        <Modal title={tl("Compte boutique")} onClose={() => setAccountOpen(false)} width={720}>
           <AccountForm onLinked={linked} startWith="login" />
         </Modal>
       )}
@@ -191,14 +187,15 @@ export default function LicencePage() {
 }
 
 function PlansCard({ options, current }: { options: AccountOptions; current: PlanCode }) {
+  const { settings } = useApp();
   return (
     <div className="card">
-      <h3 className="card-title"><BadgeCheck size={18} /> Les formules</h3>
+      <h3 className="card-title"><BadgeCheck size={18} />  {tl("Les formules")}</h3>
       <div className="table-scroll">
         <table className="table">
           <thead>
             <tr>
-              <th>Fonction</th>
+              <th>{tl("Fonction")}</th>
               {options.plans.map((p) => (
                 <th key={p.code} className={p.code === current ? "plan-current" : ""}>{p.label}</th>
               ))}
@@ -206,15 +203,15 @@ function PlansCard({ options, current }: { options: AccountOptions; current: Pla
           </thead>
           <tbody>
             <tr>
-              <td>Prix par mois</td>
+              <td>{tl("Prix par mois")}</td>
               {options.plans.map((p) => (
-                <td key={p.code}>{p.price_month ? fcfa(p.price_month) : "Gratuit"}</td>
+                <td key={p.code}>{p.price_month ? price(planPrice(p, settings.currency_code).amount, planPrice(p, settings.currency_code).currency) : tl("Gratuit")}</td>
               ))}
             </tr>
             <tr>
-              <td>Postes simultanés</td>
+              <td>{tl("Postes simultanés")}</td>
               {options.plans.map((p) => (
-                <td key={p.code}>{p.code === "business" ? `${p.max_postes} (selon contrat)` : p.max_postes}</td>
+                <td key={p.code}>{p.code === "business" ? tl("{0} (selon contrat)", [p.max_postes]) : p.max_postes}</td>
               ))}
             </tr>
             {FEATURES.map((f) => (

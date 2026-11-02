@@ -4,6 +4,7 @@ import { useApp } from "../context/AppContext";
 import { currencySymbol, money, paymentLabel, toMinor } from "../lib/format";
 import type { CashSession } from "../types";
 import { Field, Modal } from "./ui";
+import { tl } from "../lib/i18n";
 
 export function OpenSessionModal({ onClose, onOpened }: { onClose: () => void; onOpened: (s: CashSession) => void }) {
   const { toast } = useApp();
@@ -13,7 +14,7 @@ export function OpenSessionModal({ onClose, onOpened }: { onClose: () => void; o
     setBusy(true);
     try {
       const s = await api.openCashSession(toMinor(amount || "0"));
-      toast.success("Caisse ouverte.");
+      toast.success(tl("Caisse ouverte."));
       onOpened(s);
     } catch (e) {
       toast.error(e);
@@ -23,18 +24,18 @@ export function OpenSessionModal({ onClose, onOpened }: { onClose: () => void; o
   };
   return (
     <Modal
-      title="Ouverture de caisse"
+      title={tl("Ouverture de caisse")}
       onClose={onClose}
       width={420}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" disabled={busy} onClick={submit}>Ouvrir la caisse</button>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" disabled={busy} onClick={submit}>{tl("Ouvrir la caisse")}</button>
         </>
       }
     >
-      <p className="muted">Comptez les espèces présentes dans le tiroir avant de commencer (fond de caisse).</p>
-      <Field label={`Fond de caisse (${currencySymbol()})`}>
+      <p className="muted">{tl("Comptez les espèces présentes dans le tiroir avant de commencer (fond de caisse).")}</p>
+      <Field label={tl("Fond de caisse ({0})", [currencySymbol()])}>
         <input
           className="input-lg"
           inputMode="decimal"
@@ -58,10 +59,10 @@ export function CashMovementModal({ onClose, onDone }: { onClose: () => void; on
   const submit = async () => {
     setBusy(true);
     try {
-      const pin = await askPin({ title: kind === "in" ? "Entrée d'espèces" : "Sortie d'espèces", message: <>{money(toMinor(amount))} — {reason}. Confirmez avec votre code PIN.</> });
+      const pin = await askPin({ title: kind === "in" ? tl("Entrée d'espèces") : tl("Sortie d'espèces"), message: <>{money(toMinor(amount))} — {reason}{tl(". Confirmez avec votre code PIN.")}</> });
       if (!pin) return;
       const s = await api.addCashMovement({ kind, amount: toMinor(amount), reason }, pin);
-      toast.success(kind === "in" ? "Entrée d'espèces enregistrée." : "Sortie d'espèces enregistrée.");
+      toast.success(kind === "in" ? tl("Entrée d'espèces enregistrée.") : tl("Sortie d'espèces enregistrée."));
       onDone(s);
     } catch (e) {
       toast.error(e);
@@ -71,26 +72,26 @@ export function CashMovementModal({ onClose, onDone }: { onClose: () => void; on
   };
   return (
     <Modal
-      title="Entrée / sortie d'espèces"
+      title={tl("Entrée / sortie d'espèces")}
       onClose={onClose}
       width={460}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" disabled={busy || !amount || !reason.trim()} onClick={submit}>Enregistrer</button>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" disabled={busy || !amount || !reason.trim()} onClick={submit}>{tl("Enregistrer")}</button>
         </>
       }
     >
       <div className="segmented">
-        <button className={kind === "out" ? "active" : ""} onClick={() => setKind("out")}>Sortie (dépense, versement…)</button>
-        <button className={kind === "in" ? "active" : ""} onClick={() => setKind("in")}>Entrée (appoint de monnaie…)</button>
+        <button className={kind === "out" ? "active" : ""} onClick={() => setKind("out")}>{tl("Sortie (dépense, versement…)")}</button>
+        <button className={kind === "in" ? "active" : ""} onClick={() => setKind("in")}>{tl("Entrée (appoint de monnaie…)")}</button>
       </div>
       <div className="form-grid one" style={{ marginTop: 14 }}>
-        <Field label={`Montant (${currencySymbol()})`}>
+        <Field label={tl("Montant ({0})", [currencySymbol()])}>
           <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
         </Field>
-        <Field label="Motif">
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex. Versement banque, achat sachets…" />
+        <Field label={tl("Motif")}>
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={tl("Ex. Versement banque, achat sachets…")} />
         </Field>
       </div>
     </Modal>
@@ -119,14 +120,14 @@ export function CloseSessionModal({
     setBusy(true);
     try {
       const pin = await askPin({
-        title: forced ? `Clôturer la caisse de ${session.user_name}` : "Clôturer la caisse",
+        title: forced ? tl("Clôturer la caisse de {0}", [session.user_name]) : tl("Clôturer la caisse"),
         level: forced ? "admin" : undefined,
-        message: <>Espèces comptées : <strong>{money(toMinor(counted))}</strong>. Confirmez avec votre code PIN.</>,
+        message: <>{tl("Espèces comptées :")} <strong>{money(toMinor(counted))}</strong>{tl(". Confirmez avec votre code PIN.")}</>,
       });
       if (!pin) return;
       const input = { counted_amount: toMinor(counted), note: note || null };
       const s = forced ? await api.forceCloseCashSession(session.id, input, pin) : await api.closeCashSession(input, pin);
-      toast.success("Caisse clôturée.");
+      toast.success(tl("Caisse clôturée."));
       onClosed(s);
     } catch (e) {
       toast.error(e);
@@ -137,27 +138,27 @@ export function CloseSessionModal({
 
   return (
     <Modal
-      title={forced ? `Clôture de la caisse de ${session.user_name}` : "Clôture de caisse"}
+      title={forced ? tl("Clôture de la caisse de {0}", [session.user_name]) : tl("Clôture de caisse")}
       onClose={onClose}
       width={520}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-danger" disabled={busy || counted === ""} onClick={submit}>Clôturer la caisse</button>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-danger" disabled={busy || counted === ""} onClick={submit}>{tl("Clôturer la caisse")}</button>
         </>
       }
     >
       <SessionSummary session={session} />
       <div className="form-grid one" style={{ marginTop: 16 }}>
-        <Field label={`Espèces comptées dans le tiroir (${currencySymbol()})`}>
+        <Field label={tl("Espèces comptées dans le tiroir ({0})", [currencySymbol()])}>
           <input className="input-lg" inputMode="decimal" value={counted} onChange={(e) => setCounted(e.target.value)} autoFocus />
         </Field>
         {diff !== null && (
           <div className={`alert ${diff === 0 ? "alert-success" : diff > 0 ? "alert-info" : "alert-danger"}`}>
-            {diff === 0 ? "Caisse juste : aucun écart." : diff > 0 ? `Excédent de ${money(diff)}` : `Manquant de ${money(-diff)}`}
+            {diff === 0 ? tl("Caisse juste : aucun écart.") : diff > 0 ? tl("Excédent de {0}", [money(diff)]) : tl("Manquant de {0}", [money(-diff)])}
           </div>
         )}
-        <Field label="Observation (facultatif)">
+        <Field label={tl("Observation (facultatif)")}>
           <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
       </div>
@@ -167,17 +168,17 @@ export function CloseSessionModal({
 
 export function SessionSummary({ session }: { session: CashSession }) {
   const rows: [string, number, boolean?][] = [
-    ["Fond de caisse", session.opening_amount],
-    ["Ventes en espèces", session.cash_sales],
-    ["Règlements clients (espèces)", session.customer_payments_cash],
-    ["Entrées d'espèces", session.cash_in],
-    ["Sorties d'espèces", -session.cash_out],
-    ["Espèces attendues", session.expected_now, true],
+    [tl("Fond de caisse"), session.opening_amount],
+    [tl("Ventes en espèces"), session.cash_sales],
+    [tl("Règlements clients (espèces)"), session.customer_payments_cash],
+    [tl("Entrées d'espèces"), session.cash_in],
+    [tl("Sorties d'espèces"), -session.cash_out],
+    [tl("Espèces attendues"), session.expected_now, true],
   ];
   return (
     <div className="summary-grid">
       <div>
-        <div className="summary-title">Tiroir-caisse</div>
+        <div className="summary-title">{tl("Tiroir-caisse")}</div>
         {rows.map(([l, v, strong]) => (
           <div key={l} className={`kv ${strong ? "kv-strong" : ""}`}>
             <span>{l}</span>
@@ -186,16 +187,16 @@ export function SessionSummary({ session }: { session: CashSession }) {
         ))}
       </div>
       <div>
-        <div className="summary-title">Ventes de la session ({session.sales_count})</div>
-        <div className="kv"><span>Espèces</span><span>{money(session.cash_sales)}</span></div>
+        <div className="summary-title">{tl("Ventes de la session (")}{session.sales_count})</div>
+        <div className="kv"><span>{tl("Espèces")}</span><span>{money(session.cash_sales)}</span></div>
         <div className="kv"><span>{paymentLabel("orange_money")}</span><span>{money(session.orange_money_sales)}</span></div>
-        <div className="kv"><span>Autre mobile money</span><span>{money(session.mobile_money_sales)}</span></div>
-        <div className="kv"><span>Carte</span><span>{money(session.card_sales)}</span></div>
-        <div className="kv"><span>Autre</span><span>{money(session.other_sales)}</span></div>
-        <div className="kv"><span>À crédit</span><span>{money(session.credit_sales)}</span></div>
-        <div className="kv kv-strong"><span>Total ventes</span><span>{money(session.sales_total)}</span></div>
+        <div className="kv"><span>{tl("Autre mobile money")}</span><span>{money(session.mobile_money_sales)}</span></div>
+        <div className="kv"><span>{tl("Carte")}</span><span>{money(session.card_sales)}</span></div>
+        <div className="kv"><span>{tl("Autre")}</span><span>{money(session.other_sales)}</span></div>
+        <div className="kv"><span>{tl("À crédit")}</span><span>{money(session.credit_sales)}</span></div>
+        <div className="kv kv-strong"><span>{tl("Total ventes")}</span><span>{money(session.sales_total)}</span></div>
         {session.customer_payments_electronic > 0 && (
-          <div className="kv muted"><span>Règlements clients (électroniques)</span><span>{money(session.customer_payments_electronic)}</span></div>
+          <div className="kv muted"><span>{tl("Règlements clients (électroniques)")}</span><span>{money(session.customer_payments_electronic)}</span></div>
         )}
       </div>
     </div>

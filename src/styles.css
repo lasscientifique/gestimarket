@@ -1228,3 +1228,17 @@ input, select, textarea { border-radius: 10px; }
 .pay-waiting { align-items: center; text-align: center; padding: 18px 0; }
 .pay-waiting svg { color: var(--primary); }
 
+
+/* Langue */
+.lang-switch { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); color: #fff; }
+.lang-switch button { border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; cursor: pointer; opacity: 0.8; }
+.lang-switch button.active { background: #fff; color: #0f172a; opacity: 1; font-weight: 650; }
+.auth-lang { position: fixed; top: 14px; right: 16px; z-index: 5; }
+.lang-btn { width: auto; padding: 0 6px; gap: 3px; }
+.lang-code { font-size: 10.5px; font-weight: 750; letter-spacing: 0.04em; }
+
+/* Opérateurs de paiement mobile (Paramètres → Paiements) */
+.mm-op { border: 1.5px solid color-mix(in srgb, var(--om) 40%, var(--border)); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+.mm-op-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mm-op-head input[type="color"] { width: 34px; height: 30px; padding: 0; border: none; background: none; }
+.mm-op-name { flex: 1; font-weight: 650; }

@@ -43,7 +43,8 @@ pub fn cleanup(conn: &Connection, id: Option<i64>) -> AppResult<()> {
         "DELETE FROM media WHERE id = ?1
            AND NOT EXISTS (SELECT 1 FROM products WHERE image_id = ?1)
            AND NOT EXISTS (SELECT 1 FROM categories WHERE image_id = ?1)
-           AND NOT EXISTS (SELECT 1 FROM settings WHERE key IN ('shop_logo_id', 'om_qr_image_id') AND value = CAST(?1 AS TEXT))",
+           AND NOT EXISTS (SELECT 1 FROM settings WHERE key IN ('shop_logo_id', 'om_qr_image_id') AND value = CAST(?1 AS TEXT))
+           AND NOT EXISTS (SELECT 1 FROM settings WHERE key = 'mobile_operators' AND value LIKE '%"qr_image_id":' || ?1 || '%')",
         [id],
     )?;
     Ok(())

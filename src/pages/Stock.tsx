@@ -7,6 +7,7 @@ import { ProductPicker } from "../components/ProductPicker";
 import { exportCsv } from "../lib/files";
 import { addDays, dateOnly, dateTime, daysUntil, isoDate, money, MOVEMENT_LABELS, parseNumber, qty, toCsv } from "../lib/format";
 import type { Product, StockMovement, StockSummary } from "../types";
+import { tl } from "../lib/i18n";
 
 export default function StockPage() {
   const { toast, settings } = useApp();
@@ -32,11 +33,11 @@ export default function StockPage() {
 
   const exportMovements = async () => {
     const csv = toCsv(
-      ["Date", "Produit", "Type", "Quantité", "Stock après", "Référence", "Note", "Utilisateur"],
+      [tl("Date"), tl("Produit"), tl("Type"), tl("Quantité"), tl("Stock après"), tl("Référence"), tl("Note"), tl("Utilisateur")],
       movements.map((m) => [m.created_at, m.product_name, MOVEMENT_LABELS[m.kind] ?? m.kind, String(m.quantity).replace(".", ","), String(m.stock_after).replace(".", ","), m.reference, m.note, m.user_name]),
     );
     try {
-      if (await exportCsv(`mouvements-stock-${from}-au-${to}.csv`, csv)) toast.success("Export terminé.");
+      if (await exportCsv(`mouvements-stock-${from}-au-${to}.csv`, csv)) toast.success(tl("Export terminé."));
     } catch (e) {
       toast.error(e);
     }
@@ -46,39 +47,38 @@ export default function StockPage() {
     <div className="page">
       <PageHeader
         help="stock"
-        title="Stock & inventaire"
-        subtitle="Suivez les niveaux de stock, les alertes et l'historique des mouvements."
+        title={tl("Stock & inventaire")}
+        subtitle={tl("Suivez les niveaux de stock, les alertes et l'historique des mouvements.")}
         actions={
           <button className="btn btn-primary" onClick={() => setAdjust("pick")}>
-            <SlidersHorizontal size={16} /> Ajuster / inventorier
-          </button>
+            <SlidersHorizontal size={16} />  {tl("Ajuster / inventorier")}</button>
         }
       />
 
       {summary && (
         <div className="stats">
-          <StatCard label="Produits actifs" value={summary.product_count} icon={<Boxes size={18} />} />
-          <StatCard label="Valeur au prix d'achat" value={money(summary.value_cost)} icon={<Coins size={18} />} tone="accent" />
-          <StatCard label="Valeur au prix de vente" value={money(summary.value_sale)} icon={<Coins size={18} />} hint={`Marge potentielle : ${money(summary.value_sale - summary.value_cost)}`} />
-          <StatCard label="Sous le seuil" value={summary.low_stock_count} icon={<AlertTriangle size={18} />} tone={summary.low_stock_count ? "warning" : "default"} />
-          <StatCard label="En rupture" value={summary.out_of_stock_count} icon={<PackageX size={18} />} tone={summary.out_of_stock_count ? "danger" : "default"} />
+          <StatCard label={tl("Produits actifs")} value={summary.product_count} icon={<Boxes size={18} />} />
+          <StatCard label={tl("Valeur au prix d'achat")} value={money(summary.value_cost)} icon={<Coins size={18} />} tone="accent" />
+          <StatCard label={tl("Valeur au prix de vente")} value={money(summary.value_sale)} icon={<Coins size={18} />} hint={tl("Marge potentielle : {0}", [money(summary.value_sale - summary.value_cost)])} />
+          <StatCard label={tl("Sous le seuil")} value={summary.low_stock_count} icon={<AlertTriangle size={18} />} tone={summary.low_stock_count ? "warning" : "default"} />
+          <StatCard label={tl("En rupture")} value={summary.out_of_stock_count} icon={<PackageX size={18} />} tone={summary.out_of_stock_count ? "danger" : "default"} />
         </div>
       )}
 
       <div className="tabs">
-        <button className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>Alertes de stock ({alerts.length})</button>
-        <button className={tab === "expiry" ? "active" : ""} onClick={() => setTab("expiry")}>Péremption ({expiring.length})</button>
-        <button className={tab === "movements" ? "active" : ""} onClick={() => setTab("movements")}>Mouvements de stock</button>
+        <button className={tab === "alerts" ? "active" : ""} onClick={() => setTab("alerts")}>{tl("Alertes de stock (")}{alerts.length})</button>
+        <button className={tab === "expiry" ? "active" : ""} onClick={() => setTab("expiry")}>{tl("Péremption (")}{expiring.length})</button>
+        <button className={tab === "movements" ? "active" : ""} onClick={() => setTab("movements")}>{tl("Mouvements de stock")}</button>
       </div>
 
       {tab === "alerts" && (
         <div className="card no-pad">
           {alerts.length === 0 ? (
-            <Empty title="Aucune alerte">Tous les produits suivis sont au-dessus de leur seuil d'alerte.</Empty>
+            <Empty title={tl("Aucune alerte")}>{tl("Tous les produits suivis sont au-dessus de leur seuil d'alerte.")}</Empty>
           ) : (
             <table className="table">
               <thead>
-                <tr><th>Produit</th><th>Fournisseur</th><th className="num">Stock</th><th className="num">Seuil</th><th className="num">À commander (≈)</th><th></th></tr>
+                <tr><th>{tl("Produit")}</th><th>{tl("Fournisseur")}</th><th className="num">{tl("Stock")}</th><th className="num">{tl("Seuil")}</th><th className="num">{tl("À commander (≈)")}</th><th></th></tr>
               </thead>
               <tbody>
                 {alerts.map((p) => (
@@ -88,7 +88,7 @@ export default function StockPage() {
                     <td className="num"><Badge tone={p.stock <= 0 ? "danger" : "warning"}>{qty(p.stock)} {p.unit}</Badge></td>
                     <td className="num">{qty(p.min_stock)}</td>
                     <td className="num">{qty(Math.max(0, p.min_stock * 2 - p.stock))} {p.unit}</td>
-                    <td className="actions"><button className="btn btn-sm" onClick={() => setAdjust(p)}>Ajuster</button></td>
+                    <td className="actions"><button className="btn btn-sm" onClick={() => setAdjust(p)}>{tl("Ajuster")}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -100,10 +100,10 @@ export default function StockPage() {
       {tab === "expiry" && (
         <div className="card no-pad">
           {expiring.length === 0 ? (
-            <Empty title="Aucun produit à surveiller">Aucun produit en stock ne périme dans les {alertDays} prochains jours.</Empty>
+            <Empty title={tl("Aucun produit à surveiller")}>{tl("Aucun produit en stock ne périme dans les")} {alertDays}  {tl("prochains jours.")}</Empty>
           ) : (
             <table className="table">
-              <thead><tr><th>Produit</th><th>Emplacement</th><th className="num">Stock</th><th>Péremption</th><th className="num">Délai</th><th></th></tr></thead>
+              <thead><tr><th>{tl("Produit")}</th><th>{tl("Emplacement")}</th><th className="num">{tl("Stock")}</th><th>{tl("Péremption")}</th><th className="num">{tl("Délai")}</th><th></th></tr></thead>
               <tbody>
                 {expiring.map((p) => {
                   const d = daysUntil(p.expiry_date!);
@@ -113,8 +113,8 @@ export default function StockPage() {
                       <td><LocationBadge p={p} short /></td>
                       <td className="num">{qty(p.stock)} {p.unit}</td>
                       <td>{dateOnly(p.expiry_date)}</td>
-                      <td className="num"><Badge tone={d <= 7 ? "danger" : "warning"}>{d < 0 ? `Périmé (${-d} j)` : d === 0 ? "Aujourd'hui" : `${d} jours`}</Badge></td>
-                      <td className="actions"><button className="btn btn-sm" onClick={() => setAdjust(p)}>Retirer / perte</button></td>
+                      <td className="num"><Badge tone={d <= 7 ? "danger" : "warning"}>{d < 0 ? tl("Périmé ({0} j)", [-d]) : d === 0 ? tl("Aujourd'hui") : tl("{0} jours", [d])}</Badge></td>
+                      <td className="actions"><button className="btn btn-sm" onClick={() => setAdjust(p)}>{tl("Retirer / perte")}</button></td>
                     </tr>
                   );
                 })}
@@ -127,22 +127,22 @@ export default function StockPage() {
       {tab === "movements" && (
         <>
           <div className="toolbar">
-            <label className="inline">Du <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+            <label className="inline">{tl("Du")} <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
             <label className="inline">au <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
             <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="">Tous les types</option>
+              <option value="">{tl("Tous les types")}</option>
               {Object.entries(MOVEMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
             <div className="spacer" />
-            <button className="btn" onClick={exportMovements}><Download size={16} /> Exporter</button>
+            <button className="btn" onClick={exportMovements}><Download size={16} />  {tl("Exporter")}</button>
           </div>
           <div className="card no-pad">
             {movements.length === 0 ? (
-              <Empty title="Aucun mouvement sur la période" />
+              <Empty title={tl("Aucun mouvement sur la période")} />
             ) : (
               <table className="table compact">
                 <thead>
-                  <tr><th>Date</th><th>Produit</th><th>Type</th><th className="num">Quantité</th><th className="num">Stock après</th><th>Référence / note</th><th>Par</th></tr>
+                  <tr><th>{tl("Date")}</th><th>{tl("Produit")}</th><th>{tl("Type")}</th><th className="num">{tl("Quantité")}</th><th className="num">{tl("Stock après")}</th><th>{tl("Référence / note")}</th><th>{tl("Par")}</th></tr>
                 </thead>
                 <tbody>
                   {movements.map((m) => (
@@ -178,9 +178,9 @@ export default function StockPage() {
 }
 
 const KINDS = [
-  { id: "adjustment", label: "Inventaire / correction", modes: ["set", "add", "remove"] as const },
-  { id: "loss", label: "Perte, casse, péremption, vol", modes: ["remove"] as const },
-  { id: "return", label: "Retour client (remise en stock)", modes: ["add"] as const },
+  { id: "adjustment", label: tl("Inventaire / correction"), modes: ["set", "add", "remove"] as const },
+  { id: "loss", label: tl("Perte, casse, péremption, vol"), modes: ["remove"] as const },
+  { id: "return", label: tl("Retour client (remise en stock)"), modes: ["add"] as const },
 ];
 
 function AdjustModal({ product: initial, onClose, onDone }: { product: Product | null; onClose: () => void; onDone: () => void }) {
@@ -204,10 +204,10 @@ function AdjustModal({ product: initial, onClose, onDone }: { product: Product |
     if (!product) return;
     setBusy(true);
     try {
-      const pin = await askPin({ title: "Ajustement de stock", level: "manager", message: <>{product.name} : nouveau stock <strong>{qty(newStock ?? 0)} {product.unit}</strong>. Confirmez avec votre code PIN.</> });
+      const pin = await askPin({ title: tl("Ajustement de stock"), level: "manager", message: <>{product.name}  {tl(": nouveau stock")} <strong>{qty(newStock ?? 0)} {product.unit}</strong>{tl(". Confirmez avec votre code PIN.")}</> });
       if (!pin) return;
       await api.adjustStock({ product_id: product.id, mode, quantity: q, kind, note: note.trim() || null }, pin);
-      toast.success("Stock mis à jour.");
+      toast.success(tl("Stock mis à jour."));
       onDone();
     } catch (e) {
       toast.error(e);
@@ -218,13 +218,13 @@ function AdjustModal({ product: initial, onClose, onDone }: { product: Product |
 
   return (
     <Modal
-      title="Ajustement de stock"
+      title={tl("Ajustement de stock")}
       onClose={onClose}
       width={520}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" disabled={busy || !product || !Number.isFinite(q)} onClick={submit}>Valider</button>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" disabled={busy || !product || !Number.isFinite(q)} onClick={submit}>{tl("Valider")}</button>
         </>
       }
     >
@@ -233,35 +233,35 @@ function AdjustModal({ product: initial, onClose, onDone }: { product: Product |
           <div className="selected-product">
             <div>
               <strong>{product.name}</strong>
-              <div className="muted small">Stock actuel : {qty(product.stock)} {product.unit}</div>
+              <div className="muted small">{tl("Stock actuel :")} {qty(product.stock)} {product.unit}</div>
             </div>
-            {!initial && <button className="btn btn-sm" onClick={() => setProduct(null)}>Changer</button>}
+            {!initial && <button className="btn btn-sm" onClick={() => setProduct(null)}>{tl("Changer")}</button>}
           </div>
         ) : (
           <ProductPicker onPick={setProduct} autoFocus />
         )}
-        <Field label="Type de mouvement">
+        <Field label={tl("Type de mouvement")}>
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
             {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
           </select>
         </Field>
         {modes.length > 1 && (
           <div className="segmented">
-            <button className={mode === "set" ? "active" : ""} onClick={() => setMode("set")}>Quantité comptée</button>
-            <button className={mode === "add" ? "active" : ""} onClick={() => setMode("add")}>Ajouter</button>
-            <button className={mode === "remove" ? "active" : ""} onClick={() => setMode("remove")}>Retirer</button>
+            <button className={mode === "set" ? "active" : ""} onClick={() => setMode("set")}>{tl("Quantité comptée")}</button>
+            <button className={mode === "add" ? "active" : ""} onClick={() => setMode("add")}>{tl("Ajouter")}</button>
+            <button className={mode === "remove" ? "active" : ""} onClick={() => setMode("remove")}>{tl("Retirer")}</button>
           </div>
         )}
-        <Field label={mode === "set" ? "Quantité réellement comptée" : mode === "add" ? "Quantité à ajouter" : "Quantité à retirer"}>
+        <Field label={mode === "set" ? tl("Quantité réellement comptée") : mode === "add" ? tl("Quantité à ajouter") : tl("Quantité à retirer")}>
           <input className="input-lg" inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         </Field>
         {newStock !== null && product && (
           <div className="alert alert-info">
-            Nouveau stock : <strong>{qty(newStock)} {product.unit}</strong> (écart {newStock - product.stock >= 0 ? "+" : ""}{qty(newStock - product.stock)})
+            {tl("Nouveau stock :")} <strong>{qty(newStock)} {product.unit}</strong>  {tl("(écart")} {newStock - product.stock >= 0 ? "+" : ""}{qty(newStock - product.stock)})
           </div>
         )}
-        <Field label="Motif / observation">
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex. inventaire mensuel, produit périmé…" />
+        <Field label={tl("Motif / observation")}>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={tl("Ex. inventaire mensuel, produit périmé…")} />
         </Field>
       </div>
     </Modal>

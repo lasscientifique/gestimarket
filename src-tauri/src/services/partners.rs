@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{self, Query};
 use crate::error::{invalid, AppResult};
-use crate::services::{audit, cash, sales, settings};
+use crate::services::{audit, cash, sales};
 use crate::state::SessionUser;
 
 // ───────────────────────────── Fournisseurs ─────────────────────────────
@@ -246,14 +246,9 @@ pub fn record_payment(conn: &mut Connection, user: &SessionUser, input: Customer
     if input.amount <= 0 {
         return invalid("Le montant doit être supérieur à zéro.");
     }
-    if !sales::PAYMENT_METHODS.contains(&input.method.as_str()) {
-        return invalid("Mode de paiement invalide.");
-    }
     let reference = db::clean(&input.reference);
     let phone = sales::clean_phone(&input.phone)?;
-    if input.method == "orange_money" && reference.is_none() && settings::get_bool(conn, "om_require_reference")? {
-        return invalid("Saisissez ou scannez l'ID de transaction Orange Money.");
-    }
+    sales::check_payment(conn, &input.method, reference.as_deref())?;
     let tx = conn.transaction()?;
     if let Some(r) = &reference {
         sales::ensure_reference_unused(&tx, r)?;

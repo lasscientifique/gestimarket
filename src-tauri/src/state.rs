@@ -17,6 +17,9 @@ pub struct SessionUser {
     /// L'utilisateur a-t-il défini son code PIN ?
     #[serde(default)]
     pub has_pin: bool,
+    /// Langue choisie (fr, en) ; vide : langue de la boutique.
+    #[serde(default)]
+    pub lang: Option<String>,
 }
 
 impl SessionUser {
