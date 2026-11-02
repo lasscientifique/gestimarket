@@ -72,5 +72,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "GestiMarket ${{ github.ref_name }}"
           releaseBody: "Installateurs de GestiMarket. Sous Windows, utilisez le fichier .msi ou -setup.exe."
-          releaseDraft: true
+          releaseDraft: false
           args: ${{ matrix.args }}
