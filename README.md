@@ -7,7 +7,7 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 - Version actuelle : **0.9.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
-> État des tests : 28 tests automatiques Rust et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 24 vérifications sur 24 (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare, coupure puis retour du tunnel). L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
+> État des tests : 39 tests automatiques Rust (dont la vérification d'une vraie licence signée par Supabase, l'horloge, les échéances, la limite de postes et le blocage des connexions) et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 29 vérifications sur 29 (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare, coupure puis retour du tunnel, lecture seule et 2ᵉ session refusée sans licence, licence de test installée, licence falsifiée refusée). L'inscription d'un compte boutique depuis l'application n'a pas encore été essayée en réel. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
 
 ---
 
