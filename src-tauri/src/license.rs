@@ -454,7 +454,8 @@ const ALWAYS: &[&str] = &[
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",
     "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup",
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
-    "account_create_store", "account_link", "account_declare_payment", "list_sessions", "kick_session",
+    "account_create_store", "account_link", "account_payments", "account_redeem_voucher", "account_declare_orange_money",
+    "account_card_start", "list_sessions", "kick_session",
 ];
 
 /// Consultation des données.

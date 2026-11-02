@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartes de bon GestiMarket</title>
+<!--
+  Impression des cartes de bon (Eden Dev). À ouvrir dans un navigateur, sans Internet.
+  1. Supabase → SQL Editor : select * from public.gm_voucher_batch('pro', 1, 20);  (formule, mois, nombre)
+  2. Résultat → Export → CSV (ou copier le tableau), puis coller ci-dessous.
+  3. « Afficher les cartes », puis Imprimer (format A4, 10 cartes par page, taille carte bancaire).
+  Les codes ne sont visibles qu'à la création du lot : gardez les cartes imprimées en lieu sûr.
+-->
+<style>
+  :root { --ink: #1b2430; --muted: #5d6b7a; --accent: #0f766e; --line: #d5dbe1; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; color: var(--ink); background: #f4f6f8; }
+  .tools { max-width: 900px; margin: 24px auto; padding: 0 16px; }
+  textarea { width: 100%; min-height: 160px; font: 13px ui-monospace, Consolas, monospace; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+  button { font: inherit; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; margin: 10px 8px 0 0; }
+  button.secondary { background: #fff; color: var(--accent); }
+  .sheet { display: grid; grid-template-columns: repeat(2, 85.6mm); gap: 6mm 8mm; justify-content: center; padding: 10mm 0; }
+  .card { width: 85.6mm; height: 54mm; border: 1px dashed #9aa5b1; border-radius: 3mm; padding: 4mm 5mm; background: #fff; display: flex; flex-direction: column; justify-content: space-between; break-inside: avoid; }
+  .card header { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; }
+  .brand { font-weight: 700; font-size: 9.5pt; white-space: nowrap; }
+  .plan { font-weight: 700; color: var(--accent); font-size: 11pt; white-space: nowrap; }
+  .code { font: 700 15pt ui-monospace, Consolas, monospace; letter-spacing: 1px; text-align: center; padding: 2mm 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .how { font-size: 7pt; color: var(--muted); line-height: 1.35; }
+  .meta { display: flex; justify-content: space-between; font-size: 7.5pt; color: var(--muted); }
+  @media print {
+    body { background: #fff; }
+    .tools { display: none; }
+    .sheet { padding: 0; }
+    @page { size: A4; margin: 10mm; }
+  }
+</style>
+</head>
+<body>
+<div class="tools">
+  <h1>Cartes de bon GestiMarket</h1>
+  <p>Collez le résultat de <code>select * from public.gm_voucher_batch('pro', 1, 20);</code> (export CSV de Supabase : colonnes numero, code_secret, formule, duree, valeur).</p>
+  <textarea id="csv" placeholder="numero,code_secret,formule,duree,valeur&#10;B261102-0001,7K2M-QX9P-4TRD-H8WN,PRO,1 mois,18000 FCFA"></textarea>
+  <button id="show">Afficher les cartes</button>
+  <button id="print" class="secondary">Imprimer</button>
+  <p id="info"></p>
+</div>
+<div class="sheet" id="sheet"></div>
+<script>
+  // CSV (virgule, point-virgule ou tabulation), avec ou sans ligne d'en-tête.
+  function parse(text) {
+    const rows = [];
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const sep = line.includes("\t") ? "\t" : line.includes(";") ? ";" : ",";
+      const cells = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
+      if (/numero/i.test(cells[0])) continue;
+      if (cells.length < 5) continue;
+      rows.push({ numero: cells[0], code: cells[1], formule: cells[2], duree: cells[3], valeur: cells[4] });
+    }
+    return rows;
+  }
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  }
+  document.getElementById("show").onclick = () => {
+    const rows = parse(document.getElementById("csv").value);
+    const sheet = document.getElementById("sheet");
+    sheet.replaceChildren();
+    for (const r of rows) {
+      const card = el("div", "card");
+      const head = el("header");
+      head.append(el("span", "brand", "GestiMarket · Eden Dev"), el("span", "plan", `${r.formule} · ${r.duree}`));
+      card.append(
+        head,
+        el("div", "code", r.code),
+        el("div", "how", "Dans GestiMarket : Abonnement & licence → Payer → Carte de bon, puis saisissez le code. Activation immédiate, utilisable une seule fois."),
+      );
+      const meta = el("div", "meta");
+      meta.append(el("span", "", `N° ${r.numero}`), el("span", "", r.valeur));
+      card.append(meta);
+      sheet.append(card);
+    }
+    document.getElementById("info").textContent = rows.length ? `${rows.length} carte(s).` : "Aucune ligne reconnue.";
+  };
+  document.getElementById("print").onclick = () => window.print();
+</script>
+</body>
+</html>

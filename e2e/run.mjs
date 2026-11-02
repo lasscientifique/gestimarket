@@ -165,6 +165,9 @@ try {
   tampered.sig = badSig.toString("base64");
   const forged = await rpc("license_import", { text: JSON.stringify(tampered) }, admin).then(() => "acceptée", (e) => e.message);
   check("licence falsifiée refusée", /Signature|illisible/.test(forged), forged);
+  // Paiement de l'abonnement : uniquement sur le PC serveur, jamais depuis un appareil du réseau.
+  const remotePay = await rpc("account_redeem_voucher", { code: "AAAA-BBBB-CCCC-DDDD" }, admin).then(() => "accepté", (e) => e.message);
+  check("carte de bon refusée depuis un appareil du réseau", remotePay.includes("PC serveur"), remotePay);
 
   await rpc("update_settings", {
     values: { supabase_enabled: "1", supabase_url: "http://127.0.0.1:54321", supabase_key: "cle-publique-test", public_url: PUB },

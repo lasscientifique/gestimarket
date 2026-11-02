@@ -1,21 +1,15 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { BadgeCheck, Check, Copy, CreditCard, FileUp, RefreshCw, Store, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BadgeCheck, Check, Copy, FileUp, RefreshCw, Store, X } from "lucide-react";
 import { api } from "../api";
-import { errorMessage, useApp } from "../context/AppContext";
+import { useApp } from "../context/AppContext";
 import { Badge, Modal, PageHeader } from "../components/ui";
 import { AccountForm } from "../components/AccountForm";
+import { PaymentsHistory, SubscriptionPay } from "../components/SubscriptionPay";
 import { isRemote, isTauri } from "../lib/transport";
 import { FEATURE_LABELS, fcfa, isoDateTime, refreshLicense, setLicense, useLicense } from "../lib/license";
 import type { AccountLinkResult, AccountOptions, LicenseFeature, PlanCode } from "../types";
 
 const FEATURES = Object.keys(FEATURE_LABELS) as LicenseFeature[];
-const METHODS = [
-  { code: "orange_money", label: "Orange Money" },
-  { code: "moov_money", label: "Moov Money" },
-  { code: "virement", label: "Virement bancaire" },
-  { code: "especes", label: "Espèces (remis à Eden Dev)" },
-  { code: "autre", label: "Autre" },
-];
 
 /** Abonnement de la boutique : formule, licence de ce PC, compte Eden Dev et paiement. */
 export default function LicencePage() {
@@ -24,6 +18,8 @@ export default function LicencePage() {
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [busy, setBusy] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // Change après chaque paiement : la liste « Mes paiements » se recharge.
+  const [paymentsKey, setPaymentsKey] = useState(0);
   // Le compte et le paiement se gèrent sur le PC qui détient la base (poste serveur ou poste unique).
   const onThisPc = isTauri && !isRemote();
 
@@ -178,7 +174,8 @@ export default function LicencePage() {
             )}
           </div>
 
-          {linkedAccount && options && <PaymentCard options={options} />}
+          {linkedAccount && options && <SubscriptionPay options={options} lic={lic} onChange={() => setPaymentsKey((k) => k + 1)} />}
+          {linkedAccount && <PaymentsHistory refreshKey={paymentsKey} />}
         </>
       )}
 
@@ -190,95 +187,6 @@ export default function LicencePage() {
         </Modal>
       )}
     </div>
-  );
-}
-
-/** Déclaration d'un paiement : Eden Dev le valide, puis la licence se met à jour automatiquement. */
-function PaymentCard({ options }: { options: AccountOptions }) {
-  const { toast } = useApp();
-  const plans = options.plans.filter((p) => p.code !== "free");
-  const [plan, setPlan] = useState<PlanCode>(plans.find((p) => p.code === "pro")?.code ?? plans[0]?.code ?? "starter");
-  const [months, setMonths] = useState(1);
-  const [method, setMethod] = useState("orange_money");
-  const [reference, setReference] = useState("");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState("");
-  const price = plans.find((p) => p.code === plan)?.price_month ?? 0;
-  const amount = useMemo(() => price * months, [price, months]);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const r = await api.accountDeclarePayment({ password, plan, months, method, reference, payer_phone: phone });
-      setDone(
-        `Paiement déclaré : ${r.plan_label}, ${r.months} mois, ${fcfa(r.amount)}. Eden Dev va le vérifier ; dès sa validation, la licence de ce PC se met à jour toute seule (ou cliquez sur « Vérifier maintenant »).`,
-      );
-      setReference("");
-      setPassword("");
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="card" onSubmit={submit}>
-      <h3 className="card-title"><CreditCard size={18} /> Payer ou renouveler l'abonnement</h3>
-      <p className="muted">{options.payment_instructions}</p>
-      <div className="form-grid">
-        <label className="field">
-          <span className="field-label">Formule</span>
-          <select value={plan} onChange={(e) => setPlan(e.target.value as PlanCode)}>
-            {plans.map((p) => (
-              <option key={p.code} value={p.code}>{p.label} — {fcfa(p.price_month)} / mois</option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label">Durée</span>
-          <select value={months} onChange={(e) => setMonths(Number(e.target.value))}>
-            <option value={1}>1 mois</option>
-            <option value={3}>3 mois</option>
-            <option value={6}>6 mois</option>
-          </select>
-        </label>
-        <div className="field span-2">
-          <span className="field-label">Montant à payer</span>
-          <strong className="licence-amount">{fcfa(amount)}</strong>
-          <span className="muted small">Un renouvellement prolonge la période en cours ; il commence à sa fin.</span>
-        </div>
-        <label className="field">
-          <span className="field-label">Moyen de paiement</span>
-          <select value={method} onChange={(e) => setMethod(e.target.value)}>
-            {METHODS.map((m) => (
-              <option key={m.code} value={m.code}>{m.label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span className="field-label">Référence de la transaction *</span>
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Reçue par SMS" />
-        </label>
-        <label className="field">
-          <span className="field-label">Numéro qui a payé</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
-        </label>
-        <label className="field">
-          <span className="field-label">Mot de passe du compte boutique *</span>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-        </label>
-      </div>
-      {done && <div className="alert alert-success">{done}</div>}
-      <div className="row-end">
-        <button className="btn btn-primary" disabled={busy || reference.trim().length < 4 || !password}>
-          {busy ? "Envoi…" : "Déclarer le paiement"}
-        </button>
-      </div>
-    </form>
   );
 }
 

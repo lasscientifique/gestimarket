@@ -109,7 +109,9 @@ pub fn run() {
                 loop {
                     if let Some(state) = handle.try_state::<AppState>() {
                         license::tick(&state.conn());
-                        if minutes % 30 == 0 && license::should_sync() {
+                        // Toutes les 30 minutes ; toutes les 2 minutes dans les 24 h qui suivent un paiement.
+                        let due = minutes % 30 == 0 || (minutes % 2 == 0 && account::fast_sync());
+                        if due && license::should_sync() {
                             if let Err(e) = account::sync(&state) {
                                 eprintln!("Synchronisation de la licence impossible : {e}");
                             }

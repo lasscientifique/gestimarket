@@ -3,9 +3,12 @@ import type {
   AccountLinkResult,
   AccountOptions,
   AccountStore,
+  CardStart,
   LicenseStatus,
   SessionInfo,
   StoreInput,
+  SubscriptionPayment,
+  VoucherResult,
   AuditEntry,
   CashMovement,
   CashSession,
@@ -237,8 +240,11 @@ export const api = {
   accountLogin: (email: string, password: string) => call<{ email: string; stores: AccountStore[] }>("account_login", { email, password }),
   accountCreateStore: (input: StoreInput) => call<AccountLinkResult>("account_create_store", { input }),
   accountLink: (store_code: string) => call<AccountLinkResult>("account_link", { store_code }),
-  accountDeclarePayment: (input: { password: string; plan: string; months: number; method: string; reference: string; payer_phone: string }) =>
-    call<{ amount: number; plan_label: string; months: number }>("account_declare_payment", input),
+  accountPayments: () => call<SubscriptionPayment[]>("account_payments"),
+  accountRedeemVoucher: (code: string) => call<VoucherResult>("account_redeem_voucher", { code }),
+  accountDeclareOrangeMoney: (input: { plan: string; months: number; reference: string; payer_phone: string }) =>
+    call<{ payment_id: string; amount: number; plan_label: string; months: number }>("account_declare_orange_money", input),
+  accountCardStart: (plan: string, months: number) => call<CardStart>("account_card_start", { plan, months }),
 
   // Postes connectés
   listSessions: () => call<{ sessions: SessionInfo[]; max: number; used: number }>("list_sessions"),

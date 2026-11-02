@@ -1137,3 +1137,23 @@ input, select, textarea { border-radius: 10px; }
 @media (max-width: 760px) {
   .licence-banner { margin: 10px 12px 0; flex-wrap: wrap; }
 }
+/* Paiement de l'abonnement */
+.pay-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.pay-method { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pay-method:hover:not(:disabled) { border-color: var(--primary); box-shadow: var(--shadow); }
+.pay-method:disabled { opacity: 0.55; cursor: not-allowed; }
+.pay-method svg { color: var(--primary); }
+.pay-step { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.plan-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.plan-choice { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.plan-choice.active { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent); }
+.pay-step .segmented { margin-bottom: 0; }
+.pay-amount { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.voucher-input { font-size: 22px; letter-spacing: 2px; text-transform: uppercase; max-width: 340px; }
+.om-pay { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; padding: 12px; border-radius: 10px; background: var(--surface-2); }
+.om-pay-steps { flex: 1 1 280px; margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.om-pay-steps .icon-btn { vertical-align: middle; margin-left: 2px; }
+.om-pay-qr { width: 170px; height: 170px; border-radius: 10px; background: #fff; padding: 6px; border: 1px solid var(--border); }
+.pay-waiting { align-items: center; text-align: center; padding: 18px 0; }
+.pay-waiting svg { color: var(--primary); }
+

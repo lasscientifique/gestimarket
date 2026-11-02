@@ -4,7 +4,7 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.9.0**
+- Version actuelle : **0.10.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
 > État des tests : 39 tests automatiques Rust (dont la vérification d'une vraie licence signée par Supabase, l'horloge, les échéances, la limite de postes et le blocage des connexions) et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 29 vérifications sur 29 (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare, coupure puis retour du tunnel, lecture seule et 2ᵉ session refusée sans licence, licence de test installée, licence falsifiée refusée). L'inscription d'un compte boutique depuis l'application n'a pas encore été essayée en réel. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
@@ -171,8 +171,12 @@ Parcours :
 
 1. **Première configuration** : création du compte et de la boutique (ou connexion à un compte existant), **14 jours d'essai PRO**. Internet n'est nécessaire que pour cette étape.
 2. Chaque PC (et chaque boutique d'un même PC) a un **identifiant** (`K7QM-2XPA-9DTR`), empreinte de la machine et du numéro de boutique.
-3. **Paiement** : menu *Abonnement & licence* → formule, durée (1, 3 ou 6 mois), moyen (Orange Money, Moov Money, virement, espèces), **référence de la transaction**. Une capture d'écran ne suffit pas : Eden Dev vérifie la référence.
-4. **Validation par Eden Dev** : tableau de bord Supabase → table `gm_payments` → colonne `status` → `validated` (ou `refused`). La vue `gm_paiements_a_valider` affiche les paiements avec la boutique. L'abonnement démarre à la fin de la période en cours (renouvellement) ou tout de suite.
+3. **Paiement** : menu *Abonnement & licence* → *Payer ou renouveler* → moyen de paiement (le PC est reconnu : pas de mot de passe à retaper) :
+   - **Carte de bon** (carte prépayée Eden Dev, code de 16 caractères) : **activation immédiate**, licence téléchargée dans la foulée. Code utilisable une seule fois ; 5 codes faux bloquent la saisie une heure.
+   - **Orange Money (Sarali)** : formule et durée, montant exact, **code marchand** d'Eden Dev (et son QR code), puis **ID de la transaction** reçu par SMS. Eden Dev vérifie et valide.
+   - **Carte Visa (Cybersource, Visa)** : formule et durée, la **page de paiement sécurisée de Visa** s'ouvre dans le navigateur (3-D Secure). Le résultat signé arrive à Supabase : **validation automatique**. Le numéro de carte ne passe jamais par GestiMarket ni par Eden Dev.
+   - *Mes paiements* : état de chaque paiement (en attente, validé, refusé avec le motif).
+4. **Changement de formule** : une **formule supérieure s'applique tout de suite**, les jours restants des formules inférieures payées étant convertis en jours de la nouvelle au prorata du prix (l'essai gratuit ne compte pas) ; même formule ou formule inférieure : à la suite de la période en cours. Validation Orange Money par Eden Dev : tableau de bord Supabase → table `gm_payments` → `status` → `validated` (ou `refused`, avec un motif dans `note`) ; la vue `gm_paiements_a_valider` affiche les paiements avec la boutique. Après un paiement, la licence est vérifiée toutes les 2 minutes pendant 24 h.
 5. La fonction `gm-license` **signe la licence (Ed25519)** et la dépose dans le bucket public `licences/<identifiant du PC>.gml`. GestiMarket la télécharge toute seule (toutes les 30 minutes, ou bouton *Vérifier maintenant*). Sans Internet : *Importer un fichier* (licence reçue par WhatsApp ou clé USB).
 
 Règles appliquées par le poste serveur (Rust), même sans Internet :
@@ -183,8 +187,20 @@ Règles appliquées par le poste serveur (Rust), même sans Internet :
 - **Postes simultanés** : chaque appareil connecté (ce PC compris) occupe une place ; une connexion de trop est refusée. Un appareil sans signal depuis 3 minutes libère sa place. L'administrateur voit et déconnecte les postes (*Poste & réseau → Postes connectés*).
 - **Fonctions** : mode serveur et appareils du réseau (PRO), accès par Internet (PRO), écran client (PRO), logo (PRO).
 
-Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`) et `supabase/functions/gm-license/index.ts`. À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
+Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), et les fonctions `supabase/functions/gm-license` et `supabase/functions/gm-pay` (*Verify JWT* désactivé pour les deux). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
 
+Réglages d'Eden Dev (table `gm_config`) :
+
+| Clé | Rôle |
+|---|---|
+| `om_merchant_code`, `om_merchant_name` | Code marchand Sarali d'Eden Dev et nom affiché par Orange Money |
+| `om_qr_payload` | Contenu du QR code marchand (facultatif ; scanner l'autocollant avec un téléphone pour le lire) |
+| `card_enabled` | `true` pour ouvrir la carte Visa, une fois les clés Cybersource en place |
+| `card_currency` | Devise des paiements par carte (`XOF`) |
+
+**Cartes de bon** : `select * from public.gm_voucher_batch('pro', 1, 20);` dans le SQL Editor (formule, mois, nombre de cartes, lot facultatif) → *Export → CSV* → `supabase/cartes_de_bon.html` (coller, afficher, imprimer : 10 cartes par page A4, format carte bancaire). Les codes ne sont visibles qu'à la création (gardés hachés en SHA-256). Suivi : vue `gm_cartes_de_bon` ; une carte perdue ou volée : `status` → `cancelled` dans `gm_vouchers`.
+
+**Carte Visa (Cybersource)** : contrat de paiement en ligne avec une banque partenaire de Visa au Mali (BMS S.A., Cybersource). Dans le *Business Center* Cybersource : profil *Secure Acceptance* « Hosted Checkout », clé d'accès et clé secrète. Dans Supabase (*Edge Functions → Secrets*) : `CYBS_PROFILE_ID`, `CYBS_ACCESS_KEY`, `CYBS_SECRET_KEY` et `CYBS_ENV` (`test` pour le bac à sable gratuit, `live` en production), puis `card_enabled` = `true`. La fonction `gm-pay` signe chaque demande (HMAC-SHA256), indique son adresse pour la notification (`override_backoffice_post_url`) et n'active l'abonnement que si la signature, le montant et la devise du résultat sont exacts ; un paiement « en vérification » chez Cybersource passe dans les paiements à valider.
 ---
 
 ## Développement
@@ -311,6 +327,7 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Accès Internet par tunnel Cloudflare, route local / Internet indiquée, widget FlutterFlow tout-en-un
 - [x] Plusieurs boutiques sur un même PC (5 au maximum)
 - [x] Comptes boutique, formules FREE / STARTER / PRO / BUSINESS, licences signées Ed25519, lecture seule à l'expiration, postes simultanés
+- [x] Paiement des abonnements : carte de bon (activation immédiate), Orange Money (Sarali), carte Visa (Cybersource) ; formule supérieure immédiate
 - [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées
 - [ ] Tableau de bord Eden Dev, paiement mobile automatique, tunnels créés automatiquement par boutique, mises à jour signées
 - [ ] Application mobile FlutterFlow (WebView) à construire et tester sur de vrais téléphones

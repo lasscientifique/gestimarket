@@ -198,21 +198,125 @@ pub fn link(state: &AppState, store_code: &str) -> Result<Value, String> {
     Ok(json!({ "status": "linked", "store": store, "sync_error": synced.err() }))
 }
 
-/// Déclaration d'un paiement (mot de passe du compte redemandé) : Eden Dev le valide ensuite.
-pub fn declare_payment(password: &str, plan: &str, months: i64, method: &str, reference: &str, payer_phone: &str) -> Result<Value, String> {
-    let acc = license::account();
-    if acc.email.is_empty() || acc.store_code.is_empty() {
-        return Err("Reliez d'abord ce PC au compte de la boutique.".into());
+// ───────────────────────────── Paiement de l'abonnement ─────────────────────────────
+// Le PC est identifié par son identifiant, relié à la boutique lors de l'activation : pas de mot de
+// passe à retaper. Trois moyens : carte de bon, Orange Money (Sarali), carte Visa (Cybersource).
+
+/// Fonction Supabase appelée au nom de ce PC (sans compte).
+fn pc_rpc(name: &str, body: Value) -> Result<Value, String> {
+    call(request(&format!("/rest/v1/rpc/{name}"), None), body)
+}
+
+/// Après un paiement, la licence est vérifiée toutes les 2 minutes pendant 24 h (au lieu de 30 minutes),
+/// pour qu'elle se mette à jour peu après la validation par Eden Dev ou par Cybersource.
+static FAST_SYNC_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn sync_soon() {
+    *FAST_SYNC_UNTIL.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now() + Duration::from_secs(24 * 3600));
+}
+
+pub fn fast_sync() -> bool {
+    matches!(*FAST_SYNC_UNTIL.lock().unwrap_or_else(|e| e.into_inner()), Some(t) if Instant::now() < t)
+}
+
+/// Derniers paiements de la boutique (état : en attente, validé, refusé…).
+pub fn payments() -> Result<Value, String> {
+    pc_rpc("gm_pc_payments", json!({ "p_pc_id": license::pc_id() }))
+}
+
+/// Carte de bon : l'abonnement est activé tout de suite, puis la licence est téléchargée.
+pub fn redeem_voucher(state: &AppState, code: &str) -> Result<Value, String> {
+    let v = pc_rpc("gm_redeem_voucher", json!({ "p_pc_id": license::pc_id(), "p_code": code.trim() }))?;
+    if v["ok"].as_bool() != Some(true) {
+        return Err(v["error"].as_str().unwrap_or("Carte de bon refusée.").to_string());
     }
-    let token = password_login(&acc.email, password)?;
-    rpc_call(
-        "gm_declare_payment",
-        &token,
+    let synced = sync(state);
+    Ok(json!({ "voucher": v, "sync_error": synced.err() }))
+}
+
+/// Orange Money (Sarali) : l'ID de transaction est envoyé à Eden Dev, qui valide le paiement.
+pub fn declare_orange_money(plan: &str, months: i64, reference: &str, payer_phone: &str) -> Result<Value, String> {
+    let r = pc_rpc(
+        "gm_pc_declare_payment",
         json!({
-            "p_store_code": acc.store_code, "p_plan": plan, "p_months": months, "p_method": method,
+            "p_pc_id": license::pc_id(), "p_plan": plan, "p_months": months,
             "p_reference": reference.trim(), "p_payer_phone": payer_phone.trim(),
         }),
-    )
+    )?;
+    sync_soon();
+    Ok(r)
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#39;")
+}
+
+/// Page locale qui envoie aussitôt le formulaire signé à la page de paiement sécurisée de Cybersource.
+pub fn card_page(endpoint: &str, fields: &serde_json::Map<String, Value>) -> Result<String, String> {
+    if !(endpoint.starts_with("https://secureacceptance.cybersource.com/") || endpoint.starts_with("https://testsecureacceptance.cybersource.com/")) {
+        return Err("Adresse de paiement inattendue : paiement annulé.".into());
+    }
+    let inputs: String = fields
+        .iter()
+        .map(|(k, v)| format!("<input type=\"hidden\" name=\"{}\" value=\"{}\">\n", html_escape(k), html_escape(v.as_str().unwrap_or_default())))
+        .collect();
+    Ok(format!(
+        "<!doctype html>\n<html lang=\"fr\"><head><meta charset=\"utf-8\"><title>Paiement par carte Visa — GestiMarket</title></head>\n\
+         <body onload=\"document.forms[0].submit()\" style=\"font-family:system-ui,sans-serif;text-align:center;padding:48px\">\n\
+         <h2>Paiement de l'abonnement GestiMarket</h2>\n<p>Ouverture de la page de paiement sécurisée de Visa (Cybersource)…</p>\n\
+         <form method=\"post\" action=\"{}\" accept-charset=\"UTF-8\">\n{inputs}<button type=\"submit\" style=\"font-size:16px;padding:10px 18px\">Continuer vers le paiement</button>\n</form>\n\
+         </body></html>\n",
+        html_escape(endpoint)
+    ))
+}
+
+/// Ouvre un fichier ou une adresse avec le navigateur par défaut.
+fn open_in_browser(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(windows)]
+    let r = std::process::Command::new("explorer").arg(path).spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(path).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let r = std::process::Command::new("xdg-open").arg(path).spawn();
+    r.map(|_| ()).map_err(|e| format!("Impossible d'ouvrir le navigateur : {e}"))
+}
+
+/// Carte Visa : la fonction « gm-pay » signe la demande ; la page de paiement de Cybersource s'ouvre
+/// dans le navigateur. Le résultat arrive à Supabase ; l'application suit l'état du paiement.
+pub fn card_start(plan: &str, months: i64) -> Result<Value, String> {
+    let v = call(request("/functions/v1/gm-pay", None), json!({ "pc_id": license::pc_id(), "plan": plan, "months": months }))?;
+    if v["status"].as_str() != Some("ok") {
+        return Err(v["message"].as_str().unwrap_or("Paiement par carte indisponible.").to_string());
+    }
+    let fields = v["fields"].as_object().ok_or("Réponse de paiement invalide.")?;
+    let html = card_page(v["endpoint"].as_str().unwrap_or_default(), fields)?;
+    let id: String = v["payment_id"].as_str().unwrap_or_default().chars().filter(char::is_ascii_alphanumeric).take(12).collect();
+    let path = std::env::temp_dir().join(format!("gestimarket-paiement-{id}.html"));
+    std::fs::write(&path, html).map_err(|e| format!("Page de paiement impossible à préparer : {e}"))?;
+    open_in_browser(&path)?;
+    sync_soon();
+    Ok(json!({
+        "payment_id": v["payment_id"], "amount": v["amount"], "currency": v["currency"],
+        "plan_label": v["plan_label"], "months": v["months"],
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn card_page_posts_escaped_fields_to_cybersource_only() {
+        let mut fields = serde_json::Map::new();
+        fields.insert("amount".into(), json!("18000"));
+        fields.insert("bill_to_address_line1".into(), json!("Rue \"12\" <ACI>"));
+        let page = card_page("https://testsecureacceptance.cybersource.com/pay", &fields).unwrap();
+        assert!(page.contains("action=\"https://testsecureacceptance.cybersource.com/pay\""));
+        assert!(page.contains("name=\"amount\" value=\"18000\""));
+        assert!(page.contains("value=\"Rue &quot;12&quot; &lt;ACI&gt;\""));
+        assert!(card_page("https://pirate.example.com/pay", &fields).is_err());
+        assert!(card_page("https://secureacceptance.cybersource.com.pirate.example/pay", &fields).is_err());
+    }
 }
 
 /// Synchronise la licence : la fonction « gm-license » la (re)signe si l'abonnement a changé,

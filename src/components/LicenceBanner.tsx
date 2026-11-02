@@ -22,7 +22,9 @@ export function LicenceBanner() {
         {user?.role !== "admin" && " Prévenez l'administrateur."}
       </span>
       {user?.role === "admin" && (
-        <NavLink to="/licence" className="btn btn-sm">Abonnement & licence</NavLink>
+        <NavLink to="/licence" className="btn btn-sm">
+          {lic.phase === "none" ? "Activer" : lic.phase === "expired" || lic.level !== "ok" ? "Renouveler" : "Abonnement & licence"}
+        </NavLink>
       )}
       {!lic.read_only && (
         <button className="icon-btn" onClick={() => setHidden(true)} aria-label="Masquer ce rappel"><X size={16} /></button>

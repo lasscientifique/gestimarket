@@ -591,6 +591,45 @@ export interface AccountOptions {
   plans: PlanInfo[];
   payment_instructions: string;
   trial_days: number;
+  /** Moyens de paiement de l'abonnement (réglés par Eden Dev dans gm_config). */
+  payment?: {
+    om_merchant_code: string;
+    om_merchant_name: string;
+    om_qr_payload: string;
+    card_enabled: boolean;
+  };
+}
+
+export type SubscriptionMethod = "carte_bon" | "orange_money" | "carte_visa";
+
+/** Paiement de l'abonnement (gm_pc_payments). */
+export interface SubscriptionPayment {
+  id: string;
+  created_at: string;
+  method: SubscriptionMethod | string;
+  plan: PlanCode;
+  plan_label: string;
+  months: number | null;
+  amount: number;
+  /** pending (carte en cours), declared (à valider par Eden Dev), validated, refused */
+  status: "pending" | "declared" | "validated" | "refused";
+  note: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  abandoned: boolean;
+}
+
+export interface VoucherResult {
+  voucher: { serial: string; plan: PlanCode; plan_label: string; months: number; starts_at: string; ends_at: string };
+  sync_error: string | null;
+}
+
+export interface CardStart {
+  payment_id: string;
+  amount: number;
+  currency: string;
+  plan_label: string;
+  months: number;
 }
 
 export interface StoreInput {

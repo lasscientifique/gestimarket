@@ -517,21 +517,44 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             }
             out(r)
         }
-        "account_declare_payment" => {
-            if !matches!(origin, Origin::Local) {
-                return invalid("À faire sur le PC serveur (ou le poste unique) de la boutique.");
+        // Paiement de l'abonnement : sur ce PC, par l'administrateur.
+        "account_payments" => {
+            account_access(state, origin)?;
+            out(crate::account::payments().map_err(AppError::Validation)?)
+        }
+        "account_redeem_voucher" => {
+            account_access(state, origin)?;
+            let code: String = arg(&a, "code")?;
+            let r = crate::account::redeem_voucher(state, &code).map_err(AppError::Validation)?;
+            if let Some(u) = state.user(origin) {
+                let v = &r["voucher"];
+                let detail = format!("Carte {} — {} {} mois", v["serial"].as_str().unwrap_or_default(), v["plan_label"].as_str().unwrap_or_default(), v["months"]);
+                audit::log(&state.conn(), &u, "Carte de bon utilisée", "settings", None, detail)?;
             }
-            let u = state.require(origin, Admin)?;
-            let r = crate::account::declare_payment(
-                &arg::<String>(&a, "password")?,
+            out(r)
+        }
+        "account_declare_orange_money" => {
+            account_access(state, origin)?;
+            let r = crate::account::declare_orange_money(
                 &arg::<String>(&a, "plan")?,
                 arg(&a, "months")?,
-                &arg::<String>(&a, "method")?,
                 &arg::<String>(&a, "reference")?,
                 &arg::<Option<String>>(&a, "payer_phone")?.unwrap_or_default(),
             )
             .map_err(AppError::Validation)?;
-            audit::log(&state.conn(), &u, "Paiement d'abonnement déclaré", "settings", None, r.to_string())?;
+            if let Some(u) = state.user(origin) {
+                let detail = format!("Orange Money — {} {} mois, {} FCFA", r["plan_label"].as_str().unwrap_or_default(), r["months"], r["amount"]);
+                audit::log(&state.conn(), &u, "Paiement d'abonnement déclaré", "settings", None, detail)?;
+            }
+            out(r)
+        }
+        "account_card_start" => {
+            account_access(state, origin)?;
+            let r = crate::account::card_start(&arg::<String>(&a, "plan")?, arg(&a, "months")?).map_err(AppError::Validation)?;
+            if let Some(u) = state.user(origin) {
+                let detail = format!("Carte Visa — {} {} mois, {} FCFA", r["plan_label"].as_str().unwrap_or_default(), r["months"], r["amount"]);
+                audit::log(&state.conn(), &u, "Paiement par carte commencé", "settings", None, detail)?;
+            }
             out(r)
         }
         "list_sessions" => {
