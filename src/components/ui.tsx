@@ -203,12 +203,22 @@ export function ImageField({
   );
 }
 
-/** Pastille d'emplacement « Bloc 2 · Étage 1 · Rangée 5 ». */
-export function LocationBadge({ p, short, big }: { p: { bloc?: string | null; etage?: string | null; rangee?: string | null }; short?: boolean; big?: boolean }) {
+/** Pastille d'emplacement « Réfrigérateur FR1 · Étage 3 » (+ n autres emplacements). */
+export function LocationBadge({
+  p,
+  short,
+  big,
+}: {
+  p: { bloc?: string | null; etage?: string | null; rangee?: string | null; fixture_name?: string | null; other_places?: number };
+  short?: boolean;
+  big?: boolean;
+}) {
   if (!p.bloc) return <span className={`loc-badge none ${big ? "big" : ""}`}><MapPin size={big ? 16 : 12} /> Non rangé</span>;
+  const others = p.other_places ?? 0;
   return (
-    <span className={`loc-badge ${big ? "big" : ""}`} title={locationText(p)}>
+    <span className={`loc-badge ${big ? "big" : ""}`} title={locationText(p) + (others ? ` (+ ${others} autre(s) emplacement(s))` : "")}>
       <MapPin size={big ? 16 : 12} /> {locationText(p, short)}
+      {others > 0 && <span className="loc-more">+{others}</span>}
     </span>
   );
 }

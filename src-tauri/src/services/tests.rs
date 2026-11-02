@@ -700,8 +700,16 @@ fn catalogue_business_types_and_category_tree() {
     use serde_json::json;
     let tree = templates::catalogue();
     assert!(tree.len() >= 32);
-    assert_eq!(templates::profiles().len(), 11);
+    assert_eq!(templates::profiles().len(), 22);
     let (mut conn, admin) = setup();
+    // Chaque profil propose des meubles de la palette du plan et des catégories du catalogue.
+    for profile in templates::profiles() {
+        assert!(profile.categories.iter().all(|&i| i >= 1 && i <= tree.len()), "{}", profile.id);
+        for code in &profile.fixtures {
+            let n: i64 = conn.query_row("SELECT COUNT(*) FROM fixture_types WHERE code = ?1 AND builtin = 1", [code], |r| r.get(0)).unwrap();
+            assert_eq!(n, 1, "{} : meuble {code} inconnu", profile.id);
+        }
+    }
     let created = templates::seed(&mut conn, &admin, &[1, 2]).unwrap();
     assert!(created > 10);
     // Pas de doublon au second chargement

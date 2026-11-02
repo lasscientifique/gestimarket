@@ -57,17 +57,30 @@ create table if not exists public.gm_config (
   value text not null
 );
 
+-- Mêmes codes que les types de commerce de l'application (voir gestimarket_types_commerce.sql).
 insert into public.gm_shop_types (code, label, sort) values
-  ('boutique', 'Boutique', 1),
-  ('superette', 'Supérette', 2),
-  ('supermarche', 'Supermarché', 3),
-  ('grossiste', 'Grossiste / demi-grossiste', 4),
-  ('quincaillerie', 'Quincaillerie', 5),
-  ('cosmetiques', 'Cosmétiques', 6),
-  ('pharmacie', 'Pharmacie / parapharmacie', 7),
-  ('boulangerie', 'Boulangerie / pâtisserie', 8),
-  ('restaurant', 'Restaurant / fast-food', 9),
-  ('autre', 'Autre', 99)
+  ('boutique', 'Boutique de quartier', 1),
+  ('general', 'Magasin de commerce général', 2),
+  ('supermarket', 'Supermarché / hypermarché', 3),
+  ('superette', 'Supérette', 4),
+  ('wholesale', 'Grossiste / demi-grossiste', 5),
+  ('pharmacy', 'Pharmacie / parapharmacie', 6),
+  ('fashion', 'Vêtements et chaussures', 7),
+  ('hardware', 'Quincaillerie', 8),
+  ('building', 'Matériaux de construction', 9),
+  ('electronics', 'Électronique / électroménager', 10),
+  ('phones', 'Téléphonie et accessoires', 11),
+  ('bakery', 'Boulangerie / pâtisserie', 12),
+  ('butcher', 'Boucherie / poissonnerie', 13),
+  ('greengrocer', 'Fruits et légumes', 14),
+  ('cosmetics', 'Cosmétiques / parfumerie', 15),
+  ('bookshop', 'Librairie / papeterie', 16),
+  ('autoparts', 'Pièces auto / moto', 17),
+  ('agrovet', 'Agro-vétérinaire / animalerie', 18),
+  ('bar', 'Bar / maquis / café', 19),
+  ('kiosk', 'Kiosque / boutique de station-service', 20),
+  ('restaurant', 'Restaurant / fast-food', 21),
+  ('specialty', 'Boutique spécialisée / autre', 99)
 on conflict (code) do nothing;
 
 insert into public.gm_countries (code, label, currency, sort) values

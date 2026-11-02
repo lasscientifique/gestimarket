@@ -401,7 +401,7 @@ function ProductForm({
           <div className="side-box">
             <span className="field-label"><MapPin size={14} /> Emplacement en magasin</span>
             <LocationSelect locations={locations} value={f.location_id} onChange={(id) => set("location_id", id)} />
-            {locations.length === 0 && <span className="field-hint">Créez d'abord vos blocs dans « Emplacements ».</span>}
+            {locations.length === 0 && <span className="field-hint">Posez d'abord vos meubles dans « Plan de la boutique ».</span>}
           </div>
         </div>
         <div className="form-grid">

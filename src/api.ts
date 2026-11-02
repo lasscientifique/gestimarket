@@ -4,6 +4,10 @@ import type {
   AccountOptions,
   AccountStore,
   CardStart,
+  Fixture,
+  FixtureContents,
+  Place,
+  StorePlanData,
   LicenseStatus,
   SessionInfo,
   StoreInput,
@@ -130,12 +134,29 @@ export const api = {
 
   // Emplacements
   listLocations: () => call<Location[]>("list_locations"),
-  saveLocation: (id: number | null, input: { bloc: string; etage: string; rangee: string; label: string | null }) =>
-    call<number>("save_location", { id, input }),
   deleteLocation: (id: number, pin: string) => call<void>("delete_location", { id, pin }),
   generateLocations: (input: { bloc: string; bloc_to: string | null; etage_from: number; etage_to: number; rangee_from: number; rangee_to: number; label: string | null }) =>
     call<number>("generate_locations", { input }),
   assignLocation: (location: number | null, products: number[]) => call<void>("assign_location", { location, products }),
+  planGet: () => call<StorePlanData>("plan_get"),
+  planFixtureContents: (id: number) => call<FixtureContents>("plan_fixture_contents", { id }),
+  productPlaces: (product_id: number) => call<Place[]>("product_places", { product_id }),
+  planSaveFloor: (id: number | null, input: { name: string; width: number; depth: number }) => call<number>("plan_save_floor", { id, input }),
+  planDeleteFloor: (id: number, pin: string) => call<void>("plan_delete_floor", { id, pin }),
+  planSaveFixture: (id: number | null, input: Partial<Omit<Fixture, "id" | "color">> & { color?: string | null }) =>
+    call<Fixture>("plan_save_fixture", { id, input }),
+  planMoveFixtures: (items: { id: number; x: number; y: number; w: number; h: number; rotation: number }[]) =>
+    call<void>("plan_move_fixtures", { items }),
+  planDeleteFixture: (id: number, pin?: string | null) => call<number>("plan_delete_fixture", { id, pin }),
+  planSaveType: (
+    id: number | null,
+    input: { name: string; category: string; prefix: string; color: string; width: number; depth: number; levels: number; sections: number },
+  ) => call<number>("plan_save_type", { id, input }),
+  planDeleteType: (id: number) => call<void>("plan_delete_type", { id }),
+  planPut: (input: { product_id: number; location_id: number; from_location_id?: number | null; primary?: boolean }) =>
+    call<Place[]>("plan_put", { input }),
+  planTake: (product_id: number, location_id: number) => call<Place[]>("plan_take", { product_id, location_id }),
+  planSetPrimary: (product_id: number, location_id: number) => call<Place[]>("plan_set_primary", { product_id, location_id }),
 
   // Stock
   adjustStock: (input: { product_id: number; mode: "set" | "add" | "remove"; quantity: number; kind: string; note: string | null }, pin: string) =>

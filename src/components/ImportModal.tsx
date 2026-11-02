@@ -176,7 +176,7 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
           <ol className="steps">
             <li>Dans Excel : <b>Fichier → Enregistrer sous → CSV (séparateur : point-virgule)</b>. Le modèle donne les colonnes attendues.</li>
             <li>Un produit existant (même code-barres) est <b>mis à jour</b> ; sinon il est créé. La colonne « Stock » fixe le stock (inventaire tracé).</li>
-            <li>Les catégories et emplacements (bloc / étage / rangée) inconnus sont créés automatiquement.</li>
+            <li>Les catégories inconnues sont créées automatiquement ; un meuble inconnu (colonne bloc : code du meuble, ex. A ou FR1) est posé sur le plan avec ses étages et ses cases.</li>
           </ol>
           <button className="file-drop" onClick={choose}>
             <FileUp size={26} />

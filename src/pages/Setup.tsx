@@ -96,6 +96,8 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
         currency,
         full_name: s.owner_name,
       });
+      // Type de boutique du compte = type de commerce proposé (mêmes codes).
+      if (profiles?.profiles.some((p) => p.id === s.shop_type)) setBizType(s.shop_type);
       setAccountNote(
         `Compte relié : ${s.name} (${s.code})${s.plan_label ? `, formule ${s.plan_label}${s.trial ? " en essai" : ""}` : ""}.` +
           (r.sync_error ? ` Licence pas encore téléchargée : ${r.sync_error}` : ""),

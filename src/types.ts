@@ -62,6 +62,8 @@ export interface BusinessProfile {
   categories: number[];
   features: string[];
   track_stock: boolean;
+  /** Meubles proposés en tête de la palette du plan (codes des types). */
+  fixtures?: string[];
 }
 
 export interface CatalogueSummary {
@@ -77,6 +79,7 @@ export interface TemplateNode {
   children: TemplateNode[];
 }
 
+/** Case d'un meuble du plan (étage × case). bloc = code du meuble. */
 export interface Location {
   id: number;
   bloc: string;
@@ -85,6 +88,117 @@ export interface Location {
   label: string | null;
   product_count: number;
   stock_value: number;
+  fixture_id: number;
+  fixture_name: string;
+  fixture_type: string;
+  category: FixtureCategory;
+  floor_id: number;
+  floor_name: string;
+  level: number;
+  section: number;
+}
+
+// ───────────── Plan de la boutique ─────────────
+
+export type FixtureCategory = "rayon" | "froid" | "presentation" | "rangement" | "zone" | "batiment";
+
+export interface Floor {
+  id: number;
+  name: string;
+  sort: number;
+  width: number;
+  depth: number;
+}
+
+export interface FixtureType {
+  id: number;
+  code: string;
+  name: string;
+  category: FixtureCategory;
+  prefix: string;
+  color: string;
+  width: number;
+  depth: number;
+  levels: number;
+  sections: number;
+  storage: boolean;
+  builtin: boolean;
+  sort: number;
+  used: number;
+}
+
+/** Meuble posé sur le plan : position, taille (mètres) et rotation (degrés). */
+export interface Fixture {
+  id: number;
+  floor_id: number;
+  type_id: number;
+  type_code: string;
+  type_name: string;
+  category: FixtureCategory;
+  storage: boolean;
+  code: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotation: number;
+  color: string;
+  custom_color: string | null;
+  levels: number;
+  sections: number;
+  notes: string | null;
+  product_count: number;
+}
+
+export interface StorePlanData {
+  floors: Floor[];
+  types: FixtureType[];
+  fixtures: Fixture[];
+}
+
+export interface SlotProduct {
+  product_id: number;
+  name: string;
+  barcode: string | null;
+  image_id: number | null;
+  stock: number;
+  unit: string;
+  primary: boolean;
+}
+
+export interface Slot {
+  id: number;
+  level: number;
+  section: number;
+  etage: string;
+  rangee: string;
+  label: string | null;
+  products: SlotProduct[];
+}
+
+export interface FixtureContents {
+  fixture: Fixture;
+  slots: Slot[];
+}
+
+/** Emplacement d'un produit sur le plan (le principal d'abord). */
+export interface Place {
+  location_id: number;
+  primary: boolean;
+  fixture_id: number;
+  fixture_code: string;
+  fixture_name: string;
+  type_name: string;
+  category: FixtureCategory;
+  floor_id: number;
+  floor_name: string;
+  level: number;
+  section: number;
+  etage: string;
+  rangee: string;
+  levels: number;
+  sections: number;
 }
 
 export interface Product {
@@ -113,6 +227,11 @@ export interface Product {
   etage: string | null;
   rangee: string | null;
   location_label: string | null;
+  /** Meuble du plan de l'emplacement principal. */
+  fixture_id: number | null;
+  fixture_name: string | null;
+  /** Autres emplacements (réserve, frigo…). */
+  other_places: number;
   expiry_date: string | null;
   brand: string | null;
   sku: string | null;

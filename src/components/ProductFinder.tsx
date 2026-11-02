@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState } from "react";
-import { MapPin, ScanSearch, X, Package, Camera } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MapPin, ScanSearch, X, Package, Camera, Star } from "lucide-react";
 import { CameraScanner } from "./CameraScanner";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
-import { locationText, money, qty } from "../lib/format";
-import type { Location, Product } from "../types";
-import { StorePlan } from "./StorePlan";
+import { money, qty } from "../lib/format";
+import type { Location, Place, Product, StorePlanData } from "../types";
+import { StoreMap } from "./plan/StoreMap";
+import { FixtureFront, slotName } from "./plan/FixtureFront";
 import { categoryPath } from "./CategorySelect";
 import { Badge, LocationBadge, Thumb } from "./ui";
 
 /**
  * Recherche « Où se trouve ce produit ? » : nom, code-barres (douchette) ou catégorie.
- * Affiche l'emplacement en grand et le met en évidence sur le plan du magasin.
+ * Affiche l'emplacement en grand, fait clignoter le meuble sur le plan de la boutique et montre
+ * l'étage et la case dans la vue de face. Une étiquette de case scannée (QR « GMLOC: ») montre son contenu.
  */
 export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boolean; onClose?: () => void }) {
   const { toast } = useApp();
@@ -22,14 +24,31 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [scan, setScan] = useState(false);
+  const [plan, setPlan] = useState<StorePlanData | null>(null);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [focus, setFocus] = useState(0);
 
   useEffect(() => {
     api.listLocations().then(setLocations).catch(toast.error);
+    api.planGet().then(setPlan).catch(() => undefined);
   }, [toast]);
 
   useEffect(() => {
-    if (!search.trim()) {
+    setFocus(0);
+    if (!selected) return setPlaces([]);
+    api.productPlaces(selected.id).then(setPlaces).catch(() => setPlaces([]));
+  }, [selected]);
+
+  // Étiquette de case scannée (QR « GMLOC:12 ») : la case et son contenu.
+  const scannedSlot = useMemo(() => {
+    const m = /^GMLOC:(\d+)$/i.exec(search.trim());
+    return m ? locations.find((l) => l.id === Number(m[1])) ?? null : null;
+  }, [search, locations]);
+
+  useEffect(() => {
+    if (!search.trim() || /^GMLOC:/i.test(search.trim())) {
       setResults([]);
+      setSelected(null);
       return;
     }
     const t = setTimeout(async () => {
@@ -45,6 +64,9 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
     }, 160);
     return () => clearTimeout(t);
   }, [search, toast]);
+
+  const place = places[Math.min(focus, places.length - 1)] ?? null;
+  const mapFloor = place && plan ? plan.floors.find((f) => f.id === place.floor_id) ?? null : null;
 
   const choose = (i: number) => {
     setActive(i);
@@ -91,7 +113,7 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
             <div className="finder-hint">
               <MapPin size={34} strokeWidth={1.5} />
               <strong>Où se trouve un produit ?</strong>
-              <span className="muted">Tapez son nom ou scannez son code-barres : l'emplacement s'affiche avec le plan du magasin.</span>
+              <span className="muted">Tapez son nom ou scannez son code-barres (ou l'étiquette d'une case) : le meuble clignote sur le plan de la boutique.</span>
             </div>
           )}
           {search.trim() && results.length === 0 && <div className="finder-hint muted">Aucun produit trouvé.</div>}
@@ -126,27 +148,54 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
                   <span className="muted small mono"> · {selected.barcode ?? ""}</span>
                 </div>
               </div>
-              <div className={`finder-location ${selected.bloc ? "" : "none"}`}>
-                {selected.bloc ? (
-                  <>
-                    <div className="fl-part"><span>Bloc</span><strong>{selected.bloc}</strong></div>
-                    <div className="fl-part"><span>Étage</span><strong>{selected.etage || "—"}</strong></div>
-                    <div className="fl-part"><span>Rangée</span><strong>{selected.rangee || "—"}</strong></div>
-                    {selected.location_label && <div className="fl-label">{selected.location_label}</div>}
-                  </>
-                ) : (
-                  <div className="fl-none"><Package size={18} /> Ce produit n'a pas encore d'emplacement.</div>
-                )}
-              </div>
-              {selected.location_id && (
+              {places.length === 0 ? (
+                <div className="finder-location none">
+                  <div className="fl-none"><Package size={18} /> Ce produit n'a pas encore d'emplacement sur le plan.</div>
+                </div>
+              ) : (
                 <>
-                  <div className="section-title">Plan du magasin — {locationText(selected)}</div>
-                  <StorePlan locations={locations} highlightId={selected.location_id} compact />
+                  <div className="finder-location">
+                    <div className="fl-part wide"><span>{place?.floor_name}</span><strong>{place?.fixture_name}</strong></div>
+                    {place?.etage && <div className="fl-part"><span>Étage</span><strong>{place.etage}</strong></div>}
+                    {place?.rangee && <div className="fl-part"><span>Case</span><strong>{place.rangee}</strong></div>}
+                  </div>
+                  {places.length > 1 && (
+                    <div className="finder-places">
+                      {places.map((pl, i) => (
+                        <button key={pl.location_id} className={`chip ${i === focus ? "active" : ""}`} onClick={() => setFocus(i)}>
+                          {pl.primary && <Star size={12} />} {pl.fixture_code}{pl.etage ? ` · É${pl.etage}` : ""}{pl.rangee ? ` · C${pl.rangee}` : ""}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {mapFloor && place && (
+                    <StoreMap
+                      floor={mapFloor}
+                      fixtures={plan!.fixtures.filter((f) => f.floor_id === mapFloor.id)}
+                      selectedId={place.fixture_id}
+                      highlightIds={places.filter((pl) => pl.floor_id === mapFloor.id).map((pl) => pl.fixture_id)}
+                      height={300}
+                    />
+                  )}
+                  {place && (
+                    <FixtureFront key={place.fixture_id} fixtureId={place.fixture_id} highlightLocationId={place.location_id} highlightProductId={selected.id} compact />
+                  )}
                 </>
               )}
             </>
+          ) : scannedSlot ? (
+            <>
+              <div className="finder-location">
+                <div className="fl-part wide"><span>{scannedSlot.floor_name}</span><strong>{scannedSlot.fixture_name}</strong></div>
+                <div className="fl-part"><span>Case scannée</span><strong>{slotName(scannedSlot)}</strong></div>
+              </div>
+              <FixtureFront key={scannedSlot.fixture_id} fixtureId={scannedSlot.fixture_id} highlightLocationId={scannedSlot.id} compact />
+            </>
           ) : (
-            <StorePlan locations={locations} compact />
+            plan &&
+            plan.floors[0] && (
+              <StoreMap floor={plan.floors[0]} fixtures={plan.fixtures.filter((f) => f.floor_id === plan.floors[0].id)} height={360} />
+            )
           )}
         </div>
       </div>

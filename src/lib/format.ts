@@ -121,17 +121,20 @@ export function paymentLabel(m: string | null | undefined): string {
 
 // ───────────── Emplacements ─────────────
 
-export function locationText(l: { bloc?: string | null; etage?: string | null; rangee?: string | null } | null | undefined, short = false): string {
+type LocationLike = { bloc?: string | null; etage?: string | null; rangee?: string | null; fixture_name?: string | null };
+
+/** « Réfrigérateur FR1 · Étage 3 · Case 2 » ; court : « FR1·É3·C2 ». */
+export function locationText(l: LocationLike | null | undefined, short = false): string {
   if (!l || !l.bloc) return short ? "—" : "Non rangé";
   const parts = short
-    ? [blocShort(l.bloc), l.etage ? `É${l.etage}` : "", l.rangee ? `R${l.rangee}` : ""]
-    : [`Bloc ${l.bloc}`, l.etage ? `Étage ${l.etage}` : "", l.rangee ? `Rangée ${l.rangee}` : ""];
+    ? [blocShort(l.bloc), l.etage ? `É${l.etage}` : "", l.rangee ? `C${l.rangee}` : ""]
+    : [l.fixture_name || `Meuble ${l.bloc}`, l.etage ? `Étage ${l.etage}` : "", l.rangee ? `Case ${l.rangee}` : ""];
   return parts.filter(Boolean).join(short ? "·" : " · ");
 }
 
-/** « A » reste « A » ; un bloc numéroté « 2 » devient « B2 ». */
+/** Code court d'un meuble : « FR1 » reste « FR1 » ; un ancien bloc numéroté « 2 » devient « R2 ». */
 export function blocShort(bloc: string): string {
-  return /^\d+$/.test(bloc) ? `B${bloc}` : bloc;
+  return /^\d+$/.test(bloc) ? `R${bloc}` : bloc;
 }
 
 /** Nombre de jours entre aujourd'hui et une date AAAA-MM-JJ (négatif si dépassée). */

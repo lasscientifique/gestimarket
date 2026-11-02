@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Location } from "../types";
 
-/** Liste déroulante d'emplacements, regroupés par bloc. */
+/** Liste déroulante des cases du plan, regroupées par meuble (« Réfrigérateur FR1 — Rez-de-chaussée »). */
 export function LocationSelect({
   locations,
   value,
@@ -16,26 +16,30 @@ export function LocationSelect({
   className?: string;
 }) {
   const groups = useMemo(() => {
-    const map = new Map<string, Location[]>();
+    const map = new Map<number, Location[]>();
     for (const l of locations) {
-      if (!map.has(l.bloc)) map.set(l.bloc, []);
-      map.get(l.bloc)!.push(l);
+      if (!map.has(l.fixture_id)) map.set(l.fixture_id, []);
+      map.get(l.fixture_id)!.push(l);
     }
-    return [...map.entries()];
+    return [...map.values()];
   }, [locations]);
+  const floors = new Set(locations.map((l) => l.floor_id)).size;
   return (
     <select className={className} value={value ?? ""} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}>
       <option value="">{emptyLabel}</option>
-      {groups.map(([bloc, list]) => (
-        <optgroup key={bloc} label={`Bloc ${bloc}${list[0]?.label ? " — " + list[0].label : ""}`}>
-          {list.map((l) => (
-            <option key={l.id} value={l.id}>
-              Bloc {l.bloc} · Étage {l.etage || "—"} · Rangée {l.rangee || "—"}
-              {l.label ? ` (${l.label})` : ""}
-            </option>
-          ))}
-        </optgroup>
-      ))}
+      {groups.map((list) => {
+        const f = list[0];
+        return (
+          <optgroup key={f.fixture_id} label={`${f.fixture_name} (${f.bloc})${floors > 1 ? " — " + f.floor_name : ""}`}>
+            {list.map((l) => (
+              <option key={l.id} value={l.id}>
+                {[l.bloc, l.etage ? `Étage ${l.etage}` : "", l.rangee ? `Case ${l.rangee}` : ""].filter(Boolean).join(" · ")}
+                {l.label ? ` (${l.label})` : ""}
+              </option>
+            ))}
+          </optgroup>
+        );
+      })}
     </select>
   );
 }

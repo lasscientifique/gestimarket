@@ -76,7 +76,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/products", label: "Produits", icon: <Package size={18} />, roles: M },
       { to: "/categories", label: "Catégories", icon: <FolderTree size={18} />, roles: M },
-      { to: "/locations", label: "Emplacements", icon: <LayoutGrid size={18} />, roles: M },
+      { to: "/locations", label: "Plan de la boutique", short: "Plan", icon: <LayoutGrid size={18} />, roles: M },
       { to: "/stock", label: "Stock & inventaire", short: "Stock", icon: <Boxes size={18} />, roles: M },
       { to: "/purchases", label: "Achats / réceptions", icon: <Truck size={18} />, roles: M },
       { to: "/suppliers", label: "Fournisseurs", icon: <Factory size={18} />, roles: M },

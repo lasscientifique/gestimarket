@@ -38,10 +38,14 @@ export const PAGE_HELP: Record<string, PageHelp> = {
   },
   finder: {
     title: "Localiser un produit",
-    purpose: "Retrouver immédiatement où se trouve un produit dans le magasin : bloc, étage et rangée, avec le plan.",
-    steps: ["Tapez le nom, la catégorie, ou scannez le code-barres.", "Lisez le bloc / étage / rangée en grand ; la case clignote sur le plan."],
-    tips: ["Disponible depuis n'importe quel écran avec Ctrl+K, même pour les caissiers."],
+    purpose: "Retrouver immédiatement où se trouve un produit : le meuble clignote sur le plan de la boutique, la vue de face montre l'étage et la case.",
+    steps: [
+      "Tapez le nom, la catégorie, ou scannez le code-barres.",
+      "Lisez le meuble, l'étage et la case en grand ; le meuble clignote sur le plan. Ses autres emplacements (réserve, frigo) sont listés.",
+    ],
+    tips: ["Disponible depuis n'importe quel écran avec Ctrl+K, même pour les caissiers.", "Scannez l'étiquette d'une case pour voir son contenu."],
   },
+
   sales: {
     title: "Historique des ventes",
     purpose: "Retrouver une vente, la consulter, réimprimer son ticket ou l'annuler (gérant).",
@@ -76,15 +80,22 @@ export const PAGE_HELP: Record<string, PageHelp> = {
     tips: ["Le stock ne se modifie pas ici : utilisez « Achats / réceptions » ou « Stock & inventaire » pour garder la traçabilité."],
   },
   locations: {
-    title: "Emplacements",
-    purpose: "Organiser physiquement le magasin en blocs (A à Z), étages et rangées, et y ranger les produits.",
+    title: "Plan de la boutique",
+    purpose:
+      "Dessiner la boutique comme un plan d'architecte (pièces, murs, portes, rayons, frigos, congélateurs, vitrines, réserve…) et y ranger les produits : il suffit ensuite de regarder le plan pour trouver un produit.",
     steps: [
-      "« Créer des blocs » : par ex. blocs A à F, étages 1 à 3, rangées 1 à 10.",
-      "Cliquez sur une case du plan, puis scannez ou recherchez les produits à y ranger.",
-      "Rangez les « produits non rangés » listés en bas de page.",
+      "« Modifier le plan » : prenez un meuble dans la palette et posez-le sur le plan (glisser, ou cliquer pour le poser à une place libre).",
+      "Déplacez-le, agrandissez-le par son coin, tournez-le (R), donnez-lui un nom, un nombre d'étages et de cases.",
+      "Double-cliquez sur un meuble : vue de face. Glissez les produits dans les cases (poser), d'une case à l'autre (déplacer), ✕ pour les retirer (prendre).",
+      "Un produit peut avoir plusieurs emplacements (rayon, réserve, frigo) : ★ choisit l'emplacement principal.",
     ],
-    tips: ["Imprimez la fiche de rayon (icône imprimante) pour l'afficher sur l'étagère."],
+    tips: [
+      "Créez vos propres meubles (« Meuble personnalisé ») : vous n'êtes pas limité à la palette.",
+      "Plusieurs niveaux : rez-de-chaussée, étage, entrepôt…",
+      "Imprimez les étiquettes des cases (vue de face) : leur QR code se scanne dans « Localiser un produit ».",
+    ],
   },
+
   stock: {
     title: "Stock & inventaire",
     purpose: "Surveiller les niveaux de stock, les dates de péremption et l'historique de tous les mouvements.",
@@ -213,7 +224,7 @@ export const TIPS: Record<string, string> = {
   om_qr:
     "Photographiez l'autocollant QR code marchand fourni par Orange et ajoutez la photo ici : il s'affiche en caisse et sur l'écran client pour que le client paie en scannant.",
   generate_blocs:
-    "Crée en une fois toutes les combinaisons bloc × étage × rangée. Exemple : blocs A à C, étages 1 à 2, rangées 1 à 5 = 30 emplacements.",
+    "Pose en une fois plusieurs gondoles sur le plan. Exemple : rayons A à C, étages 1 à 5, cases 1 à 6 = 3 rayons de 30 cases.",
   import: "Importez votre catalogue depuis Excel (CSV). Téléchargez le modèle pour connaître les colonnes : catégorie, sous-catégorie, bloc, étage, rangée…",
   labels: "Imprime des étiquettes code-barres ou QR code (planche A4) ou des étiquettes de rayon (prix + emplacement) pour les produits cochés.",
   cash_close: "Comptez les espèces du tiroir et saisissez le total : le logiciel compare au montant attendu et enregistre l'écart.",
@@ -230,7 +241,7 @@ export const TIPS: Record<string, string> = {
   require_session: "Oblige chaque caissier à ouvrir sa caisse (fond de caisse) avant de vendre : indispensable pour contrôler les espèces.",
   loyalty: "Le client gagne 1 point par tranche dépensée (ex. 1 point par 1 000 FCFA). 0 désactive la fidélité.",
   barcode: "Obligatoire : la caisse retrouve le produit en scannant ou en tapant ce code. Pas de code sur l'emballage (vrac, fait maison) ? Gardez le code interne proposé, puis imprimez son étiquette (code-barres ou QR code).",
-  bulk_location: "Range tous les produits cochés dans l'emplacement choisi.",
-  plan: "Chaque case est une rangée ; les lignes sont les étages ; le chiffre indique le nombre de produits rangés.",
+  bulk_location: "Range tous les produits cochés dans la case choisie (emplacement principal).",
+  plan: "Vue de dessus de la boutique, à l'échelle (un carreau = 1 mètre) ; le chiffre sur un meuble indique le nombre de produits rangés.",
   cancel_sale: "Annule la vente : les articles reviennent en stock et la dette éventuelle du client est retirée. Motif obligatoire, action tracée.",
 };
