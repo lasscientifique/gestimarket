@@ -4,10 +4,10 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.7.0**
+- Version actuelle : **0.7.1**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
-> État des tests : 26 tests automatiques Rust, parcours réels sous navigateur (taille téléphone, tablette, PC). L'installateur Windows est compilé depuis Linux (MinGW) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par l'analyseur Dart (`dart analyze`) mais n'a pas été essayé sur un vrai téléphone. La détection de la route local / Internet et le test de l'adresse publique (0.7.1) sont écrits mais attendent leur première compilation et leurs tests.
+> État des tests : 28 tests automatiques Rust et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 24 vérifications sur 24 (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare, coupure puis retour du tunnel). L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
 
 ---
 
@@ -160,6 +160,7 @@ npm run dev                 # interface seule (navigateur, port 1420)
 npx tauri dev               # application complète en développement
 npm run typecheck           # vérification TypeScript
 npm run test:rust           # tests Rust (logique métier)
+node e2e/run.mjs            # test d'interface (serveur lancé sur :7878, Playwright installé)
 npx tauri build             # build de production de la plateforme courante
 ```
 
@@ -173,6 +174,16 @@ npx tauri build --target x86_64-pc-windows-gnu --bundles nsis
 ```
 
 Pour changer de version : `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml`.
+
+### Intégration continue (`.github/workflows/build.yml`)
+
+| Job | Quand | Contenu |
+|---|---|---|
+| `test` | chaque envoi | `npm run typecheck` et `cargo test` sous Ubuntu |
+| `e2e` | envoi sur `main` | compilation debug, GestiMarket en mode serveur sous Xvfb, `e2e/run.mjs` (Playwright) avec le faux tunnel et la fausse API Supabase de `e2e/mocks.mjs` ; captures publiées dans une pré-release `e2e-N` |
+| `release` | étiquette `v*` | installateurs Windows (`-setup.exe`, `.msi`), Linux (`.deb`, `.rpm`, `.AppImage`) et macOS, release publiée |
+
+Version portable Windows : `gestimarket.exe` seul (la compilation MSVC intègre `WebView2Loader`), extrait du `.msi` par `msiexec /a`.
 
 ### Tester le mode serveur dans un navigateur
 Lancer l'application en mode serveur (`network.json` : `{"mode":"server","poste_name":"Caisse 1","port":7878,"server_url":""}` dans le dossier de données), puis ouvrir `https://127.0.0.1:7879` (accepter le certificat). La caméra en direct exige https.
