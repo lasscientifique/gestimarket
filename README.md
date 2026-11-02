@@ -4,7 +4,7 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.10.0**
+- Version actuelle : **0.11.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
 > État des tests : 40 tests automatiques Rust (dont la vérification d'une vraie licence signée par Supabase, l'horloge, les échéances, la limite de postes, le blocage des connexions et la page de paiement par carte) et vérification TypeScript (GitHub Actions, Ubuntu). Test d'interface de bout en bout sous Xvfb avec Playwright : 30 vérifications sur 30 (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare, coupure puis retour du tunnel, lecture seule et 2ᵉ session refusée sans licence, licence de test installée, licence falsifiée refusée, paiement refusé depuis un appareil du réseau). Paiements testés directement dans Supabase (carte de bon, Orange Money, résultats de carte Visa, changement de formule) ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
@@ -43,12 +43,14 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 - Champs : désignation, référence interne, marque, catégorie, unité, prix d'achat et de vente TTC, TVA, stock, seuil d'alerte, fournisseur, péremption, photo, emplacement, statut.
 - **Catégories en arbre sans limite de niveaux** (catégorie → sous-catégorie → famille…), déplacement, masquage, couleur et photo, import / export CSV, détection des catégories vides et des produits sans catégorie.
 - **Catalogue prédéfini** de 32 catégories avec leurs sous-catégories (+ menu restaurant), chargeable à la carte sans doublon.
-- **11 types de commerce** (boutique, commerce général, supermarché, supérette, grossiste, pharmacie, vêtements et chaussures, quincaillerie, électronique, boutique spécialisée, restaurant) : l'interface s'adapte (péremption, marque, référence, conditionnements, quantités décimales, services).
+- **22 types de commerce** (boutique de quartier, commerce général, supermarché, supérette, grossiste, pharmacie, vêtements et chaussures, quincaillerie, matériaux de construction, électronique, téléphonie, boulangerie-pâtisserie, boucherie-poissonnerie, fruits et légumes, cosmétiques-parfumerie, librairie-papeterie, pièces auto-moto, agro-vétérinaire, bar-maquis-café, kiosque / station-service, boutique spécialisée, restaurant) : l'interface s'adapte (péremption, marque, référence, conditionnements, quantités décimales, services) et le plan propose les meubles du métier. Mêmes codes que les types de boutique du compte Eden Dev.
 - Familles d'unités (poids, volume, longueur, conditionnement, boissons, matériaux, tissus…).
 - Import de produits depuis Excel / CSV.
 
 ### Magasin
-- **Emplacements** : bloc (A à Z), étage, rangée ; plan du magasin ; recherche « Où est le produit ? » (Ctrl + K).
+- **Plan de la boutique**, comme un plan d'architecte, à l'échelle en mètres : niveaux du bâtiment (rez-de-chaussée, étage, entrepôt), pièces (salle de vente, réserve…), murs, portes, caisse, et une **palette de meubles** à glisser sur le plan : gondoles, têtes de gondole, étagères murales, réfrigérateurs, congélateurs, vitrines réfrigérées, chambres froides, présentoirs, bacs vrac, palettes, portants, racks, armoires, armoires à tiroirs, vitrines fermées, comptoirs, **et des meubles personnalisés** créés par la boutique. Déplacer, redimensionner, tourner, dupliquer, annuler / rétablir, imprimer le plan.
+- **Vue de face** de chaque meuble (étages × cases) : **poser** un produit dans une case, le **prendre** (retirer), le déplacer ; un produit peut avoir plusieurs emplacements (rayon, réserve, frigo) dont un principal ; étiquettes de cases avec QR code.
+- **Où est le produit ?** (Ctrl + K, aussi pour les caissiers) : le meuble clignote sur le plan et la case est montrée dans la vue de face ; scanner l'étiquette d'une case montre son contenu.
 - Stock : ajustements, inventaire, historique des mouvements.
 - Achats / réceptions avec coût moyen pondéré, fournisseurs.
 - Clients : dettes, règlements, relevé de compte.
@@ -187,7 +189,7 @@ Règles appliquées par le poste serveur (Rust), même sans Internet :
 - **Postes simultanés** : chaque appareil connecté (ce PC compris) occupe une place ; une connexion de trop est refusée. Un appareil sans signal depuis 3 minutes libère sa place. L'administrateur voit et déconnecte les postes (*Poste & réseau → Postes connectés*).
 - **Fonctions** : mode serveur et appareils du réseau (PRO), accès par Internet (PRO), écran client (PRO), logo (PRO).
 
-Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), et les fonctions `supabase/functions/gm-license` et `supabase/functions/gm-pay` (*Verify JWT* désactivé pour les deux). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
+Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_types_commerce.sql` (types de boutique = types de commerce de l'application), `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), et les fonctions `supabase/functions/gm-license` et `supabase/functions/gm-pay` (*Verify JWT* désactivé pour les deux). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
 
 Réglages d'Eden Dev (table `gm_config`) :
 
@@ -265,7 +267,7 @@ gestimarket/
 │   │   ├── rpc.rs            Point d'entrée unique : dispatch(commande, droits, PIN)
 │   │   ├── services/         Logique métier : catalog, sales, cash, stock, purchases, partners,
 │   │   │                     reports, settings, templates (catalogue + types de commerce),
-│   │   │                     users, auth, audit, backup, media, locations
+│   │   │                     users, auth, audit, backup, media, locations, plan (plan de la boutique)
 │   │   ├── network.rs        Serveur HTTP / HTTPS (axum), certificat auto-signé, ressources
 │   │   ├── live.rs           Présence des postes et tickets en cours (mémoire)
 │   │   ├── cloud.rs          Publication de l'adresse du serveur sur Supabase
@@ -300,6 +302,7 @@ SQLite, migrations versionnées (`PRAGMA user_version`, clés étrangères véri
 | 003 | Catégories hiérarchiques (parent, ordre) |
 | 004 | Code PIN des utilisateurs |
 | 005 | Catalogue v2 : catégories actives, marque, référence, conditionnements, quantités en unités de base |
+| 006 | Plan de la boutique : niveaux (`store_floors`), palette de meubles (`fixture_types`), meubles posés en mètres (`fixtures`), cases étage × case (`locations`), autres emplacements d'un produit (`product_locations`) ; les anciens blocs deviennent des gondoles |
 
 Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix TTC, dates locales.
 
@@ -328,6 +331,9 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Plusieurs boutiques sur un même PC (5 au maximum)
 - [x] Comptes boutique, formules FREE / STARTER / PRO / BUSINESS, licences signées Ed25519, lecture seule à l'expiration, postes simultanés
 - [x] Paiement des abonnements : carte de bon (activation immédiate), Orange Money (Sarali), carte Visa (Cybersource) ; formule supérieure immédiate
+- [x] Plan de la boutique façon architecte (meubles, frigos, réserve, meubles personnalisés, poser / prendre), 22 types de commerce
+- [ ] Français / anglais et utilisation dans tous les pays (devises, taxes, paiements mobiles configurables) : version 0.12
+- [ ] Retours et avoirs, prix de gros et promotions, rapport Z, dépenses, bons de commande, variantes, codes-barres de balance, imprimante thermique
 - [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées
 - [ ] Tableau de bord Eden Dev, paiement mobile automatique, tunnels créés automatiquement par boutique, mises à jour signées
 - [ ] Application mobile FlutterFlow (WebView) à construire et tester sur de vrais téléphones

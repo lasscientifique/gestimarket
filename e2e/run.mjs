@@ -230,6 +230,36 @@ try {
   cloud = await rpc("cloud_publish_now", {}, admin);
   check("tunnel rétabli : « Internet disponible » de nouveau", cloud.public_ok === true, cloud.public_error ?? "");
   await shot(phone, "07-telephone-reconnecte.png");
+
+  // ── Plan de la boutique : salle, porte, frigo et gondole posés ; produit rangé ; plan et recherche
+  const plan = await rpc("plan_get", {}, admin);
+  const typeOf = (code) => plan.types.find((t) => t.code === code);
+  check(
+    "palette du plan : gondoles, frigos, congélateurs, vitrines, chambre froide, murs, portes…",
+    plan.types.filter((t) => t.builtin).length >= 25 && ["gondole", "refrigerateur", "congelateur_coffre", "vitrine_refrigeree", "chambre_froide", "mur", "porte"].every(typeOf),
+    String(plan.types.length),
+  );
+  await rpc("plan_save_fixture", { id: null, input: { type_id: typeOf("zone_vente").id, x: 0.5, y: 0.5, w: 14, h: 9 } }, admin);
+  await rpc("plan_save_fixture", { id: null, input: { type_id: typeOf("porte").id, x: 6, y: 9.4 } }, admin);
+  const fridge = await rpc("plan_save_fixture", { id: null, input: { type_id: typeOf("refrigerateur").id, x: 1.5, y: 1.5 } }, admin);
+  await rpc("plan_save_fixture", { id: null, input: { type_id: typeOf("gondole").id, x: 5, y: 3 } }, admin);
+  const coca = await rpc("save_product", { id: null, input: { name: "Coca-Cola 33 cl", purchase_price: 300, sale_price: 500, initial_stock: 48 } }, admin);
+  const slots = (await rpc("plan_fixture_contents", { id: fridge.id }, admin)).slots;
+  check("frigo posé sur le plan : FR1, 5 étages", fridge.code === "FR1" && slots.length === 5, `${fridge.code} ${slots.length}`);
+  const places = await rpc("plan_put", { input: { product_id: coca.id, location_id: slots.find((s) => s.level === 3).id } }, admin);
+  check(
+    "produit posé au 3e étage du frigo (emplacement principal)",
+    places.length === 1 && places[0].primary && places[0].fixture_code === "FR1" && places[0].level === 3,
+    JSON.stringify(places[0] ?? {}),
+  );
+  await pc.goto(`${SRV}/#/locations`);
+  await seen(pc, "Plan de la boutique", "Salle de vente");
+  await seen(pc, "Plan de la boutique", "FR1");
+  await shot(pc, "08-plan-de-la-boutique.png");
+  await pc.goto(`${SRV}/#/finder`);
+  await pc.locator(".finder-search input").fill("Coca");
+  await seen(pc, "Localiser un produit", "Réfrigérateur vitré FR1");
+  await shot(pc, "09-localiser-un-produit.png");
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

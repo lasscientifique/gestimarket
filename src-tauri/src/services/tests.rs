@@ -735,7 +735,7 @@ fn catalogue_business_types_and_category_tree() {
     assert_eq!(r["settings"]["enabled_features"], "services");
     assert!(r["created"].as_i64().unwrap() > 0);
     let p = crate::rpc::dispatch(&state, &Origin::Remote(None), "business_profiles", json!({})).unwrap();
-    assert_eq!(p["profiles"].as_array().unwrap().len(), 11);
+    assert_eq!(p["profiles"].as_array().unwrap().len(), 22);
 }
 
 #[test]
