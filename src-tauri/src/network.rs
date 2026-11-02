@@ -258,7 +258,8 @@ async fn media_handler(
         if route == "internet" && state.user(&Origin::Remote(token)).is_none() {
             return Err(StatusCode::UNAUTHORIZED);
         }
-        crate::services::media::get(&state.conn(), id).ok().flatten().ok_or(StatusCode::NOT_FOUND)
+        let found = crate::services::media::get(&state.conn(), id).ok().flatten();
+        found.ok_or(StatusCode::NOT_FOUND)
     })
     .await
     .unwrap_or(Err(StatusCode::INTERNAL_SERVER_ERROR));
