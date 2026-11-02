@@ -30,15 +30,22 @@ export function ConnChip({ compact }: { compact?: boolean }) {
         <span>{compact ? "Hors ligne" : "Serveur injoignable"}</span>
       </span>
     );
-  const via = !isServer && !isLocal && p.route ? (p.route === "internet" ? " · Internet" : " · Réseau local") : "";
+  const route = !isServer && !isLocal ? p.route : null;
+  const via = route ? (route === "internet" ? " · Internet" : " · Réseau local") : "";
   const label = isServer
     ? `Serveur actif · ${p.postesOnline} poste(s)`
     : isLocal
       ? "Poste unique"
       : `Synchronisé${via}${compact || p.latency == null ? "" : ` · ${p.latency} ms`}`;
   return (
-    <span className="conn-chip ok" title={isServer || isLocal ? "" : "Connecté au poste serveur : les données sont partagées en temps réel."}>
+    <span
+      className="conn-chip ok"
+      data-route={route ?? undefined}
+      title={isServer || isLocal ? "" : `Connecté au poste serveur${route === "internet" ? " par Internet" : route ? " sur le réseau local" : ""} : les données sont partagées en temps réel.`}
+    >
       <span className="dot" />
+      {/* Icône de route : reste visible sur téléphone, où le texte de la pastille est masqué. */}
+      {route === "internet" ? <Globe size={13} aria-label="Internet" /> : route ? <Wifi size={13} aria-label="Réseau local" /> : null}
       <span>{label}</span>
     </span>
   );

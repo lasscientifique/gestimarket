@@ -87,12 +87,23 @@ async function device(browser, { name, url, token, viewport, userAgent, mobile, 
 
 async function seen(page, label, text, timeout = 45_000) {
   try {
-    await page.getByText(text, { exact: false }).first().waitFor({ state: "visible", timeout });
+    // Seulement les éléments visibles : la pastille existe en deux exemplaires (menu et barre mobile).
+    await page.locator(`:text("${text}"):visible`).first().waitFor({ state: "visible", timeout });
     check(`${label} : « ${text} »`, true);
     return true;
   } catch {
     check(`${label} : « ${text} »`, false, "texte absent");
     return false;
+  }
+}
+
+// Pastille de connexion visible avec la bonne route (data-route posé par ConnChip).
+async function chip(page, label, route, timeout = 45_000) {
+  try {
+    await page.locator(`.conn-chip.ok[data-route="${route}"]:visible`).first().waitFor({ state: "visible", timeout });
+    check(`${label} : pastille « ${route === "internet" ? "Internet" : "Réseau local"} »`, true);
+  } catch {
+    check(`${label} : pastille « ${route === "internet" ? "Internet" : "Réseau local"} »`, false, "pastille absente ou mauvaise route");
   }
 }
 
@@ -139,7 +150,8 @@ try {
 
   await seen(pc, "PC (réseau local)", "Synchronisé · Réseau local");
   await seen(tablet, "Tablette (réseau local)", "Synchronisé · Réseau local");
-  await seen(phone, "Téléphone (Internet)", "Synchronisé · Internet");
+  await chip(phone, "Téléphone (Internet)", "internet");
+  await chip(pc, "PC (réseau local)", "local");
   await seen(phone, "Téléphone (Internet)", "Hors du réseau du magasin");
   await seen(server, "Poste serveur", "Réseau local disponible");
   await seen(server, "Poste serveur", "Internet disponible");
@@ -175,7 +187,8 @@ try {
   // ── Retour du tunnel : le téléphone se reconnecte seul, sans recharger la page
   tunnel = startMock("tunnel");
   await waitUp(`${PUB}/api/ping`);
-  await seen(phone, "Téléphone (tunnel rétabli, sans recharger)", "Synchronisé · Internet", 40_000);
+  await chip(phone, "Téléphone (tunnel rétabli, sans recharger)", "internet", 40_000);
+  await seen(phone, "Téléphone (tunnel rétabli, sans recharger)", "Connecté au serveur");
   cloud = await rpc("cloud_publish_now", {}, admin);
   check("tunnel rétabli : « Internet disponible » de nouveau", cloud.public_ok === true, cloud.public_error ?? "");
   await shot(phone, "07-telephone-reconnecte.png");
