@@ -785,6 +785,14 @@ fn live_cart_take_over_between_cashiers() {
     assert_eq!(r["online"], 1);
     assert!(rpc(&anon, "list_postes", json!({})).is_err(), "liste réservée aux utilisateurs connectés");
     assert_eq!(rpc(&fatou, "list_postes", json!({})).unwrap()["postes"][0]["ip"], "192.168.1.30");
+    assert_eq!(rpc(&fatou, "list_postes", json!({})).unwrap()["postes"][0]["route"], "local");
+    // Téléphone passé par le tunnel : route « internet » renvoyée au poste et affichée dans la liste
+    let r = rpc(&anon, "poste_heartbeat", json!({"id": "tel-1", "name": "Téléphone 1", "kind": "mobile", "__ip": "41.73.10.20", "__route": "internet"})).unwrap();
+    assert_eq!(r["route"], "internet");
+    let postes = rpc(&fatou, "list_postes", json!({})).unwrap()["postes"].clone();
+    let tel = postes.as_array().unwrap().iter().find(|p| p["id"] == "tel-1").unwrap().clone();
+    assert_eq!(tel["route"], "internet");
+    assert_eq!(tel["ip"], "41.73.10.20");
     // Mariam encaisse ; Fatou la voit et reprend son client
     let cart = json!({"lines": [{"product_id": 1, "packaging_id": null, "name": "Riz", "unit": "pce", "quantity": 2.0, "unit_price": 650, "discount": 0, "total": 1300}], "customer": null, "discount": 0, "total": 1300, "items": 2.0});
     rpc(&mariam, "live_cart_update", json!({"poste_id": "p-m", "poste": "Caisse 1", "cart": cart, "status": "payment"})).unwrap();

@@ -265,3 +265,39 @@ async fn asset_handler(State(app): State<AppHandle>, uri: Uri) -> Response {
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::client_route;
+    use axum::http::{HeaderMap, HeaderValue};
+    use std::net::SocketAddr;
+
+    fn headers(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(*k, HeaderValue::from_static(v));
+        }
+        h
+    }
+
+    #[test]
+    fn route_tunnel_cloudflare() {
+        let lo: SocketAddr = "127.0.0.1:50000".parse().unwrap();
+        assert_eq!(client_route(&lo, &headers(&[("cf-connecting-ip", "41.73.10.20"), ("cf-ray", "abc")])), ("41.73.10.20".to_string(), "internet"));
+        assert_eq!(client_route(&lo, &headers(&[("cf-ray", "abc")])), ("127.0.0.1".to_string(), "internet"));
+        assert_eq!(client_route(&lo, &headers(&[("x-forwarded-for", "41.73.10.21, 10.0.0.1")])), ("41.73.10.21".to_string(), "internet"));
+    }
+
+    #[test]
+    fn route_reseau_local() {
+        let lo: SocketAddr = "127.0.0.1:50000".parse().unwrap();
+        assert_eq!(client_route(&lo, &HeaderMap::new()), ("127.0.0.1".to_string(), "local"));
+        let lan: SocketAddr = "192.168.1.30:50000".parse().unwrap();
+        assert_eq!(client_route(&lan, &HeaderMap::new()), ("192.168.1.30".to_string(), "local"));
+        // En-têtes Cloudflare forgés depuis le réseau local : ignorés.
+        assert_eq!(client_route(&lan, &headers(&[("cf-connecting-ip", "8.8.8.8"), ("cf-ray", "x")])), ("192.168.1.30".to_string(), "local"));
+        // IPv4 vue en IPv6 (::ffff:192.168.1.30) : même adresse.
+        let mapped: SocketAddr = "[::ffff:192.168.1.30]:50000".parse().unwrap();
+        assert_eq!(client_route(&mapped, &HeaderMap::new()), ("192.168.1.30".to_string(), "local"));
+    }
+}
