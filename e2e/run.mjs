@@ -135,13 +135,17 @@ try {
   check("faux tunnel démarré (ping via :8080)", await waitUp(`${PUB}/api/ping`));
 
   // ── Première configuration et compte administrateur (par RPC, comme l'écran « Première configuration »)
+  // Sans licence (FREE) : 1 seul poste. On garde la session de la configuration jusqu'à l'installation de la licence.
+  let setupToken = null;
   if (await rpc("needs_setup")) {
-    await rpc("initial_setup", {
+    setupToken = (await rpc("initial_setup", {
       input: { shop_name: "Eden Superrette", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin E2E", username: "admin", password: "secret123" },
-    });
+    })).token;
   }
   const login = async () => (await rpc("login", { username: "admin", password: "secret123" })).token;
-  const admin = await login();
+  const admin = setupToken ?? (await login());
+  const second = await rpc("login", { username: "admin", password: "secret123" }).then(() => "acceptée", (e) => e.message);
+  check("sans licence : une 2ᵉ session est refusée (FREE, 1 poste)", second.includes("Nombre maximal"), second);
   try {
     await rpc("set_my_pin", { password: "secret123", pin: PIN }, admin);
   } catch (e) {
