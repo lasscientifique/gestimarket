@@ -32,6 +32,65 @@ jobs:
       - run: cargo test
         working-directory: src-tauri
 
+  # Test d'interface : GestiMarket en mode serveur sous Xvfb, piloté par Playwright
+  # (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare).
+  # Les captures sont publiées dans une pré-release « e2e-N » (dépôt public : lisibles sans connexion).
+  e2e:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances système (WebKitGTK, Xvfb, ImageMagick)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb imagemagick
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Playwright (Chromium)
+        run: |
+          npm i --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Compilation (debug)
+        run: npx tauri build --debug --no-bundle
+      - name: Lancement en mode serveur sous Xvfb
+        run: |
+          mkdir -p ~/.local/share/com.gestimarket.app
+          echo '{"mode":"server","poste_name":"Caisse 1","port":7878,"server_url":""}' > ~/.local/share/com.gestimarket.app/network.json
+          Xvfb :99 -screen 0 1366x850x24 > /dev/null 2>&1 &
+          sleep 2
+          DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 nohup src-tauri/target/debug/gestimarket > e2e-app.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:7878/api/ping && break; sleep 2; done
+          curl -sf http://127.0.0.1:7878/api/ping || (cat e2e-app.log; exit 1)
+      - name: Scénario Playwright
+        run: LAN_IP=$(hostname -I | awk '{print $1}') node e2e/run.mjs
+      - name: Capture de la fenêtre du poste serveur (Xvfb)
+        if: always()
+        run: |
+          mkdir -p e2e/out
+          DISPLAY=:99 import -window root e2e/out/00-fenetre-serveur-xvfb.png || true
+          montage e2e/out/0*.png -tile 4x -geometry 480x+8+8 -background '#eeeeee' e2e/out/apercu.png || true
+          cp e2e-app.log e2e/out/ || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-captures
+          path: e2e/out
+      - name: Publier les captures (pré-release e2e)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "e2e-${{ github.run_number }}" e2e/out/* --target "${{ github.sha }}" --title "Test d'interface ${{ github.run_number }}" --notes "Captures Playwright sous Xvfb, résultats dans results.json." --prerelease
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: test
