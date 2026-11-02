@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod locations;
 pub mod media;
 pub mod partners;
+pub mod plan;
 pub mod purchases;
 pub mod reports;
 pub mod sales;

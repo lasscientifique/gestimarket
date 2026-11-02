@@ -230,6 +230,11 @@ pub struct Product {
     pub etage: Option<String>,
     pub rangee: Option<String>,
     pub location_label: Option<String>,
+    /// Meuble du plan où se trouve l'emplacement principal (« Réfrigérateur FR1 »).
+    pub fixture_id: Option<i64>,
+    pub fixture_name: Option<String>,
+    /// Nombre d'autres emplacements (réserve, frigo…).
+    pub other_places: i64,
     pub expiry_date: Option<String>,
     pub brand: Option<String>,
     /// Référence interne (ex. RIZ-001).
@@ -255,12 +260,14 @@ pub struct Packaging {
 const PRODUCT_SELECT: &str = "SELECT p.id, p.barcode, p.name, p.description, p.category_id, c.name,
         COALESCE(pc.color, c.color), pc.id, pc.name, p.supplier_id, s.name, p.unit, p.purchase_price, p.sale_price, p.tax_rate, p.stock,
         p.min_stock, p.track_stock, p.active, p.image_id, p.location_id, l.bloc, l.etage, l.rangee, l.label,
-        p.expiry_date, p.created_at, p.updated_at, p.brand, p.sku
+        p.expiry_date, p.created_at, p.updated_at, p.brand, p.sku,
+        l.fixture_id, fx.name, (SELECT COUNT(*) FROM product_locations pl WHERE pl.product_id = p.id)
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
     LEFT JOIN suppliers s ON s.id = p.supplier_id
-    LEFT JOIN locations l ON l.id = p.location_id";
+    LEFT JOIN locations l ON l.id = p.location_id
+    LEFT JOIN fixtures fx ON fx.id = l.fixture_id";
 
 fn product_from_row(r: &Row) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -289,6 +296,9 @@ fn product_from_row(r: &Row) -> rusqlite::Result<Product> {
         etage: r.get(22)?,
         rangee: r.get(23)?,
         location_label: r.get(24)?,
+        fixture_id: r.get(30)?,
+        fixture_name: r.get(31)?,
+        other_places: r.get(32)?,
         expiry_date: r.get(25)?,
         created_at: r.get(26)?,
         updated_at: r.get(27)?,

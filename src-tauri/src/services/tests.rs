@@ -418,7 +418,9 @@ fn import_products_creates_and_updates() {
     assert_eq!(sel.category_name.as_deref(), Some("Condiments"));
     assert_eq!(sel.parent_category_name.as_deref(), Some("Épicerie"));
     assert_eq!(sel.rangee.as_deref(), Some("3"));
-    assert_eq!(locations::list(&conn).unwrap().len(), 1);
+    // Rayon « 1 » créé sur le plan : 1 étage × 3 cases.
+    assert_eq!(sel.fixture_name.as_deref(), Some("Rayon 1"));
+    assert_eq!(locations::list(&conn).unwrap().len(), 3);
 }
 
 #[test]
@@ -481,7 +483,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 5);
+    assert_eq!(count("PRAGMA user_version"), 6);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -867,4 +869,116 @@ fn postes_limit_login_throttle_and_internet_restrictions() {
     let s = crate::rpc::dispatch(&state, &anon, "get_settings", net).unwrap();
     assert!(s.get("shop_name").is_some() && s.get("supabase_key").is_none() && s.get("om_merchant_number").is_none());
     assert!(crate::rpc::dispatch(&state, &anon, "get_settings", json!({})).unwrap().get("om_merchant_number").is_some());
+}
+
+#[test]
+fn store_plan_put_take_move_and_resize() {
+    let (mut conn, admin) = setup();
+    let types = plan::get(&conn).unwrap().types;
+    let fridge_type = types.iter().find(|t| t.code == "refrigerateur").unwrap().id;
+    let wall_type = types.iter().find(|t| t.code == "mur").unwrap().id;
+
+    // Frigo posé sur le plan : code FR1, 5 étages × 1 case, cases créées.
+    let fr = plan::create_fixture(&conn, Some(&admin), plan::FixtureInput { type_id: Some(fridge_type), x: Some(2.0), y: Some(3.0), ..Default::default() }).unwrap();
+    assert_eq!((fr.code.as_str(), fr.levels, fr.sections, fr.storage), ("FR1", 5, 1, true));
+    assert_eq!(plan::create_fixture(&conn, None, plan::FixtureInput { type_id: Some(fridge_type), ..Default::default() }).unwrap().code, "FR2");
+    let wall = plan::create_fixture(&conn, None, plan::FixtureInput { type_id: Some(wall_type), ..Default::default() }).unwrap();
+    assert!(!wall.storage);
+    let slots = plan::contents(&conn, fr.id).unwrap().slots;
+    assert_eq!(slots.len(), 5);
+    assert!(plan::contents(&conn, wall.id).unwrap().slots.is_empty(), "un mur n'a pas de cases");
+    let slot = |level: i64| slots.iter().find(|s| s.level == level).unwrap().id;
+
+    // Poser : 1er emplacement = principal ; 2e = autre emplacement (rayon + frigo).
+    let p = product(&mut conn, &admin, "Coca 33cl", 300, 500, 24.0);
+    let places = plan::put(&mut conn, &admin, plan::PutInput { product_id: p, location_id: slot(3), from_location_id: None, primary: None }).unwrap();
+    assert_eq!(places.len(), 1);
+    assert!(places[0].primary);
+    assert_eq!(plan::slot_text(&conn, slot(3)).unwrap(), "Réfrigérateur vitré FR1 · Étage 3");
+    let places = plan::put(&mut conn, &admin, plan::PutInput { product_id: p, location_id: slot(1), from_location_id: None, primary: None }).unwrap();
+    assert_eq!(places.iter().map(|x| (x.level, x.primary)).collect::<Vec<_>>(), vec![(3, true), (1, false)]);
+    let prod = catalog::get_product(&conn, p).unwrap();
+    assert_eq!((prod.fixture_name.as_deref(), prod.other_places), (Some("Réfrigérateur vitré FR1"), 1));
+    assert_eq!(plan::get(&conn).unwrap().fixtures.iter().find(|f| f.id == fr.id).unwrap().product_count, 1);
+
+    // Déplacer l'emplacement principal de l'étage 3 à l'étage 5.
+    let places = plan::put(&mut conn, &admin, plan::PutInput { product_id: p, location_id: slot(5), from_location_id: Some(slot(3)), primary: None }).unwrap();
+    assert_eq!(places.iter().map(|x| (x.level, x.primary)).collect::<Vec<_>>(), vec![(5, true), (1, false)]);
+    // L'autre emplacement devient principal.
+    let places = plan::set_primary(&mut conn, &admin, p, slot(1)).unwrap();
+    assert_eq!(places.iter().map(|x| (x.level, x.primary)).collect::<Vec<_>>(), vec![(1, true), (5, false)]);
+
+    // Réduire le frigo à 2 étages : refusé (étage 5 occupé). Prendre le produit de l'étage 5, puis réduire.
+    let shrink = |conn: &mut Connection| plan::update_fixture(conn, &admin, fr.id, plan::FixtureInput { levels: Some(2), ..Default::default() });
+    assert!(shrink(&mut conn).unwrap_err().to_string().contains("contiennent encore des produits"));
+    let places = plan::take(&mut conn, &admin, p, slot(5)).unwrap();
+    assert_eq!(places.len(), 1);
+    let fr2 = shrink(&mut conn).unwrap();
+    assert_eq!(fr2.levels, 2);
+    assert_eq!(plan::contents(&conn, fr.id).unwrap().slots.len(), 2);
+    // Changer le code du meuble change le libellé de ses cases.
+    plan::update_fixture(&mut conn, &admin, fr.id, plan::FixtureInput { code: Some("frb".into()), name: Some("Frigo boissons".into()), ..Default::default() }).unwrap();
+    assert_eq!(catalog::get_product(&conn, p).unwrap().bloc.as_deref(), Some("FRB"));
+    assert!(plan::update_fixture(&mut conn, &admin, fr.id, plan::FixtureInput { code: Some("FR2".into()), ..Default::default() }).is_err(), "code déjà pris");
+
+    // Glisser-déposer : position, taille, rotation.
+    plan::move_fixtures(&mut conn, vec![plan::Geometry { id: fr.id, x: 8.5, y: 1.0, w: 0.8, h: 0.7, rotation: -90 }]).unwrap();
+    let moved = plan::get_fixture(&conn, fr.id).unwrap();
+    assert_eq!((moved.x, moved.rotation), (8.5, 270));
+
+    // Supprimer le meuble : le produit garde son autre emplacement, qui devient principal.
+    let other = plan::create_fixture(&conn, None, plan::FixtureInput { type_id: Some(fridge_type), ..Default::default() }).unwrap();
+    let other_slot = plan::contents(&conn, other.id).unwrap().slots[0].id;
+    plan::put(&mut conn, &admin, plan::PutInput { product_id: p, location_id: other_slot, from_location_id: None, primary: None }).unwrap();
+    assert_eq!(plan::delete_fixture(&mut conn, &admin, fr.id).unwrap(), 1);
+    let places = plan::product_places(&conn, p).unwrap();
+    assert_eq!((places.len(), places[0].primary, places[0].fixture_id), (1, true, other.id));
+
+    // Meuble personnalisé : créé, posé, puis impossible à supprimer tant qu'il est posé.
+    let custom = plan::save_type(&conn, &admin, None, plan::TypeInput {
+        name: "Frigo à boissons Coca".into(), category: "froid".into(), prefix: "fb".into(), color: "#dc2626".into(),
+        width: 0.6, depth: 0.6, levels: 4, sections: 2,
+    }).unwrap();
+    let fb = plan::create_fixture(&conn, None, plan::FixtureInput { type_id: Some(custom), ..Default::default() }).unwrap();
+    assert_eq!((fb.code.as_str(), fb.levels * fb.sections), ("FB1", 8));
+    assert!(plan::delete_type(&conn, &admin, custom).is_err());
+    plan::delete_fixture(&mut conn, &admin, fb.id).unwrap();
+    plan::delete_type(&conn, &admin, custom).unwrap();
+    assert!(plan::delete_type(&conn, &admin, fridge_type).is_err(), "meuble de base");
+
+    // Niveaux du bâtiment : le dernier ne se supprime pas.
+    let first = plan::get(&conn).unwrap().floors[0].id;
+    let up = plan::save_floor(&conn, &admin, None, plan::FloorInput { name: "1er étage".into(), width: 15.0, depth: 10.0 }).unwrap();
+    assert_eq!(plan::get(&conn).unwrap().floors.len(), 2);
+    plan::delete_floor(&conn, &admin, up).unwrap();
+    assert!(plan::delete_floor(&conn, &admin, first).is_err());
+}
+
+#[test]
+fn migration_6_turns_blocs_into_plan_fixtures() {
+    let conn = Connection::open_in_memory().unwrap();
+    for i in 0..5 {
+        conn.execute_batch(db::migration_sql(i)).unwrap();
+    }
+    conn.execute_batch("PRAGMA user_version = 5; PRAGMA foreign_keys = ON;").unwrap();
+    conn.execute_batch(
+        "INSERT INTO locations (id, bloc, etage, rangee, label) VALUES
+             (1, 'A', '1', '1', 'Boissons'), (2, 'A', '1', '2', NULL), (3, 'A', '2', '1', NULL), (4, 'B', '', '', NULL);
+         INSERT INTO products (id, name, sale_price, location_id) VALUES (1, 'Coca', 500, 3), (2, 'Riz', 900, 4), (3, 'Sel', 200, NULL);",
+    )
+    .unwrap();
+    db::migrate_for_test(&conn).unwrap();
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(count("PRAGMA user_version"), 6);
+    assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
+    assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
+    // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
+    assert_eq!(count("SELECT COUNT(*) FROM locations l JOIN fixtures f ON f.id = l.fixture_id WHERE f.code = 'A'"), 4);
+    let coca = catalog::get_product(&conn, 1).unwrap();
+    assert_eq!((coca.bloc.as_deref(), coca.etage.as_deref(), coca.rangee.as_deref()), (Some("A"), Some("2"), Some("1")));
+    assert_eq!(coca.fixture_name.as_deref(), Some("Boissons"));
+    let riz = catalog::get_product(&conn, 2).unwrap();
+    assert_eq!(riz.fixture_name.as_deref(), Some("Rayon B"));
+    assert_eq!(plan::product_places(&conn, 1).unwrap()[0].level, 2);
+    assert_eq!(locations::list(&conn).unwrap().len(), 5);
 }

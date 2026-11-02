@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use crate::error::{invalid, AppError, AppResult};
 use crate::services::{
-    audit, auth, backup, cash, catalog, locations, media, partners, purchases, reports, sales, settings, stock, templates,
+    audit, auth, backup, cash, catalog, locations, media, partners, plan, purchases, reports, sales, settings, stock, templates,
     users,
 };
 use crate::state::{Access, AppState, Origin};
@@ -277,9 +277,8 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(media::save(c, &arg::<String>(&a, "mime")?, &arg::<String>(&a, "data")?)?)
         }),
 
-        // ───── Emplacements ─────
+        // ───── Emplacements et plan de la boutique ─────
         "list_locations" => run(Any, &|c, _| out(locations::list(c)?)),
-        "save_location" => run(Manager, &|c, u| out(locations::save(c, u, arg(&a, "id")?, arg(&a, "input")?)?)),
         "delete_location" => run(Manager, &|c, u| {
             confirm_pin(state, c, u, &a, 2, "Suppression d'emplacement")?;
             out(locations::delete(c, u, arg(&a, "id")?)?)
@@ -288,6 +287,32 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "assign_location" => run(Manager, &|c, u| {
             out(locations::assign(c, u, arg(&a, "location")?, arg(&a, "products")?)?)
         }),
+        "plan_get" => run(Any, &|c, _| out(plan::get(c)?)),
+        "plan_fixture_contents" => run(Any, &|c, _| out(plan::contents(c, arg(&a, "id")?)?)),
+        "product_places" => run(Any, &|c, _| out(plan::product_places(c, arg(&a, "product_id")?)?)),
+        "plan_save_floor" => run(Manager, &|c, u| out(plan::save_floor(c, u, arg(&a, "id")?, arg(&a, "input")?)?)),
+        "plan_delete_floor" => run(Manager, &|c, u| {
+            confirm_pin(state, c, u, &a, 2, "Suppression d'un niveau du plan")?;
+            out(plan::delete_floor(c, u, arg(&a, "id")?)?)
+        }),
+        "plan_save_fixture" => run(Manager, &|c, u| match arg::<Option<i64>>(&a, "id")? {
+            Some(id) => out(plan::update_fixture(c, u, id, arg(&a, "input")?)?),
+            None => out(plan::create_fixture(c, Some(u), arg(&a, "input")?)?),
+        }),
+        "plan_move_fixtures" => run(Manager, &|c, _| out(plan::move_fixtures(c, arg(&a, "items")?)?)),
+        "plan_delete_fixture" => run(Manager, &|c, u| {
+            let id: i64 = arg(&a, "id")?;
+            // Meuble garni : confirmation par PIN (les produits perdent cet emplacement).
+            if plan::get_fixture(c, id)?.product_count > 0 {
+                confirm_pin(state, c, u, &a, 2, "Suppression d'un meuble garni")?;
+            }
+            out(plan::delete_fixture(c, u, id)?)
+        }),
+        "plan_save_type" => run(Manager, &|c, u| out(plan::save_type(c, u, arg(&a, "id")?, arg(&a, "input")?)?)),
+        "plan_delete_type" => run(Manager, &|c, u| out(plan::delete_type(c, u, arg(&a, "id")?)?)),
+        "plan_put" => run(Manager, &|c, u| out(plan::put(c, u, arg(&a, "input")?)?)),
+        "plan_take" => run(Manager, &|c, u| out(plan::take(c, u, arg(&a, "product_id")?, arg(&a, "location_id")?)?)),
+        "plan_set_primary" => run(Manager, &|c, u| out(plan::set_primary(c, u, arg(&a, "product_id")?, arg(&a, "location_id")?)?)),
 
         // ───── Stock ─────
         "adjust_stock" => run(Manager, &|c, u| {

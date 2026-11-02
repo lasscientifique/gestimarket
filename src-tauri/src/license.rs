@@ -463,7 +463,7 @@ const READ: &[&str] = &[
     "list_users", "list_categories", "list_products", "get_product", "scan_code", "find_product_by_barcode",
     "list_locations", "list_stock_movements", "stock_summary", "list_suppliers", "list_customers", "customer_statement",
     "list_sales", "get_sale", "list_electronic_payments", "list_purchases", "get_purchase", "current_cash_session",
-    "list_cash_movements", "cashier_stats", "list_cash_sessions",
+    "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places",
 ];
 
 pub fn command_allowed_read_only(cmd: &str) -> bool {
