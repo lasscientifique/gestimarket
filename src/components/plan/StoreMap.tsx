@@ -206,7 +206,10 @@ export function StoreMap({
   };
 
   const unit = Math.max(view.w, view.h) / 100; // ≈ 1 % de la vue : traits et textes lisibles à tout zoom
-  const label = (f: Fixture) => Math.min(Math.max(Math.min(f.w, f.h) * 0.45, unit * 1.2), unit * 3);
+  // Code d'un meuble : lisible même sur un petit meuble (le texte peut déborder, avec un contour).
+  const label = (f: Fixture) => Math.min(Math.max(Math.min(f.w, f.h) * 0.5, unit * 2.1), unit * 4);
+  // Les textes sont dessinés à 100× puis réduits : sinon Chromium serre les lettres des très petites tailles.
+  const T = 100;
 
   return (
     <div className="store-map" style={{ height }}>
@@ -251,7 +254,7 @@ export function StoreMap({
           const isText = f.type_code === "texte";
           const cx = f.x + f.w / 2;
           const cy = f.y + f.h / 2;
-          const fs = isZone ? Math.min(unit * 2.2, f.h * 0.3) : label(f);
+          const fs = isZone ? Math.min(unit * 2.4, f.h * 0.3) : label(f);
           return (
             <g key={f.id} className={`map-fixture cat-${f.category}${sel ? " selected" : ""}${hl ? " highlight" : ""}${editable ? " editable" : ""}`}>
               <g
@@ -282,9 +285,11 @@ export function StoreMap({
               {(f.storage || isZone || isText || f.type_code === "caisse") && (
                 <g className="map-label" pointerEvents="none">
                   <text
-                    x={isZone ? f.x + unit : cx}
-                    y={isZone ? f.y + fs * 1.1 : cy}
-                    fontSize={fs}
+                    transform={`scale(${1 / T})`}
+                    x={(isZone ? f.x + unit : cx) * T}
+                    y={(isZone ? f.y + fs * 1.1 : cy) * T}
+                    fontSize={fs * T}
+                    strokeWidth={fs * T * 0.14}
                     textAnchor={isZone ? "start" : "middle"}
                     dominantBaseline={isZone ? "auto" : "central"}
                     className={isZone || isText ? "map-text dark" : "map-text"}
@@ -294,7 +299,15 @@ export function StoreMap({
                   {f.storage && f.product_count > 0 && (
                     <g>
                       <circle cx={f.x + f.w} cy={f.y} r={unit * 1.3} className="map-count" />
-                      <text x={f.x + f.w} y={f.y} fontSize={unit * 1.3} textAnchor="middle" dominantBaseline="central" className="map-count-text">
+                      <text
+                        transform={`scale(${1 / T})`}
+                        x={(f.x + f.w) * T}
+                        y={f.y * T}
+                        fontSize={unit * 1.3 * T}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        className="map-count-text"
+                      >
                         {f.product_count}
                       </text>
                     </g>

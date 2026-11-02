@@ -417,8 +417,8 @@ button.pick-item:hover { border-color: var(--accent); background: var(--accent-t
 .map-fixture > g:first-child { cursor: pointer; }
 .map-fixture.editable > g:first-child { cursor: move; }
 .map-fixture.cat-batiment > g:first-child rect { fill-opacity: 1; }
-.map-text { fill: #fff; font-weight: 800; paint-order: stroke; stroke: rgba(15, 23, 42, 0.55); stroke-width: 0.04px; font-family: inherit; }
-.map-text.dark { fill: var(--text); stroke: none; font-weight: 700; }
+.map-text { fill: #fff; font-weight: 800; paint-order: stroke; stroke: rgba(15, 23, 42, 0.7); stroke-linejoin: round; font-family: inherit; }
+.map-text.dark { fill: var(--text); stroke: var(--surface); font-weight: 700; }
 .map-count { fill: var(--accent-strong); stroke: #fff; stroke-width: 0.03px; }
 .map-count-text { fill: #fff; font-weight: 800; font-family: inherit; }
 .map-handle { fill: #fff; stroke: var(--accent-strong); stroke-width: 0.04px; cursor: nwse-resize; }

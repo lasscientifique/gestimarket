@@ -431,7 +431,14 @@ pub fn create_fixture(conn: &Connection, user: Option<&SessionUser>, input: Fixt
         Some(c) => check_code(conn, &c, 0)?,
         None => next_code(conn, &t.prefix)?,
     };
-    let name = db::clean(&input.name).unwrap_or_else(|| format!("{} {code}", short_name(&t.name)));
+    // Meuble : « Gondole GO1 » ; pièce, mur, porte… : « Salle de vente » (le code reste interne).
+    let name = db::clean(&input.name).unwrap_or_else(|| {
+        if t.storage {
+            format!("{} {code}", short_name(&t.name))
+        } else {
+            short_name(&t.name).to_string()
+        }
+    });
     let (levels, sections) = if t.storage {
         (input.levels.unwrap_or(t.levels).clamp(1, MAX_LEVELS), input.sections.unwrap_or(t.sections).clamp(1, MAX_SECTIONS))
     } else {
