@@ -82,6 +82,10 @@ export function StoreMap({
   const drag = useRef<Drag | null>(null);
   // Un déplacement de la vue ne désélectionne pas le meuble.
   const panned = useRef(false);
+  // Clic sur un meuble : le « click » qui suit arrive au fond du plan (capture du pointeur) et ne doit pas
+  // désélectionner. Double-clic détecté ici (deux appuis rapprochés) pour la même raison.
+  const pressedFixture = useRef(false);
+  const lastPress = useRef<{ id: number; t: number } | null>(null);
 
   useEffect(() => setView(fit()), [floor.id, fit]);
   useEffect(() => setOverride({}), [fixtures]);
@@ -126,6 +130,7 @@ export function StoreMap({
   const onBackgroundDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     panned.current = false;
+    pressedFixture.current = false;
     (e.currentTarget as Element).setPointerCapture(e.pointerId);
     drag.current = { kind: "pan", startX: e.clientX, startY: e.clientY, view, moved: false };
   };
@@ -133,6 +138,14 @@ export function StoreMap({
   const onFixtureDown = (e: ReactPointerEvent, f: Fixture) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    pressedFixture.current = true;
+    const now = Date.now();
+    if (lastPress.current && lastPress.current.id === f.id && now - lastPress.current.t < 450) {
+      lastPress.current = null;
+      onOpen?.(f);
+      return;
+    }
+    lastPress.current = { id: f.id, t: now };
     onSelect?.(f);
     if (!editable) return;
     svgRef.current?.setPointerCapture(e.pointerId);
@@ -225,8 +238,9 @@ export function StoreMap({
         onPointerUp={onUp}
         onPointerCancel={onUp}
         onClick={(e) => {
-          if (panned.current) {
+          if (panned.current || pressedFixture.current) {
             panned.current = false;
+            pressedFixture.current = false;
             return;
           }
           if (e.target === e.currentTarget || (e.target as Element).classList.contains("map-floor")) onSelect?.(null);
@@ -260,10 +274,6 @@ export function StoreMap({
               <g
                 transform={`rotate(${f.rotation} ${cx} ${cy})`}
                 onPointerDown={(e) => onFixtureDown(e, f)}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  onOpen?.(f);
-                }}
               >
                 <rect
                   x={f.x}
