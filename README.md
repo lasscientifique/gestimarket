@@ -4,10 +4,10 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.13.0**
+- Version actuelle : **0.14.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
-> État des tests : 44 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, hauteurs et dessins 3D, assistant « Créer ma boutique » pour les 4 côtés d'entrée sans chevauchement, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. La vue 3D a été vérifiée à l'écran sur une boutique d'exemple (vue d'ensemble, visite, déplacement refusé sur un meuble, chemin vers un produit, miniatures de la palette) ; sa fluidité sur un PC modeste n'a pas été mesurée. Test d'interface de bout en bout sous Xvfb avec Playwright : 40 vérifications sur 40 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan, plan en 3D affiché par WebGL logiciel, visite, boutique dessinée par l'assistant). Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
+> État des tests : 51 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, hauteurs et dessins 3D, assistant « Créer ma boutique » pour les 4 côtés d'entrée sans chevauchement, plan proposé pour chacun des 22 types de commerce, les 462 paires et des trios d'activités sans chevauchement ni débordement, hauteur sous plafond, étage, dessin du bâtiment, personnel par identifiant et PIN, équipe par défaut, validation par le responsable choisi, blocage par compte, suppression, téléphones autorisés et codes d'accès, mise à jour depuis la 0.13, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. La vue 3D a été vérifiée à l'écran sur une boutique d'exemple (vue d'ensemble, visite, déplacement refusé sur un meuble, chemin vers un produit, miniatures de la palette) ; sa fluidité sur un PC modeste n'a pas été mesurée. Test d'interface de bout en bout sous Xvfb avec Playwright : 49 vérifications sur 49 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan, plan en 3D affiché par WebGL logiciel, visite, plan proposé pour supérette + quincaillerie et gardé, équipe par défaut, plus de mot de passe, téléphone refusé puis autorisé par code d'accès sur l'écran de connexion, page Personnel). L'export PNG / PDF et l'import d'un dessin en PDF n'ont pas encore été essayés sur un vrai poste. Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
 
 ---
 
@@ -50,7 +50,10 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 ### Magasin
 - **Plan de la boutique**, comme un plan d'architecte, à l'échelle en mètres : niveaux du bâtiment (rez-de-chaussée, étage, entrepôt), pièces (salle de vente, réserve…), murs, portes, caisse, et une **palette de meubles** à glisser sur le plan : gondoles, têtes de gondole, étagères murales, réfrigérateurs, congélateurs, vitrines réfrigérées, chambres froides, présentoirs, bacs vrac, palettes, portants, racks, armoires, armoires à tiroirs, vitrines fermées, comptoirs, **et des meubles personnalisés** créés par la boutique. Déplacer, redimensionner, tourner, dupliquer, annuler / rétablir, imprimer le plan.
 - **Plan en 3D réaliste** (vues *Dessus*, *3D* et *Visite*) : chaque meuble est dessiné à ses vraies dimensions et garni de ses produits (couleur de leur catégorie, photo en option) : gondoles double face avec tablettes et bandes de prix, frigos à portes vitrées éclairés, congélateurs coffres à couvercles vitrés, vitrines réfrigérées bombées, chambres froides, racks de réserve avec palettes, portants avec vêtements, bacs vrac, caisse avec tapis et écran, murs, portes vitrées, fenêtres, escaliers ; sol en carrelage, béton, parquet ou lino. Tourner autour, zoomer, murs coupés pour voir l'intérieur ; **visite** à hauteur d'homme (flèches, Z Q S D ou boutons à l'écran). Qualité *Réaliste* (ombres) ou *Simple* (PC modeste) ; plan vu de dessus si l'appareil n'a pas de 3D.
-- **Très facile à dessiner** : assistant **« Créer ma boutique »** en 3 questions (taille de la salle, côté de l'entrée, type de commerce) qui pose murs, entrée, caisse, froid, étagères, allées et réserve ; en 3D, un meuble glissé s'aimante aux murs et à ses voisins et revient à sa place s'il en chevauche un autre ; **Répéter ×3** pour une rangée ; palette illustrée par l'image 3D de chaque meuble ; double-clic : la porte du frigo s'ouvre et ses cases s'affichent.
+- **Plan de départ proposé pour chaque type de commerce ou combinaison** (jusqu'à 3 activités, ex. supérette + quincaillerie) : à la première configuration, GestiMarket dessine la boutique à la taille habituelle de l'activité ; on donne les vraies dimensions de la salle (**longueur, largeur, hauteur sous plafond**) et le côté de l'entrée, l'aperçu 3D se redessine aussitôt, puis « Garder ce plan ». Une salle partagée est découpée en **rayons** (60/40 ou 50/25/25), chacun avec ses meubles et son nom au sol ; un meuble plus haut que le plafond est abaissé ; un niveau à l'étage reçoit un escalier.
+- **Export** du plan en **photo (PNG)** (vue 3D ou plan) et en **PDF détaillé** : plan coté (longueur, largeur, échelle, meubles numérotés), hauteur sous plafond et surface, liste des meubles avec leurs dimensions, vue 3D, contenu de chaque meuble en option.
+- **Dessin du bâtiment** : la photo ou le PDF du plan de l'architecte s'affiche sous le plan, se recale par une mesure connue (deux clics sur un mur et sa longueur), se décale et s'éclaircit ; on pose les meubles par-dessus.
+- **Très facile à dessiner** : assistant **« Créer ma boutique »** (activités, dimensions, entrée, aperçu) qui pose murs, entrée, caisse, froid, étagères, allées et réserve ; en 3D, un meuble glissé s'aimante aux murs et à ses voisins et revient à sa place s'il en chevauche un autre ; **Répéter ×3** pour une rangée ; palette illustrée par l'image 3D de chaque meuble ; double-clic : la porte du frigo s'ouvre et ses cases s'affichent.
 - **Vue de face** de chaque meuble (étages × cases) : **poser** un produit dans une case, le **prendre** (retirer), le déplacer ; un produit peut avoir plusieurs emplacements (rayon, réserve, frigo) dont un principal ; étiquettes de cases avec QR code.
 - **Où est le produit ?** (Ctrl + K, aussi pour les caissiers) : en 3D, la caméra va au meuble, la case clignote et un **chemin vert au sol** mène de l'entrée au rayon ; la case est montrée dans la vue de face ; scanner l'étiquette d'une case montre son contenu.
 - Stock : ajustements, inventaire, historique des mouvements.
@@ -83,13 +86,17 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 |---|---|
 | **Caissier / caissière** | **Seul rôle qui vend** : caisse, clients, ses ventes, sa session de caisse, son tableau de bord |
 | **Gestionnaire** | Produits (ajout, modification, suppression), catégories, emplacements, stock, achats, fournisseurs. Ne vend pas |
-| **Administrateur** | Contrôle total : tableau de bord, rapports, utilisateurs, paramètres, annulations, clôture forcée d'une caisse. Ne vend pas |
+| **Administrateur** | Contrôle total : tableau de bord, rapports, personnel, paramètres, annulations, clôture forcée d'une caisse. Ne vend pas |
 
-- **Séparation des rôles** : les administrateurs et gestionnaires n'ouvrent pas de caisse. En cas de fuite de leur mot de passe, personne ne peut encaisser avec leurs droits élevés. La règle est appliquée côté serveur.
-- **Code PIN** pour chaque utilisateur (haché Argon2) : connexion rapide et **confirmation de toute action critique** (annulation de vente, remise, suppression d'article, changement de prix, archivage, ajustement de stock, clôture de caisse, paramètres, changement de réseau…). Un responsable peut valider l'action d'un autre ; c'est tracé.
-- Blocage temporaire après 5 PIN erronés ; connexions limitées **par appareil** (5 échecs : 1 min, puis 5 min, puis 30 min).
-- Depuis Internet (tunnel) : pas de connexion par PIN, pas de liste du personnel à l'écran de connexion, photos servies seulement avec une session, paramètres réduits au strict nécessaire avant connexion.
-- Mots de passe hachés Argon2 ; sessions réseau par jeton avec expiration.
+- **Personnel : identifiant et code PIN seulement**, sans mot de passe ni compte en ligne (seule la boutique a un compte chez Eden Dev). Chaque boutique démarre avec **un administrateur, un gestionnaire et une caissière** ; l'administrateur ajoute ensuite des gestionnaires et des caissières (identifiant et PIN proposés, **fiche d'accès** imprimable).
+- **PIN** haché Argon2 : 6 chiffres pour l'administrateur, 4 à 6 pour les autres. Chacun peut changer le sien ; l'administrateur en donne un nouveau, **bloque**, **supprime** (un compte qui a travaillé reste dans l'historique) et voit **les actions de chacun**.
+- **Confirmation de toute action critique** par PIN (annulation de vente, remise, suppression d'article, changement de prix, archivage, ajustement de stock, clôture de caisse, paramètres, changement de réseau…). Si la personne connectée n'a pas le droit, elle touche le nom du responsable, qui tape **son** PIN : deux personnes peuvent avoir le même code sans qu'une caissière valide à la place de l'administrateur. C'est tracé.
+- **Séparation des rôles** : les administrateurs et gestionnaires n'ouvrent pas de caisse. La règle est appliquée côté serveur.
+- Blocage temporaire **par compte** après 5 PIN faux (1 min, puis 5 min, puis 30 min) et **par appareil**.
+- **Depuis Internet** (tunnel) : le téléphone doit être **autorisé une fois**, par le compte boutique (téléphone de l'administrateur) ou par un **code d'accès de 8 lettres et chiffres** que l'administrateur génère pour une personne (une seule fois, 7 jours) ; ensuite identifiant + PIN suffisent. Accès Internet coché par personne ; téléphones listés et retirables (la session se ferme). Pas de liste du personnel à l'écran de connexion, photos servies seulement avec une session, paramètres réduits au strict nécessaire avant connexion.
+- **PIN administrateur oublié** : refait au magasin avec l'e-mail et le mot de passe du compte boutique.
+- Mise à jour depuis la 0.13 : les PIN existants restent valables et les mots de passe sont effacés ; un administrateur sans PIN utilise une dernière fois son ancien mot de passe pour créer son PIN.
+- Sessions réseau par jeton avec expiration ; jetons des téléphones et codes d'accès enregistrés hachés (SHA-256).
 - Journal d'activité de toutes les opérations sensibles.
 - Montants stockés en **unités mineures entières** (pas d'erreur d'arrondi) ; prix relus en base à chaque vente (le client ne fixe jamais un prix).
 
@@ -99,9 +106,8 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 ### Utilisateur final (Windows)
 1. Lancer `GestiMarket_x.y.z_x64-setup.exe`, ou décompresser la version portable (`gestimarket.exe` + `WebView2Loader.dll`).
-2. **Première configuration** : nom du commerce, devise, compte administrateur, type de commerce (avec création des catégories recommandées), puis code PIN.
-3. Créer au moins un **compte caissier** (menu Utilisateurs) : seul un caissier peut vendre.
-4. Chaque utilisateur définit son code PIN à sa première connexion.
+2. **Première configuration** : compte boutique Eden Dev, nom du commerce et devise, administrateur (identifiant et PIN de 6 chiffres), **équipe** (gestionnaire et caissière proposés, fiches d'accès à imprimer), **activités** (jusqu'à 3, avec les catégories recommandées), puis **plan de départ** aux dimensions de la salle.
+3. Chacun se connecte en touchant son nom puis en tapant son PIN (ou identifiant + PIN au clavier). D'autres postes s'ajoutent dans le menu **Personnel** : seule une caissière (ou un caissier) peut vendre.
 
 Les données sont dans le dossier de données de l'application (`gestimarket.db`). Une **sauvegarde automatique quotidienne** peut être activée vers une clé USB, un disque externe ou un dossier synchronisé (Paramètres → Sauvegarde).
 
@@ -155,7 +161,7 @@ Application FlutterFlow ──► WebView(url)  ──► GestiMarket
 
 ### Accès depuis Internet (tunnel Cloudflare)
 
-Chaque magasin garde son PC serveur ; un **tunnel Cloudflare** lui donne une adresse publique fixe en HTTPS (ex. `https://eden.mondomaine.com`), sans redirection de port. `cloudflared` est installé en service Windows (démarrage automatique) et relie `https://eden.mondomaine.com` à `http://localhost:7878`. L'adresse est saisie dans **Paramètres → Réseau & mobile → Adresse publique** et publiée dans Supabase (`public_url`). Il faut un domaine géré par Cloudflare, un sous-domaine par magasin. Protégez l'adresse avec Cloudflare Access et des PIN solides : une caisse est exposée sur Internet.
+Chaque magasin garde son PC serveur ; un **tunnel Cloudflare** lui donne une adresse publique fixe en HTTPS (ex. `https://eden.mondomaine.com`), sans redirection de port. `cloudflared` est installé en service Windows (démarrage automatique) et relie `https://eden.mondomaine.com` à `http://localhost:7878`. L'adresse est saisie dans **Paramètres → Réseau & mobile → Adresse publique** et publiée dans Supabase (`public_url`). Il faut un domaine géré par Cloudflare, un sous-domaine par magasin. Protégez l'adresse avec Cloudflare Access : une caisse est exposée sur Internet. Chaque téléphone doit être autorisé une fois (compte boutique ou code d'accès donné par l'administrateur) avant que l'identifiant et le PIN suffisent.
 
 ### Réseau local ou Internet : indication de la route
 
@@ -302,7 +308,7 @@ gestimarket/
 - **Transport** : `lib/transport.ts` choisit automatiquement l'appel local (Tauri), l'appel réseau (poste client) ou le navigateur (tablette, téléphone).
 
 ### Bibliothèques principales
-Tauri 2, rusqlite (SQLite intégré), argon2, axum + tower-http, axum-server (HTTPS rustls), rcgen, ureq, chrono · React 19, react-router (HashRouter), recharts, lucide-react, qrcode, jsbarcode, @zxing/library, three.js (vue 3D du plan, chargée seulement à l'ouverture du plan).
+Tauri 2, rusqlite (SQLite intégré), argon2, axum + tower-http, axum-server (HTTPS rustls), rcgen, ureq, chrono · React 19, react-router (HashRouter), recharts, lucide-react, qrcode, jsbarcode, @zxing/library, three.js (vue 3D du plan, chargée seulement à l'ouverture du plan), jsPDF (export du plan en PDF) et pdf.js (dessin du bâtiment importé en PDF), chargés seulement à l'usage.
 
 ---
 
@@ -320,6 +326,7 @@ SQLite, migrations versionnées (`PRAGMA user_version`, clés étrangères véri
 | 006 | Plan de la boutique : niveaux (`store_floors`), palette de meubles (`fixture_types`), meubles posés en mètres (`fixtures`), cases étage × case (`locations`), autres emplacements d'un produit (`product_locations`) ; les anciens blocs deviennent des gondoles |
 | 007 | International : langue de chaque utilisateur (`users.lang`) |
 | 008 | Plan en 3D : forme 3D et hauteur des types de meubles, hauteur propre d'un meuble, hauteur des murs et sol de chaque niveau |
+| 009 | Personnel par identifiant et PIN (mots de passe effacés), accès Internet par personne, comptes supprimés gardés pour l'historique, téléphones autorisés (`trusted_devices`), codes d'accès (`access_codes`), dessin du bâtiment en fond d'un niveau |
 
 Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix de vente enregistrés TTC (même saisis HT), dates locales.
 
@@ -351,6 +358,8 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Plan de la boutique façon architecte (meubles, frigos, réserve, meubles personnalisés, poser / prendre), 22 types de commerce
 - [x] Plan en 3D réaliste : meubles dessinés et garnis, visite dans les allées, assistant « Créer ma boutique », chemin jusqu'au produit
 - [x] Français / anglais et utilisation dans tous les pays (devises, taxes, paiements mobiles configurables, prix des formules par devise)
+- [x] Personnel par identifiant et code PIN (équipe par défaut, blocage, suppression, actions de chacun), téléphones autorisés pour l'accès Internet (code d'accès)
+- [x] Plan de départ proposé pour chaque type de commerce ou combinaison (rayons), dimensions et hauteur sous plafond, export PNG et PDF, dessin du bâtiment en fond
 - [ ] Retours et avoirs, prix de gros et promotions, rapport Z, dépenses, bons de commande, variantes, codes-barres de balance, imprimante thermique
 - [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées
 - [ ] Tableau de bord Eden Dev, paiement mobile automatique, tunnels créés automatiquement par boutique, mises à jour signées
