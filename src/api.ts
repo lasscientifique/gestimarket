@@ -49,7 +49,14 @@ import type {
   TemplateNode,
   User,
   VoucherResult,
+  TeamMember,
+  LoginInfo,
+  LoginUser,
+  TrustedDevice,
+  AccessCode,
+  LayoutPreview,
 } from "./types";
+import { getDeviceToken, setDeviceToken } from "./lib/device";
 
 const call = rpc;
 
@@ -58,6 +65,9 @@ async function withSession(p: Promise<{ user: SessionUser; token: string | null 
   if (r.token) setToken(r.token);
   return r.user;
 }
+
+/** Jeton du téléphone autorisé pour l'accès Internet, envoyé avec les connexions. */
+const withDevice = () => ({ device: getDeviceToken() });
 
 export const api = {
   // Authentification
@@ -70,16 +80,37 @@ export const api = {
     currency_decimals: number;
     full_name: string;
     username: string;
-    password: string;
+    pin: string;
+    team: TeamMember[];
     lang?: string;
     country?: string;
     currency_code?: string;
     currency_position?: string;
-  }) => withSession(call("initial_setup", { input })),
-  login: (username: string, password: string) => withSession(call("login", { username, password })),
+  }) =>
+    call<{ user: SessionUser; token: string | null; team: TeamMember[] }>("initial_setup", { input }).then((r) => {
+      if (r.token) setToken(r.token);
+      return r;
+    }),
+  loginInfo: () => call<LoginInfo>("login_info", withDevice()),
+  login: (username: string, pin: string) => withSession(call("login", { username, pin, ...withDevice() })),
   loginPin: (user_id: number, pin: string) => withSession(call("login_pin", { user_id, pin })),
-  listLoginUsers: () => call<{ id: number; username: string; full_name: string; role: Role; has_pin: boolean }[]>("list_login_users"),
+  loginPassword: (username: string, password: string) => withSession(call("login_password", { username, password })),
+  listLoginUsers: () => call<LoginUser[]>("list_login_users"),
+  authorizeDeviceAccount: async (email: string, password: string, label: string) => {
+    const r = await call<{ device: string }>("authorize_device_account", { email, password, label });
+    setDeviceToken(r.device);
+  },
+  authorizeDeviceCode: async (username: string, pin: string, code: string, label: string) => {
+    const r = await call<{ device: string; user: SessionUser; token: string | null }>("authorize_device_code", { username, pin, code, label });
+    setDeviceToken(r.device);
+    if (r.token) setToken(r.token);
+    return r.user;
+  },
+  resetAdminPin: (email: string, password: string, pin: string, username?: string) =>
+    call<{ username: string; full_name: string }>("reset_admin_pin", { email, password, pin, username }),
   setMyPin: (password: string, pin: string) => call<SessionUser>("set_my_pin", { password, pin }),
+  changeMyPin: (current: string, pin: string) => call<void>("change_my_pin", { current, pin }),
+  listApprovers: (level: string) => call<LoginUser[]>("list_approvers", { level }),
   verifyPin: (pin: string, level: string, action?: string) => call<{ id: number; full_name: string; role: Role }>("verify_pin", { pin, level, action }),
   logout: async () => {
     await call<void>("logout").catch(() => undefined);
@@ -87,17 +118,20 @@ export const api = {
   },
   currentUser: () => call<SessionUser | null>("current_user"),
   setMyLang: (lang: string) => call<SessionUser>("set_my_lang", { lang }),
-  changePassword: (current: string, password: string) => call<void>("change_password", { current, password }),
 
-  // Utilisateurs
+  // Personnel
   listUsers: () => call<User[]>("list_users"),
+  suggestStaff: (role: Role) => call<{ username: string; pin: string }>("suggest_staff", { role }),
   saveUser: (
     id: number | null,
-    input: { username?: string; full_name: string; role: string; active: boolean; password?: string },
+    input: { username?: string; full_name: string; role: string; active: boolean; pin?: string; internet_access?: boolean },
     pin: string,
   ) => call<void>("save_user", { id, input, pin }),
-  resetUserPassword: (id: number, password: string, pin: string) => call<void>("reset_user_password", { id, password, pin }),
   resetUserPin: (id: number, new_pin: string, pin: string) => call<void>("reset_user_pin", { id, new_pin, pin }),
+  deleteUser: (id: number, pin: string) => call<{ erased: boolean }>("delete_user", { id, pin }),
+  listDevices: () => call<TrustedDevice[]>("list_devices"),
+  revokeDevice: (id: number) => call<void>("revoke_device", { id }),
+  createAccessCode: (user_id: number, pin: string) => call<AccessCode>("create_access_code", { user_id, pin }),
 
   // Paramètres
   getSettings: () => call<Settings>("get_settings"),
@@ -114,8 +148,8 @@ export const api = {
   businessProfiles: () => call<{ profiles: BusinessProfile[]; catalogue: CatalogueSummary[] }>("business_profiles"),
   catalogueTree: () => call<TemplateNode[]>("catalogue_tree"),
   seedCatalogue: (indexes: number[]) => call<number>("seed_catalogue", { indexes }),
-  setBusinessType: (id: string, features: string[] | null, seed: boolean, pin?: string) =>
-    call<{ created: number; settings: Settings }>("set_business_type", { id, features, seed, pin }),
+  setBusinessType: (ids: string[], features: string[] | null, seed: boolean, pin?: string) =>
+    call<{ created: number; settings: Settings }>("set_business_type", { ids, id: ids[0], features, seed, pin }),
   scanCode: (code: string) => call<ScanResult | null>("scan_code", { code }),
   deleteCategory: (id: number, pin: string) => call<void>("delete_category", { id, pin }),
   listProducts: (filter: {
@@ -152,6 +186,9 @@ export const api = {
     call<number>("plan_save_floor", { id, input }),
   planFloorFill: (floor_id: number) => call<CellFill[]>("plan_floor_fill", { floor_id }),
   planGenerateLayout: (input: LayoutInput) => call<number>("plan_generate_layout", { input }),
+  planPreviewLayout: (input: LayoutInput) => call<LayoutPreview>("plan_preview_layout", { input }),
+  planSetBackdrop: (input: { floor_id: number; media_id: number | null; x?: number; y?: number; w?: number; h?: number; opacity?: number }) =>
+    call<void>("plan_set_backdrop", { input }),
   planDeleteFloor: (id: number, pin: string) => call<void>("plan_delete_floor", { id, pin }),
   planSaveFixture: (id: number | null, input: Partial<Omit<Fixture, "id" | "color">> & { color?: string | null }) =>
     call<Fixture>("plan_save_fixture", { id, input }),
@@ -255,12 +292,13 @@ export const api = {
   // Rapports & système
   dashboard: () => call<Dashboard>("dashboard"),
   salesReport: (from: string, to: string) => call<SalesReport>("sales_report", { from, to }),
-  listAuditLog: (filter: { search?: string; from?: string; to?: string; limit?: number } = {}) =>
+  listAuditLog: (filter: { search?: string; from?: string; to?: string; limit?: number; user_id?: number } = {}) =>
     call<AuditEntry[]>("list_audit_log", { filter }),
   appInfo: () => call<{ version: string; db_path: string; last_auto_backup: string | null }>("app_info"),
   backupDatabase: (path: string) => call<void>("backup_database", { path }),
   runAutoBackup: () => call<string>("run_auto_backup"),
   saveTextFile: (path: string, contents: string) => local<void>("save_text_file", { path, contents }),
+  saveBinaryFile: (path: string, base64: string) => local<void>("save_binary_file", { path, base64 }),
   readTextFile: (path: string) => local<string>("read_text_file", { path }),
 
   // Plusieurs boutiques sur ce PC

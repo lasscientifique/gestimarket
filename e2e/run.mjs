@@ -16,7 +16,8 @@ const SRV = "http://127.0.0.1:7878";
 const PUB = "http://127.0.0.1:8080";
 const LAN = process.env.LAN_IP ? `http://${process.env.LAN_IP}:7878` : SRV;
 const OUT = "e2e/out";
-const PIN = "1357";
+// Code PIN de l'administrateur (6 chiffres) : identifiant + PIN, plus de mot de passe.
+const PIN = "135792";
 fs.mkdirSync(OUT, { recursive: true });
 
 const checks = [];
@@ -136,21 +137,27 @@ try {
 
   // ── Première configuration et compte administrateur (par RPC, comme l'écran « Première configuration »)
   // Sans licence (FREE) : 1 seul poste. On garde la session de la configuration jusqu'à l'installation de la licence.
+  // Équipe par défaut créée avec la boutique : un gestionnaire et une caissière, PIN tirés au hasard.
   let setupToken = null;
+  let team = [];
   if (await rpc("needs_setup")) {
-    setupToken = (await rpc("initial_setup", {
-      input: { shop_name: "Eden Superrette", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin E2E", username: "admin", password: "secret123" },
-    })).token;
+    const r = await rpc("initial_setup", {
+      input: { shop_name: "Eden Superrette", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin E2E", username: "admin", pin: PIN },
+    });
+    setupToken = r.token;
+    team = r.team;
   }
-  const login = async () => (await rpc("login", { username: "admin", password: "secret123" })).token;
+  check(
+    "équipe par défaut : gestionnaire et caissière avec identifiant et PIN",
+    team.map((m) => `${m.role}:${m.username}`).join(",") === "manager:gestionnaire,cashier:caisse1" && team.every((m) => /^\d{4}$/.test(m.pin)),
+    JSON.stringify(team.map((m) => m.username)),
+  );
+  const login = async () => (await rpc("login", { username: "admin", pin: PIN })).token;
   const admin = setupToken ?? (await login());
-  const second = await rpc("login", { username: "admin", password: "secret123" }).then(() => "acceptée", (e) => e.message);
+  const oldPassword = await rpc("login_password", { username: "admin", password: "secret123" }).then(() => "acceptée", (e) => e.message);
+  check("plus de mot de passe : connexion par identifiant et code PIN", oldPassword.includes("PIN"), oldPassword);
+  const second = await rpc("login", { username: "admin", pin: PIN }).then(() => "acceptée", (e) => e.message);
   check("sans licence : une 2ᵉ session est refusée (FREE, 1 poste)", second.includes("Nombre maximal"), second);
-  try {
-    await rpc("set_my_pin", { password: "secret123", pin: PIN }, admin);
-  } catch (e) {
-    console.log(`PIN : ${e.message}`);
-  }
 
   // ── Licence : sans licence, lecture seule ; licence BUSINESS signée avec la clé de test (compilation debug)
   const before = await rpc("save_category", { id: null, input: { name: "Essai lecture seule" } }, admin).then(() => "accepté", (e) => e.message);
@@ -232,6 +239,40 @@ try {
   check("tunnel rétabli : « Internet disponible » de nouveau", cloud.public_ok === true, cloud.public_error ?? "");
   await shot(phone, "07-telephone-reconnecte.png");
 
+  // ── Accès Internet : téléphone d'une caissière autorisé par un code d'accès de l'administrateur
+  const caisse = team.find((m) => m.username === "caisse1");
+  if (caisse) {
+    const refused = await rpc("login", { username: "caisse1", pin: caisse.pin }, null, PUB).then(() => "acceptée", (e) => e.message);
+    check("Internet : connexion refusée sans téléphone autorisé", refused.includes("pas encore autorisé"), refused);
+    const caisseId = (await rpc("list_users", {}, admin)).find((u) => u.username === "caisse1").id;
+    const code = await rpc("create_access_code", { user_id: caisseId, pin: PIN }, admin);
+    check("code d'accès téléphone : 8 lettres et chiffres", /^[A-Z0-9]{8}$/.test(code.code), code.code);
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, userAgent: android, isMobile: true, hasTouch: true, locale: "fr-FR" });
+    const phone2 = await ctx.newPage();
+    phone2.on("pageerror", (e) => console.log(`[téléphone 2] erreur : ${e.message}`));
+    await phone2.goto(`${PUB}/#/`);
+    await seen(phone2, "Téléphone non autorisé", "Autoriser ce téléphone");
+    await phone2.getByLabel("Identifiant").fill("caisse1");
+    await phone2.getByLabel("Code PIN").fill(caisse.pin);
+    await phone2.getByLabel("Code d'accès").fill(`${code.code.slice(0, 4)}-${code.code.slice(4)}`);
+    await shot(phone2, "15-telephone-code-acces.png");
+    await phone2.getByRole("button", { name: "Autoriser ce téléphone" }).click();
+    try {
+      await phone2.locator(".auth-page").waitFor({ state: "detached", timeout: 45_000 });
+      check("téléphone autorisé par code d'accès : la caissière est connectée", true);
+    } catch {
+      check("téléphone autorisé par code d'accès : la caissière est connectée", false, "toujours sur l'écran de connexion");
+    }
+    await phone2.waitForTimeout(1500);
+    await shot(phone2, "16-telephone-autorise.png");
+    const devices = await rpc("list_devices", {}, admin);
+    check("téléphone autorisé visible par l'administrateur", devices.some((d) => d.user_name === "Caissière 1"), JSON.stringify(devices.map((d) => d.label)));
+    await pc.goto(`${SRV}/#/users`);
+    await seen(pc, "Personnel : téléphones autorisés", "Téléphones autorisés");
+    await shot(pc, "17-personnel.png");
+    await ctx.close();
+  }
+
   // ── Plan de la boutique : salle, porte, frigo et gondole posés ; produit rangé ; plan et recherche
   const plan = await rpc("plan_get", {}, admin);
   const typeOf = (code) => plan.types.find((t) => t.code === code);
@@ -290,16 +331,16 @@ try {
   await seen(pc, "Localiser un produit", "Réfrigérateur vitré FR1");
   await pc.waitForTimeout(2000);
   await shot(pc, "09-localiser-un-produit.png");
-  // Assistant « Créer ma boutique » : un supermarché complet sur un nouveau niveau.
-  const wizFloor = await rpc(
-    "plan_generate_layout",
-    { input: { floor_id: null, name: "Magasin 2", width: 14, depth: 10, entry: "bottom", storage_room: true, business_type: "supermarket" } },
-    admin,
-  );
+  // Plan proposé pour une boutique à deux activités (supérette + quincaillerie), aux vraies dimensions.
+  const layout = { floor_id: null, name: "Magasin 2", width: 14, depth: 10, height: 3.5, entry: "bottom", storage_room: true, activities: ["superette", "hardware"] };
+  const preview = await rpc("plan_preview_layout", { input: layout }, admin);
+  const rayons = preview.fixtures.filter((f) => f.type_code === "zone_vente").map((f) => f.name);
+  check("plan proposé (aperçu) : un rayon par activité", rayons.join(",") === "Alimentation,Quincaillerie", rayons.join(","));
+  const wizFloor = await rpc("plan_generate_layout", { input: layout }, admin);
   const made = (await rpc("plan_get", {}, admin)).fixtures.filter((f) => f.floor_id === wizFloor);
   check(
-    "assistant « Créer ma boutique » : murs, porte, caisse, frigos et gondoles posés",
-    ["mur", "porte", "caisse", "refrigerateur", "gondole"].every((c) => made.some((f) => f.type_code === c)),
+    "« Garder ce plan » : murs, porte, caisse, frigos, gondoles et racks posés",
+    ["mur", "porte", "caisse", "refrigerateur", "gondole", "rack"].every((c) => made.some((f) => f.type_code === c)) && made.length === preview.fixtures.length,
     `${made.length} élément(s)`,
   );
   if (has3d) {

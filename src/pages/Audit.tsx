@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Search, Download } from "lucide-react";
+import { Search, Download, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Empty, PageHeader } from "../components/ui";
@@ -11,11 +12,18 @@ import { tl, tm } from "../lib/i18n";
 export default function AuditPage() {
   const { toast } = useApp();
   const [list, setList] = useState<AuditEntry[]>([]);
+  const [params, setParams] = useSearchParams();
+  // « Voir ses actions » (Personnel) : actions d'une personne, sur l'année.
+  const userId = Number(params.get("user")) || undefined;
+  const userName = params.get("name") ?? "";
   const [search, setSearch] = useState("");
-  const [from, setFrom] = useState(isoDate(addDays(new Date(), -7)));
+  const [from, setFrom] = useState(isoDate(addDays(new Date(), userId ? -365 : -7)));
   const [to, setTo] = useState(isoDate());
 
-  const load = useCallback(() => api.listAuditLog({ search, from, to, limit: 2000 }).then(setList).catch(toast.error), [search, from, to, toast]);
+  const load = useCallback(
+    () => api.listAuditLog({ search, from, to, limit: 2000, user_id: userId }).then(setList).catch(toast.error),
+    [search, from, to, toast, userId],
+  );
   useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
@@ -42,6 +50,11 @@ export default function AuditPage() {
         <label className="inline">{tl("Du")} <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label className="inline">au <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
         <div className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tl("Action, utilisateur, détail…")} /></div>
+        {userId && (
+          <button className="chip active" onClick={() => setParams({})} title={tl("Toutes les personnes")}>
+            {tl("Actions de {0}", [userName || `#${userId}`])} <X size={13} />
+          </button>
+        )}
       </div>
       <div className="card no-pad">
         {list.length === 0 ? (

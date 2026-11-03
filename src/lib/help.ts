@@ -85,7 +85,8 @@ export const PAGE_HELP: Record<string, PageHelp> = {
     purpose:
       tl("Dessiner la boutique comme un plan d'architecte (pièces, murs, portes, rayons, frigos, congélateurs, vitrines, réserve…) et y ranger les produits : il suffit ensuite de regarder le plan pour trouver un produit."),
     steps: [
-      tl("« Créer ma boutique » : donnez la taille de la salle, le côté de l'entrée et votre commerce ; murs, caisse, frigos, allées et réserve sont posés pour vous."),
+      tl("« Créer ma boutique » : donnez la longueur, la largeur et la hauteur de la salle et le côté de l'entrée ; GestiMarket propose un plan selon vos activités (murs, caisse, frigos, allées, réserve). Rien n'est enregistré avant « Garder ce plan »."),
+      tl("Boutique à plusieurs activités (ex. supérette + quincaillerie) : la salle est partagée en rayons (60/40 ou 50/25/25), chacun avec ses meubles et son nom au sol."),
       tl("Trois vues : « Dessus » (plan précis et imprimable), « 3D » (tourner autour, zoomer) et « Visite » (marcher dans les allées)."),
       tl("« Modifier le plan » : prenez un meuble dans la palette et posez-le sur le plan (glisser, ou cliquer pour le poser à une place libre)."),
       tl("Déplacez-le, agrandissez-le par son coin, tournez-le (R), donnez-lui un nom, un nombre d'étages et de cases."),
@@ -97,7 +98,9 @@ export const PAGE_HELP: Record<string, PageHelp> = {
       tl("« Répéter ×3 » crée une rangée de meubles identiques avec des allées de 1,30 m."),
       tl("Ordinateur lent : passez la 3D en qualité « Simple »."),
       tl("Créez vos propres meubles (« Meuble personnalisé ») et choisissez leur dessin en 3D : vous n'êtes pas limité à la palette."),
-      tl("Plusieurs niveaux : rez-de-chaussée, étage, entrepôt…"),
+      tl("Plusieurs niveaux : rez-de-chaussée, étage (on y arrive par un escalier), entrepôt…"),
+      tl("« Dessin du bâtiment » (en modification) : importez la photo ou le PDF du plan de l'architecte ; il s'affiche sous le plan, se recale par une mesure connue, puis vous posez les meubles par-dessus."),
+      tl("« Exporter » : photo (PNG) de la vue 3D ou du plan, ou PDF détaillé (plan coté, liste des meubles avec leurs dimensions, vue 3D, contenu des meubles en option)."),
       tl("Imprimez les étiquettes des cases (vue de face) : leur QR code se scanne dans « Localiser un produit »."),
     ],
   },
@@ -131,17 +134,22 @@ export const PAGE_HELP: Record<string, PageHelp> = {
     tips: [tl("Les lignes « ID manquant » sont à vérifier en priorité.")],
   },
   users: {
-    title: tl("Utilisateurs"),
-    purpose: tl("Créer les comptes du personnel et définir leurs droits."),
+    title: tl("Personnel"),
+    purpose: tl("Les postes de la boutique : chacun a un identifiant et un code PIN (pas de mot de passe, pas de compte en ligne ; seule la boutique a un compte chez Eden Dev)."),
     steps: [
+      tl("Au départ : un administrateur, un gestionnaire et une caissière. Ajoutez-en avec « + Gestionnaire » et « + Caissière » : l'identifiant et le PIN sont proposés, imprimez la fiche d'accès."),
       tl("Caissier / caissière : le SEUL rôle qui vend (caisse, clients, ses ventes, sa session de caisse, son tableau de bord)."),
-      tl("Gestionnaire : les produits (ajout, modification, suppression), catégories, emplacements, stock, achats, fournisseurs."),
-      tl("Administrateur : contrôle total — tableau de bord, rapports, utilisateurs, paramètres et réglages, annulations."),
-      tl("Chaque utilisateur crée son code PIN à sa première connexion ; l'administrateur peut le réinitialiser (icône bouclier)."),
+      tl("Gestionnaire : les produits (ajout, modification, suppression), catégories, plan de la boutique, stock, achats, fournisseurs."),
+      tl("Administrateur : contrôle total — tableau de bord, rapports, personnel, paramètres, annulations ; il valide les actions des autres avec son PIN."),
+      tl("Pour chaque personne : nouveau code PIN (clé), code d'accès téléphone (téléphone), blocage (cadenas), ses actions (horloge), suppression (corbeille)."),
+      tl("Accès depuis Internet : générez un code d'accès de 8 lettres et chiffres et transmettez-le ; sur son téléphone, la personne tape son identifiant, son PIN et ce code, une seule fois."),
     ],
     tips: [
-      tl("Sécurité : gestionnaires et administrateurs n'ouvrent pas de caisse. Si leur mot de passe fuit, personne ne peut encaisser avec leurs droits élevés. Créez des comptes caissier pour vendre."),
-      tl("Désactivez un compte plutôt que de le supprimer : l'historique est conservé."), tl("Le PIN sert à se connecter rapidement et à confirmer les actions critiques.")],
+      tl("Chacun peut changer son propre PIN (menu Mon code PIN) ; l'administrateur en donne un nouveau en cas d'oubli."),
+      tl("PIN administrateur oublié : lien sur l'écran de connexion, avec l'e-mail et le mot de passe du compte boutique."),
+      tl("Un compte qui a travaillé reste dans l'historique après sa suppression ; bloquez-le plutôt s'il doit revenir."),
+      tl("Au magasin, aucun téléphone n'a besoin d'être autorisé. Retirez un téléphone perdu dans la liste « Téléphones autorisés »."),
+    ],
   },
   audit: {
     title: tl("Journal d'activité"),
@@ -213,7 +221,7 @@ export const TIPS: Record<string, string> = {
   packagings:
     tl("Le même produit vendu en plusieurs formats : « Carton de 12 » contient 12 bouteilles. Scanner le code du carton ajoute 1 carton au ticket et retire 12 bouteilles du stock."),
   business_type:
-    tl("Le logiciel s'adapte à votre commerce : catégories proposées, fonctions affichées (péremption, marques, conditionnements, quantités décimales, services). Vous pouvez changer à tout moment."),
+    tl("Le logiciel s'adapte à votre commerce : catégories proposées, fonctions affichées (péremption, marques, conditionnements, quantités décimales, services) et plan de départ. Une boutique peut combiner jusqu'à 3 activités : la première touchée est la principale. Vous pouvez changer à tout moment."),
   camera_scan:
     tl("Utilise la caméra du téléphone, de la tablette ou la webcam. Vidéo en direct sur l'adresse https (port 7879) ; sinon prenez le code en photo."),
   mobile_app:

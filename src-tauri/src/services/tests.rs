@@ -6,6 +6,9 @@ use crate::db;
 use crate::services::*;
 use crate::state::SessionUser;
 
+/// PIN de l'administrateur des tests.
+const ADMIN_PIN: &str = "258036";
+
 fn setup() -> (Connection, SessionUser) {
     let mut conn = db::open_in_memory().unwrap();
     let admin = auth::initial_setup(
@@ -17,22 +20,24 @@ fn setup() -> (Connection, SessionUser) {
             currency_symbol: "FCFA".into(),
             currency_decimals: 0,
             full_name: "Admin Test".into(),
-            username: "admin".into(),
-            password: "secret123".into(),
+            username: None,
+            pin: ADMIN_PIN.into(),
+            team: Some(vec![]),
             lang: None,
             country: None,
             currency_code: None,
             currency_position: None,
         },
     )
-    .unwrap();
+    .unwrap()
+    .user;
     (conn, admin)
 }
 
 /// Compte caissier : seul rôle autorisé à ouvrir une caisse et à vendre.
 fn cashier(conn: &Connection, admin: &SessionUser) -> SessionUser {
     let id = users::create(conn, admin, users::UserInput {
-        username: Some("caisse".into()), full_name: "Caissière Test".into(), role: "cashier".into(), active: Some(true), password: Some("caisse123".into()),
+        username: Some("caisse".into()), full_name: "Caissière Test".into(), role: "cashier".into(), active: Some(true), pin: Some("4826".into()), internet_access: None,
     }).unwrap();
     SessionUser { id, username: "caisse".into(), full_name: "Caissière Test".into(), role: "cashier".into(), has_pin: false, lang: None }
 }
@@ -95,12 +100,23 @@ fn stock_of(conn: &Connection, id: i64) -> f64 {
 }
 
 #[test]
-fn login_and_password_checks() {
+fn login_by_identifier_and_pin() {
     let (conn, _) = setup();
-    assert!(auth::login(&conn, "admin", "secret123").is_ok());
-    assert!(auth::login(&conn, "ADMIN", "secret123").is_ok(), "identifiant insensible à la casse");
-    assert!(auth::login(&conn, "admin", "mauvais").is_err());
+    let admin = auth::account_by_username(&conn, "ADMIN").unwrap().expect("identifiant insensible à la casse");
+    assert!(auth::check_pin(&conn, &admin, ADMIN_PIN).unwrap().is_some());
+    assert!(auth::check_pin(&conn, &admin, "135790").unwrap().is_none());
     assert!(!auth::needs_setup(&conn).unwrap());
+    // PIN : 6 chiffres pour l'administrateur, 4 à 6 pour les autres, jamais trop simple.
+    assert!(auth::validate_pin("4826", "admin").is_err());
+    assert!(auth::validate_pin("4826", "cashier").is_ok() && auth::validate_pin("482613", "manager").is_ok());
+    assert!(auth::validate_pin("123456", "admin").is_err() && auth::validate_pin("1111", "cashier").is_err());
+    assert!(auth::validate_pin("12a4", "cashier").is_err() && auth::validate_pin("4826137", "cashier").is_err());
+    for _ in 0..50 {
+        assert!(auth::validate_pin(&auth::random_pin(4), "cashier").is_ok());
+        assert!(auth::validate_pin(&auth::random_pin(6), "admin").is_ok());
+    }
+    // Plus de mot de passe.
+    assert!(auth::login_password(&conn, "admin", "secret123").is_err());
 }
 
 #[test]
@@ -297,7 +313,7 @@ fn users_keep_at_least_one_admin() {
     let cashier_id = users::create(
         &conn,
         &admin,
-        users::UserInput { username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), active: Some(true), password: Some("caisse1".into()) },
+        users::UserInput { username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), active: Some(true), pin: Some("4826".into()), internet_access: None },
     )
     .unwrap();
     assert!(cashier_id > 0);
@@ -305,10 +321,11 @@ fn users_keep_at_least_one_admin() {
         &conn,
         &admin,
         admin.id,
-        users::UserInput { username: None, full_name: "Admin".into(), role: "manager".into(), active: Some(true), password: None },
+        users::UserInput { username: None, full_name: "Admin".into(), role: "manager".into(), active: Some(true), pin: None, internet_access: None },
     );
     assert!(err.is_err());
-    assert!(auth::login(&conn, "fatou", "caisse1").is_ok());
+    let fatou = auth::account_by_username(&conn, "fatou").unwrap().unwrap();
+    assert!(auth::check_pin(&conn, &fatou, "4826").unwrap().is_some());
 }
 
 
@@ -525,7 +542,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 8);
+    assert_eq!(count("PRAGMA user_version"), 9);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -611,7 +628,7 @@ fn remote_sessions_and_customer_display() {
     // Sans jeton : refus
     assert!(crate::rpc::dispatch(&state, &anon, "list_products", json!({})).is_err());
     // Connexion réseau → jeton
-    let r = crate::rpc::dispatch(&state, &anon, "login", json!({"username": "admin", "password": "secret123"})).unwrap();
+    let r = crate::rpc::dispatch(&state, &anon, "login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap();
     let token = r["token"].as_str().unwrap().to_string();
     let me = Origin::Remote(Some(token.clone()));
     assert!(crate::rpc::dispatch(&state, &me, "list_products", json!({"filter": {"search": "x"}})).is_ok());
@@ -622,8 +639,9 @@ fn remote_sessions_and_customer_display() {
     let d = crate::rpc::dispatch(&state, &anon, "display_state", json!({"poste": "Caisse 2"})).unwrap();
     assert_eq!(d["total"], 1500);
     assert!(crate::rpc::dispatch(&state, &anon, "display_update", json!({"poste": "X", "state": {}})).is_err());
-    // Définir son PIN ne doit pas fermer la session réseau (même jeton).
-    crate::rpc::dispatch(&state, &me, "set_my_pin", json!({"password": "secret123", "pin": "7391"})).unwrap();
+    // Changer son PIN ne doit pas fermer la session réseau (même jeton).
+    assert!(crate::rpc::dispatch(&state, &me, "change_my_pin", json!({"current": "135790", "pin": "739104"})).is_err());
+    crate::rpc::dispatch(&state, &me, "change_my_pin", json!({"current": ADMIN_PIN, "pin": "739104"})).unwrap();
     assert!(crate::rpc::dispatch(&state, &me, "list_products", json!({})).is_ok());
     // Déconnexion → jeton invalide
     crate::rpc::dispatch(&state, &me, "logout", json!({})).unwrap();
@@ -638,33 +656,25 @@ fn pin_confirmation_roles_and_lockout() {
     let (mut conn, admin) = setup();
     let p = product(&mut conn, &admin, "Farine 1kg", 400, 600, 20.0);
     let caissier = users::create(&conn, &admin, users::UserInput {
-        username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), active: Some(true), password: Some("caisse1".into()),
+        username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), active: Some(true), pin: Some("4826".into()), internet_access: None,
     }).unwrap();
-    assert!(auth::validate_pin("1234").is_err() && auth::validate_pin("1111").is_err() && auth::validate_pin("12a4").is_err());
     let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
     let local = Origin::Local;
     let rpc = |o: &Origin, cmd: &str, a: serde_json::Value| crate::rpc::dispatch(&state, o, cmd, a);
 
-    // Administrateur : définit son PIN
-    rpc(&local, "login", json!({"username": "admin", "password": "secret123"})).unwrap();
-    assert!(rpc(&local, "set_my_pin", json!({"password": "faux", "pin": "2580"})).is_err());
-    let me = rpc(&local, "set_my_pin", json!({"password": "secret123", "pin": "2580"})).unwrap();
-    assert_eq!(me["has_pin"], true);
-    // Action critique sans PIN → refus ; avec PIN → OK
+    // Administrateur : action critique sans PIN → refus ; avec son PIN → OK
+    rpc(&local, "login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap();
     let adjust = json!({"input": {"product_id": p, "mode": "set", "quantity": 18.0, "kind": "adjustment", "note": null}});
     assert!(rpc(&local, "adjust_stock", adjust.clone()).unwrap_err().to_string().contains("PIN requis"));
     let mut with_pin = adjust.clone();
-    with_pin["pin"] = json!("2580");
+    with_pin["pin"] = json!(ADMIN_PIN);
     assert_eq!(rpc(&local, "adjust_stock", with_pin).unwrap(), json!(18.0));
 
-    // Caissière : connexion par PIN, vente, annulation autorisée par l'administrateur
-    rpc(&local, "logout", json!({})).unwrap();
-    rpc(&local, "login", json!({"username": "fatou", "password": "caisse1"})).unwrap();
-    rpc(&local, "set_my_pin", json!({"password": "caisse1", "pin": "4826"})).unwrap();
+    // Caissière : connexion par PIN, vente, annulation validée par l'administrateur choisi
     rpc(&local, "logout", json!({})).unwrap();
     let users = rpc(&local, "list_login_users", json!({})).unwrap();
     assert_eq!(users.as_array().unwrap().len(), 2);
-    assert!(rpc(&local, "login_pin", json!({"user_id": caissier, "pin": "9999"})).is_err());
+    assert!(rpc(&local, "login_pin", json!({"user_id": caissier, "pin": "9157"})).is_err());
     let r = rpc(&local, "login_pin", json!({"user_id": caissier, "pin": "4826"})).unwrap();
     assert_eq!(r["user"]["role"], "cashier");
     // La caissière n'a pas accès au tableau de bord (administrateur)
@@ -673,20 +683,31 @@ fn pin_confirmation_roles_and_lockout() {
     let sale = rpc(&local, "create_sale", json!({"input": {"items": [{"product_id": p, "quantity": 2.0}], "customer_id": null, "discount": 0,
         "payments": [{"method": "cash", "amount": 1200}], "note": null}})).unwrap();
     let id = sale["id"].as_i64().unwrap();
-    // Son propre PIN ne suffit pas pour annuler ; celui de l'administrateur oui.
-    assert!(rpc(&local, "cancel_sale", json!({"id": id, "reason": "erreur", "pin": "4826"})).is_err());
-    let cancelled = rpc(&local, "cancel_sale", json!({"id": id, "reason": "erreur", "pin": "2580"})).unwrap();
+    // Responsables proposés pour valider : l'administrateur seulement.
+    let approvers = rpc(&local, "list_approvers", json!({"level": "admin"})).unwrap();
+    assert_eq!(approvers.as_array().unwrap().len(), 1);
+    assert_eq!(approvers[0]["id"].as_i64(), Some(admin.id));
+    // Son propre PIN ne suffit pas ; le PIN de l'administrateur sans le choisir non plus ;
+    // l'administrateur choisi dans la liste, avec son PIN : oui.
+    assert!(rpc(&local, "cancel_sale", json!({"id": id, "reason": "erreur", "pin": "4826"})).unwrap_err().to_string().contains("choisissez"));
+    assert!(rpc(&local, "cancel_sale", json!({"id": id, "reason": "erreur", "pin": ADMIN_PIN})).is_err());
+    assert!(rpc(&local, "cancel_sale", json!({"id": id, "reason": "erreur", "pin": format!("{caissier}:4826")})).is_err());
+    let cancelled = rpc(&local, "cancel_sale", json!({"id": id, "reason": "erreur", "pin": format!("{}:{ADMIN_PIN}", admin.id)})).unwrap();
     assert_eq!(cancelled["status"], "cancelled");
-    // Suppression d'article : niveau « caissier » → son propre PIN suffit
-    let ok = rpc(&local, "verify_pin", json!({"pin": "4826", "level": "cashier", "action": "Suppression d'article"})).unwrap();
+    // Même PIN que l'administrateur (autorisé : chacun choisit le sien) : il ne vaut que pour elle.
+    rpc(&local, "change_my_pin", json!({"current": "4826", "pin": ADMIN_PIN})).unwrap();
+    let ok = rpc(&local, "verify_pin", json!({"pin": ADMIN_PIN, "level": "cashier", "action": "Suppression d'article"})).unwrap();
     assert_eq!(ok["full_name"], "Fatou");
-    assert!(rpc(&local, "verify_pin", json!({"pin": "4826", "level": "manager"})).is_err());
-    // Blocage après 5 erreurs
-    for _ in 0..4 {
-        let _ = rpc(&local, "verify_pin", json!({"pin": "0000", "level": "cashier"}));
+    assert!(rpc(&local, "verify_pin", json!({"pin": ADMIN_PIN, "level": "admin"})).is_err());
+    // Blocage du compte après 5 PIN faux
+    for _ in 0..5 {
+        let _ = rpc(&local, "verify_pin", json!({"pin": "9157", "level": "cashier"}));
     }
-    let locked = rpc(&local, "verify_pin", json!({"pin": "4826", "level": "cashier"})).unwrap_err();
-    assert!(locked.to_string().contains("Trop d'essais"), "{locked}");
+    let locked = rpc(&local, "verify_pin", json!({"pin": ADMIN_PIN, "level": "cashier"})).unwrap_err();
+    assert!(locked.to_string().contains("Trop de codes PIN"), "{locked}");
+    // L'administrateur, lui, n'est pas bloqué.
+    let boss = rpc(&local, "verify_pin", json!({"pin": format!("{}:{ADMIN_PIN}", admin.id), "level": "admin"})).unwrap();
+    assert_eq!(boss["role"], "admin");
 }
 
 #[test]
@@ -779,7 +800,7 @@ fn catalogue_business_types_and_category_tree() {
     assert!(!cats.iter().find(|c| c.name == "Tuyaux PVC").unwrap().active);
     // Type de commerce via RPC
     let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
-    crate::rpc::dispatch(&state, &Origin::Local, "login", json!({"username": "admin", "password": "secret123"})).unwrap();
+    crate::rpc::dispatch(&state, &Origin::Local, "login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap();
     let r = crate::rpc::dispatch(&state, &Origin::Local, "set_business_type", json!({"id": "restaurant", "seed": true})).unwrap();
     assert_eq!(r["settings"]["business_type"], "restaurant");
     assert_eq!(r["settings"]["enabled_features"], "services");
@@ -827,16 +848,14 @@ fn live_cart_take_over_between_cashiers() {
     use crate::state::{AppState, Origin};
     use serde_json::json;
     let (conn, admin) = setup();
-    users::create(&conn, &admin, users::UserInput { username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), active: Some(true), password: Some("caisse123".into()) }).unwrap();
-    users::create(&conn, &admin, users::UserInput { username: Some("mariam".into()), full_name: "Mariam".into(), role: "cashier".into(), active: Some(true), password: Some("caisse123".into()) }).unwrap();
+    users::create(&conn, &admin, users::UserInput { username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), active: Some(true), pin: Some("9753".into()), internet_access: None }).unwrap();
+    users::create(&conn, &admin, users::UserInput { username: Some("mariam".into()), full_name: "Mariam".into(), role: "cashier".into(), active: Some(true), pin: Some("2468".into()), internet_access: None }).unwrap();
     let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
     let rpc = |o: &Origin, cmd: &str, a: serde_json::Value| crate::rpc::dispatch(&state, o, cmd, a);
     let anon = Origin::Remote(None);
     let login = |u: &str, pin: &str| {
-        let t = rpc(&anon, "login", json!({"username": u, "password": "caisse123"})).unwrap()["token"].as_str().unwrap().to_string();
-        let o = Origin::Remote(Some(t));
-        rpc(&o, "set_my_pin", json!({"password": "caisse123", "pin": pin})).unwrap();
-        o
+        let t = rpc(&anon, "login", json!({"username": u, "pin": pin})).unwrap()["token"].as_str().unwrap().to_string();
+        Origin::Remote(Some(t))
     };
     let mariam = login("mariam", "2468");
     let fatou = login("fatou", "9753");
@@ -865,7 +884,7 @@ fn live_cart_take_over_between_cashiers() {
     let r = rpc(&mariam, "live_cart_update", json!({"poste_id": "p-m", "poste": "Caisse 1", "cart": cart, "status": "payment"})).unwrap();
     assert_eq!(r["taken_by"], "Fatou");
     // L'administrateur ne vend pas : il ne peut pas reprendre un ticket
-    let t = rpc(&anon, "login", json!({"username": "admin", "password": "secret123"})).unwrap()["token"].as_str().unwrap().to_string();
+    let t = rpc(&anon, "login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap()["token"].as_str().unwrap().to_string();
     rpc(&mariam, "live_cart_update", json!({"poste_id": "p-m", "poste": "Caisse 1", "cart": cart, "status": "cart"})).unwrap();
     assert!(rpc(&Origin::Remote(Some(t)), "live_cart_take", json!({"poste_id": "p-m", "pin": "0000"})).unwrap_err().to_string().contains("caissier"));
 }
@@ -885,11 +904,11 @@ fn postes_limit_login_throttle_and_internet_restrictions() {
     use crate::state::{AppState, Origin};
     use serde_json::json;
     let (conn, admin) = setup();
-    users::create(&conn, &admin, users::UserInput { username: Some("awa".into()), full_name: "Awa".into(), role: "cashier".into(), active: Some(true), password: Some("caisse123".into()) }).unwrap();
+    users::create(&conn, &admin, users::UserInput { username: Some("awa".into()), full_name: "Awa".into(), role: "cashier".into(), active: Some(true), pin: Some("4826".into()), internet_access: None }).unwrap();
     let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
     let anon = Origin::Remote(None);
-    let awa = auth::login(&state.conn(), "awa", "caisse123").unwrap();
-    let boss = auth::login(&state.conn(), "admin", "secret123").unwrap();
+    let awa = auth::account_by_username(&state.conn(), "awa").unwrap().unwrap().session();
+    let boss = auth::account_by_username(&state.conn(), "admin").unwrap().unwrap().session();
 
     // 2 postes : deux appareils connectés, le troisième est refusé.
     let t1 = state.set_user(&anon, Some(awa.clone())).unwrap();
@@ -910,20 +929,23 @@ fn postes_limit_login_throttle_and_internet_restrictions() {
     assert_eq!(state.active_sessions(), 1);
     assert!(state.ensure_slot(&anon, &awa, 2).is_ok());
 
-    // Anti force brute par appareil : 5 échecs bloquent cette adresse, pas les autres.
-    let login = |ip: &str, pw: &str| crate::rpc::dispatch(&state, &anon, "login", json!({"username": "awa", "password": pw, "__ip": ip}));
+    // Anti force brute : 5 PIN faux bloquent cet appareil, et ce compte depuis tous les appareils.
+    let login = |ip: &str, user: &str, pin: &str| crate::rpc::dispatch(&state, &anon, "login", json!({"username": user, "pin": pin, "__ip": ip}));
     for _ in 0..5 {
-        assert!(login("41.73.10.20", "faux").is_err());
+        assert!(login("41.73.10.20", "awa", "9157").is_err());
     }
-    assert!(login("41.73.10.20", "caisse123").unwrap_err().to_string().contains("Trop d'essais"));
-    assert!(login("192.168.1.20", "caisse123").is_ok());
+    assert!(login("41.73.10.20", "awa", "4826").unwrap_err().to_string().contains("Trop d'essais"));
+    assert!(login("192.168.1.20", "awa", "4826").unwrap_err().to_string().contains("pour ce compte"));
+    assert!(login("192.168.1.20", "admin", ADMIN_PIN).is_ok());
 
     // Depuis Internet : ni liste du personnel, ni connexion par PIN, paramètres publics seulement.
     let net = json!({"__route": "internet"});
     assert_eq!(crate::rpc::dispatch(&state, &anon, "list_login_users", net.clone()).unwrap().as_array().unwrap().len(), 0);
     assert_eq!(crate::rpc::dispatch(&state, &anon, "list_login_users", json!({})).unwrap().as_array().unwrap().len(), 2);
-    let pin = crate::rpc::dispatch(&state, &anon, "login_pin", json!({"user_id": 1, "pin": "2580", "__route": "internet"}));
+    let pin = crate::rpc::dispatch(&state, &anon, "login_pin", json!({"user_id": 1, "pin": ADMIN_PIN, "__route": "internet"}));
     assert!(pin.unwrap_err().to_string().contains("Internet"));
+    let typed = crate::rpc::dispatch(&state, &anon, "login", json!({"username": "admin", "pin": ADMIN_PIN, "__route": "internet", "__ip": "41.73.10.30"}));
+    assert!(typed.unwrap_err().to_string().contains("pas encore autorisé"));
     let s = crate::rpc::dispatch(&state, &anon, "get_settings", net).unwrap();
     assert!(s.get("shop_name").is_some() && s.get("supabase_key").is_none() && s.get("om_merchant_number").is_none());
     assert!(crate::rpc::dispatch(&state, &anon, "get_settings", json!({})).unwrap().get("om_merchant_number").is_some());
@@ -1027,7 +1049,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 8);
+    assert_eq!(count("PRAGMA user_version"), 9);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
@@ -1085,7 +1107,7 @@ fn plan_3d_heights_models_and_layout_wizard() {
     for entry in ["bottom", "top", "left", "right"] {
         let input = plan::LayoutInput {
             floor_id: None, name: Some(format!("Test {entry}")), width: 14.0, depth: 10.0, entry: entry.into(),
-            storage_room: true, business_type: None,
+            storage_room: true, business_type: None, ..Default::default()
         };
         let floor_id = plan::generate_layout(&mut conn, &admin, input).unwrap();
         let p = plan::get(&conn).unwrap();
@@ -1115,12 +1137,12 @@ fn plan_3d_heights_models_and_layout_wizard() {
     // Petite boutique de quartier ; salle trop petite refusée.
     let small = plan::generate_layout(&mut conn, &admin, plan::LayoutInput {
         floor_id: None, name: None, width: 4.0, depth: 5.0, entry: "bottom".into(), storage_room: true,
-        business_type: Some("boutique".into()),
+        business_type: Some("boutique".into()), ..Default::default()
     }).unwrap();
     let p = plan::get(&conn).unwrap();
     assert!(p.fixtures.iter().any(|f| f.floor_id == small && f.type_code == "caisse"));
     assert!(plan::generate_layout(&mut conn, &admin, plan::LayoutInput {
-        floor_id: None, name: None, width: 1.0, depth: 5.0, entry: "bottom".into(), storage_room: false, business_type: None,
+        floor_id: None, name: None, width: 1.0, depth: 5.0, entry: "bottom".into(), storage_room: false, business_type: None, ..Default::default()
     }).is_err());
 
     // Contenu des cases pour la vue 3D ; un niveau garni ne se redessine pas.
@@ -1133,7 +1155,249 @@ fn plan_3d_heights_models_and_layout_wizard() {
     assert_eq!((fill[0].fixture_id, fill[0].level, fill[0].section, fill[0].products), (gondola.id, 1, 1, 1));
     let again = plan::LayoutInput {
         floor_id: Some(gondola.floor_id), name: None, width: 10.0, depth: 8.0, entry: "bottom".into(), storage_room: false,
-        business_type: None,
+        business_type: None, ..Default::default()
     };
     assert!(plan::generate_layout(&mut conn, &admin, again).is_err());
+}
+
+#[test]
+fn default_team_staff_management_and_deletion() {
+    use crate::state::{AppState, Origin};
+    use serde_json::json;
+    // Équipe par défaut : administrateur, gestionnaire et caissière, avec leur PIN.
+    let mut conn = db::open_in_memory().unwrap();
+    let input = |pin: &str| auth::SetupInput {
+        shop_name: "Boutique".into(), shop_phone: None, shop_address: None, currency_symbol: "FCFA".into(), currency_decimals: 0,
+        full_name: "Awa Traoré".into(), username: None, pin: pin.into(), team: None, lang: None, country: None,
+        currency_code: None, currency_position: None,
+    };
+    assert!(auth::initial_setup(&mut conn, input("4826")).unwrap_err().to_string().contains("6 chiffres"));
+    let setup = auth::initial_setup(&mut conn, input(ADMIN_PIN)).unwrap();
+    let team: Vec<(String, String)> = setup.team.iter().map(|m| (m.role.clone(), m.username.clone())).collect();
+    assert_eq!(team, vec![("manager".into(), "gestionnaire".into()), ("cashier".into(), "caisse1".into())]);
+    let all = users::list(&conn).unwrap();
+    assert_eq!(all.len(), 3);
+    assert!(all.iter().all(|u| u.has_pin));
+    assert_eq!(all.iter().filter(|u| u.internet_access).count(), 1, "Internet : l'administrateur seulement, au départ");
+    let caisse1 = auth::account_by_username(&conn, "caisse1").unwrap().unwrap();
+    assert!(auth::check_pin(&conn, &caisse1, &setup.team[1].pin).unwrap().is_some());
+    // Postes suivants proposés par le logiciel.
+    assert_eq!(users::next_username(&conn, "cashier").unwrap(), "caisse2");
+    assert_eq!(users::next_username(&conn, "manager").unwrap(), "gestionnaire2");
+    let admin = setup.user;
+    assert!(users::create(&conn, &admin, users::UserInput {
+        username: Some("caisse2".into()), full_name: "Caissière 2".into(), role: "cashier".into(), ..Default::default()
+    }).is_err(), "PIN obligatoire");
+    let c2 = users::create(&conn, &admin, users::UserInput {
+        username: Some("caisse2".into()), full_name: "Caissière 2".into(), role: "cashier".into(), pin: Some("5173".into()), ..Default::default()
+    }).unwrap();
+    assert!(users::create(&conn, &admin, users::UserInput {
+        username: Some("CAISSE2".into()), full_name: "X".into(), role: "cashier".into(), pin: Some("5173".into()), ..Default::default()
+    }).is_err(), "identifiant déjà pris");
+    // Devenir administrateur : nouveau PIN de 6 chiffres exigé.
+    assert!(users::update(&conn, &admin, c2, users::UserInput { full_name: "Caissière 2".into(), role: "admin".into(), ..Default::default() }).is_err());
+    // Nouveau PIN donné par l'administrateur.
+    users::reset_pin(&conn, &admin, c2, "6284").unwrap();
+    assert!(users::reset_pin(&conn, &admin, admin.id, "6284").is_err(), "administrateur : 6 chiffres");
+    let a2 = auth::account_by_id(&conn, c2).unwrap().unwrap();
+    assert!(auth::check_pin(&conn, &a2, "6284").unwrap().is_some());
+
+    let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
+    let rpc = |o: &Origin, cmd: &str, a: serde_json::Value| crate::rpc::dispatch(&state, o, cmd, a);
+    let anon = Origin::Remote(None);
+    let boss = Origin::Local;
+    rpc(&boss, "login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap();
+    let sugg = rpc(&boss, "suggest_staff", json!({"role": "cashier"})).unwrap();
+    assert_eq!(sugg["username"], "caisse3");
+    assert_eq!(sugg["pin"].as_str().unwrap().len(), 4);
+    // Blocage : la session de la personne est fermée et elle ne peut plus se connecter.
+    let t = rpc(&anon, "login", json!({"username": "caisse2", "pin": "6284"})).unwrap()["token"].as_str().unwrap().to_string();
+    let c2o = Origin::Remote(Some(t));
+    assert!(rpc(&c2o, "list_products", json!({})).is_ok());
+    rpc(&boss, "save_user", json!({"id": c2, "input": {"full_name": "Caissière 2", "role": "cashier", "active": false}, "pin": ADMIN_PIN})).unwrap();
+    assert!(rpc(&c2o, "list_products", json!({})).is_err());
+    assert!(rpc(&anon, "login", json!({"username": "caisse2", "pin": "6284"})).unwrap_err().to_string().contains("bloqué"));
+    // Suppression : compte qui a travaillé (connexions au journal) → gardé pour l'historique, identifiant libéré.
+    let r = rpc(&boss, "delete_user", json!({"id": c2, "pin": ADMIN_PIN})).unwrap();
+    assert_eq!(r["erased"], false);
+    assert!(rpc(&anon, "login", json!({"username": "caisse2", "pin": "6284"})).is_err());
+    assert_eq!(rpc(&boss, "list_users", json!({})).unwrap().as_array().unwrap().len(), 3);
+    let c3 = rpc(&boss, "save_user", json!({"input": {"username": "caisse2", "full_name": "Nouvelle", "role": "cashier", "pin": "7395"}, "pin": ADMIN_PIN}));
+    assert!(c3.is_ok(), "identifiant réutilisable : {c3:?}");
+    // Compte jamais utilisé → effacé.
+    let id = state.conn().query_row("SELECT id FROM users WHERE username = 'caisse2'", [], |r| r.get::<_, i64>(0)).unwrap();
+    assert_eq!(rpc(&boss, "delete_user", json!({"id": id, "pin": ADMIN_PIN})).unwrap()["erased"], true);
+    // Le dernier administrateur ne peut être ni supprimé ni bloqué.
+    assert!(rpc(&boss, "delete_user", json!({"id": admin.id, "pin": ADMIN_PIN})).is_err());
+    // Actions d'une personne (journal filtré).
+    let log = rpc(&boss, "list_audit_log", json!({"filter": {"user_id": c2}})).unwrap();
+    assert!(log.as_array().unwrap().iter().all(|e| e["username"] == "caisse2"));
+    assert!(!log.as_array().unwrap().is_empty());
+}
+
+#[test]
+fn internet_phones_access_codes_and_admin_pin_reset() {
+    use crate::state::{AppState, Origin};
+    use serde_json::json;
+    let (conn, admin) = setup();
+    let fatou = users::create(&conn, &admin, users::UserInput {
+        username: Some("fatou".into()), full_name: "Fatou".into(), role: "cashier".into(), pin: Some("4826".into()), ..Default::default()
+    }).unwrap();
+    users::create(&conn, &admin, users::UserInput {
+        username: Some("moussa".into()), full_name: "Moussa".into(), role: "manager".into(), pin: Some("7395".into()), ..Default::default()
+    }).unwrap();
+    let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
+    let rpc = |o: &Origin, cmd: &str, a: serde_json::Value| crate::rpc::dispatch(&state, o, cmd, a);
+    let anon = Origin::Remote(None);
+    let net = |mut a: serde_json::Value| {
+        a["__route"] = json!("internet");
+        a["__ip"] = json!("41.73.10.40");
+        a
+    };
+    // Sans téléphone autorisé : refus, même avec le bon PIN.
+    assert!(rpc(&anon, "login", net(json!({"username": "fatou", "pin": "4826"}))).unwrap_err().to_string().contains("pas encore autorisé"));
+    let info = rpc(&anon, "login_info", net(json!({}))).unwrap();
+    assert_eq!((info["internet"].as_bool(), info["device"].is_null()), (Some(true), true));
+
+    // L'administrateur génère un code d'accès (8 lettres et chiffres) pour Fatou.
+    let boss = Origin::Local;
+    rpc(&boss, "login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap();
+    assert!(rpc(&boss, "create_access_code", json!({"user_id": fatou})).is_err(), "PIN administrateur exigé");
+    let code = rpc(&boss, "create_access_code", json!({"user_id": fatou, "pin": ADMIN_PIN})).unwrap();
+    let code = code["code"].as_str().unwrap().to_string();
+    assert_eq!(code.len(), 8);
+    let fatou_row = rpc(&boss, "list_users", json!({})).unwrap();
+    let fr = fatou_row.as_array().unwrap().iter().find(|u| u["username"] == "fatou").unwrap().clone();
+    assert_eq!(fr["internet_access"], true, "le code autorise l'accès Internet");
+    // Code faux, puis bon code (tapé en minuscules avec un tiret) : le téléphone est autorisé et connecté.
+    let authz = |code: &str, pin: &str| rpc(&anon, "authorize_device_code", net(json!({"username": "fatou", "pin": pin, "code": code, "label": "Tecno de Fatou"})));
+    assert!(authz("ABCDEFGH", "4826").unwrap_err().to_string().contains("Code d'accès"));
+    assert!(authz(&code, "9157").is_err());
+    let typed = format!("{}-{}", &code[..4], &code[4..]).to_lowercase();
+    let r = authz(&typed, "4826").unwrap();
+    let device = r["device"].as_str().unwrap().to_string();
+    assert_eq!(r["user"]["username"], "fatou");
+    assert!(authz(&code, "4826").is_err(), "un code ne sert qu'une fois");
+    // Ensuite : identifiant + PIN suffisent sur ce téléphone, pour Fatou seulement.
+    let info = rpc(&anon, "login_info", net(json!({"device": device}))).unwrap();
+    assert_eq!(info["device"]["user_name"], "Fatou");
+    let t = rpc(&anon, "login", net(json!({"username": "fatou", "pin": "4826", "device": device}))).unwrap()["token"].as_str().unwrap().to_string();
+    let phone = Origin::Remote(Some(t));
+    assert!(rpc(&phone, "list_products", json!({})).is_ok());
+    assert!(rpc(&anon, "login", net(json!({"username": "moussa", "pin": "7395", "device": device}))).unwrap_err().to_string().contains("autre personne"));
+    // L'administrateur retire le téléphone : la session se ferme, la connexion est refusée.
+    let devices = rpc(&boss, "list_devices", json!({})).unwrap();
+    assert_eq!(devices.as_array().unwrap().len(), 1);
+    assert_eq!(devices[0]["label"], "Tecno de Fatou");
+    rpc(&boss, "revoke_device", json!({"id": devices[0]["id"]})).unwrap();
+    assert!(rpc(&phone, "list_products", json!({})).is_err());
+    assert!(rpc(&anon, "login", net(json!({"username": "fatou", "pin": "4826", "device": device}))).is_err());
+
+    // Téléphone autorisé par le compte boutique : tout le personnel qui a l'accès Internet.
+    let (_, owner_device) = devices::register(&state.conn(), None, "account", "Téléphone de la patronne").unwrap();
+    assert!(rpc(&anon, "login", net(json!({"username": "admin", "pin": ADMIN_PIN, "device": owner_device}))).is_ok());
+    let refused = rpc(&anon, "login", net(json!({"username": "moussa", "pin": "7395", "device": owner_device}))).unwrap_err();
+    assert!(refused.to_string().contains("pas autorisé pour ce compte"), "{refused}");
+    // Au magasin (réseau local), pas besoin de téléphone autorisé.
+    assert!(rpc(&anon, "login", json!({"username": "moussa", "pin": "7395"})).is_ok());
+
+    // PIN administrateur oublié : refait après vérification du compte boutique (6 chiffres, compte débloqué).
+    let conn = state.conn();
+    assert!(auth::reset_admin_pin(&conn, None, "4826").is_err());
+    assert!(auth::reset_admin_pin(&conn, Some("fatou"), "618273").is_err(), "seulement un administrateur");
+    let r = auth::reset_admin_pin(&conn, None, "618273").unwrap();
+    assert_eq!(r.username, "admin");
+    let a = auth::account_by_username(&conn, "admin").unwrap().unwrap();
+    assert!(auth::check_pin(&conn, &a, "618273").unwrap().is_some());
+}
+
+#[test]
+fn migration_to_pin_only_staff() {
+    let conn = Connection::open_in_memory().unwrap();
+    for i in 0..8 {
+        conn.execute_batch(db::migration_sql(i)).unwrap();
+    }
+    conn.execute_batch("PRAGMA user_version = 8; PRAGMA foreign_keys = ON;").unwrap();
+    let pin = auth::hash_password("4826").unwrap();
+    let pwd = auth::hash_password("secret123").unwrap();
+    conn.execute(
+        "INSERT INTO users (id, username, full_name, password_hash, pin_hash, role) VALUES
+             (1, 'admin', 'Admin', ?2, NULL, 'admin'), (2, 'awa', 'Awa', ?2, ?1, 'cashier'), (3, 'issa', 'Issa', ?2, NULL, 'manager')",
+        rusqlite::params![pin, pwd],
+    )
+    .unwrap();
+    db::migrate_for_test(&conn).unwrap();
+    let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+    assert_eq!(count("PRAGMA user_version"), 9);
+    // Plus de mot de passe, sauf pour l'administrateur qui n'a pas encore de PIN.
+    assert_eq!(count("SELECT COUNT(*) FROM users WHERE password_hash <> ''"), 1);
+    assert_eq!(count("SELECT internet_access FROM users WHERE id = 1"), 1);
+    assert_eq!(count("SELECT internet_access FROM users WHERE id = 2"), 0);
+    let awa = auth::account_by_username(&conn, "awa").unwrap().unwrap();
+    assert!(auth::check_pin(&conn, &awa, "4826").unwrap().is_some());
+    let issa = auth::account_by_username(&conn, "issa").unwrap().unwrap();
+    assert!(auth::check_pin(&conn, &issa, "4826").unwrap_err().to_string().contains("l'administrateur doit"));
+    // L'administrateur sans PIN : ancien mot de passe une dernière fois, puis création de son PIN (6 chiffres).
+    let admin = auth::login_password(&conn, "admin", "secret123").unwrap();
+    assert!(auth::set_own_pin(&conn, &admin, "secret123", "4826").is_err());
+    auth::set_own_pin(&conn, &admin, "secret123", "604813").unwrap();
+    assert!(auth::login_password(&conn, "admin", "secret123").is_err());
+    let users = auth::login_users(&conn).unwrap();
+    assert!(users.iter().all(|u| !u.legacy_password));
+}
+
+#[test]
+fn several_activities_and_layout_preview() {
+    use crate::state::{AppState, Origin};
+    use serde_json::json;
+    let (conn, admin) = setup();
+    let state = AppState::new(conn, std::path::PathBuf::from(":memory:"));
+    let rpc = |cmd: &str, a: serde_json::Value| crate::rpc::dispatch(&state, &Origin::Local, cmd, a);
+    rpc("login", json!({"username": "admin", "pin": ADMIN_PIN})).unwrap();
+    // Premier choix sans PIN ; supérette + quincaillerie : fonctions et catégories réunies.
+    let r = rpc("set_business_type", json!({"ids": ["superette", "hardware"], "seed": true})).unwrap();
+    assert_eq!(r["settings"]["business_type"], "superette");
+    assert_eq!(r["settings"]["business_types"], "superette,hardware");
+    let features = r["settings"]["enabled_features"].as_str().unwrap().to_string();
+    assert!(features.contains("expiry") && features.contains("sku"), "{features}");
+    // Changer ensuite demande le PIN ; plus de 3 activités refusé.
+    assert!(rpc("set_business_type", json!({"ids": ["bar"]})).is_err());
+    assert!(rpc("set_business_type", json!({"ids": ["bar", "restaurant", "kiosk", "phones"], "pin": ADMIN_PIN})).is_err());
+
+    // Aperçu : rien n'est enregistré ; rayons nommés ; hauteur sous plafond respectée.
+    let floors = plan::get(&state.conn()).unwrap().floors.len();
+    let preview = rpc("plan_preview_layout", json!({"input": {"width": 12.0, "depth": 9.0, "height": 2.6, "entry": "bottom", "storage_room": true}})).unwrap();
+    assert_eq!(plan::get(&state.conn()).unwrap().floors.len(), floors);
+    assert_eq!(preview["floor"]["wall_height"], 2.6);
+    let fx = preview["fixtures"].as_array().unwrap();
+    let names: Vec<&str> = fx.iter().filter(|f| f["type_code"] == "zone_vente").map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["Alimentation", "Quincaillerie"]);
+    assert!(fx.iter().all(|f| f["type_code"] == "zone_vente" || f["type_code"] == "zone_reserve" || f["height"].as_f64().unwrap() <= 2.6 + 1e-9));
+    assert!(fx.iter().any(|f| f["type_code"] == "gondole") && fx.iter().any(|f| f["type_code"] == "rack"));
+    // Garder ce plan : même proposition, enregistrée, avec la hauteur des murs.
+    let floor_id = rpc("plan_generate_layout", json!({"input": {"name": "Rez-de-chaussée", "width": 12.0, "depth": 9.0, "height": 2.6, "entry": "bottom", "storage_room": true}})).unwrap();
+    let p = plan::get(&state.conn()).unwrap();
+    let floor = p.floors.iter().find(|f| Some(f.id) == floor_id.as_i64()).unwrap();
+    assert_eq!((floor.name.as_str(), floor.wall_height, floor.width, floor.depth), ("Rez-de-chaussée", 2.6, 14.0, 11.0));
+    let saved = p.fixtures.iter().filter(|f| f.floor_id == floor.id).count();
+    assert_eq!(saved, fx.len());
+    let rack_heights: Vec<f64> = p.fixtures.iter().filter(|f| f.floor_id == floor.id && f.type_code == "rack").map(|f| f.height).collect();
+    assert!(!rack_heights.is_empty() && rack_heights.iter().all(|h| (*h - 2.5).abs() < 1e-9), "{rack_heights:?}");
+    // Étage : escalier, ni porte d'entrée ni caisse.
+    let up = rpc("plan_preview_layout", json!({"input": {"width": 8.0, "depth": 6.0, "entry": "left", "upstairs": true, "activities": ["fashion"]}})).unwrap();
+    let up = up["fixtures"].as_array().unwrap();
+    assert!(up.iter().any(|f| f["type_code"] == "escalier") && !up.iter().any(|f| f["type_code"] == "caisse"));
+
+    // Dessin du bâtiment en fond : posé, puis retiré (l'image est supprimée).
+    let media = rpc("upload_image", json!({"mime": "image/png", "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="})).unwrap();
+    let fid = floor.id;
+    assert!(rpc("plan_set_backdrop", json!({"input": {"floor_id": fid, "media_id": media, "x": 1.0, "y": 1.0, "w": 0.1, "h": 8.0}})).is_err());
+    rpc("plan_set_backdrop", json!({"input": {"floor_id": fid, "media_id": media, "x": 1.0, "y": 1.0, "w": 12.0, "h": 9.0, "opacity": 0.5}})).unwrap();
+    let f = plan::get(&state.conn()).unwrap().floors.into_iter().find(|f| f.id == fid).unwrap();
+    assert_eq!(f.backdrop_id, media.as_i64());
+    assert_eq!(f.backdrop.unwrap()["w"], 12.0);
+    rpc("plan_set_backdrop", json!({"input": {"floor_id": fid, "media_id": null}})).unwrap();
+    let left: i64 = state.conn().query_row("SELECT COUNT(*) FROM media", [], |r| r.get(0)).unwrap();
+    assert_eq!(left, 0);
+    let _ = admin;
 }

@@ -65,6 +65,39 @@ pub struct BusinessProfile {
     pub track_stock: bool,
     /// Meubles proposés en tête de la palette du plan de la boutique (codes des types).
     pub fixtures: Vec<&'static str>,
+    /// Nom du rayon sur le plan quand plusieurs activités se partagent la salle (français, anglais).
+    pub department: &'static str,
+    pub department_en: &'static str,
+    /// Taille habituelle de la salle de vente (largeur × profondeur, mètres) : plan de départ.
+    pub size: [f64; 2],
+}
+
+/// Rayon et taille habituelle de la salle pour chaque type de commerce.
+fn department(id: &str) -> (&'static str, &'static str, [f64; 2]) {
+    match id {
+        "boutique" => ("Alimentation", "Groceries", [5.0, 4.0]),
+        "general" => ("Commerce général", "General store", [12.0, 9.0]),
+        "supermarket" => ("Alimentation", "Groceries", [25.0, 18.0]),
+        "superette" => ("Alimentation", "Groceries", [10.0, 8.0]),
+        "wholesale" => ("Vente en gros", "Wholesale", [15.0, 10.0]),
+        "pharmacy" => ("Pharmacie", "Pharmacy", [8.0, 6.0]),
+        "fashion" => ("Vêtements", "Clothing", [10.0, 7.0]),
+        "hardware" => ("Quincaillerie", "Hardware", [10.0, 8.0]),
+        "building" => ("Matériaux", "Building materials", [15.0, 10.0]),
+        "electronics" => ("Électronique", "Electronics", [8.0, 6.0]),
+        "phones" => ("Téléphonie", "Phones", [4.0, 3.5]),
+        "bakery" => ("Boulangerie", "Bakery", [7.0, 5.0]),
+        "butcher" => ("Boucherie", "Butcher", [6.0, 5.0]),
+        "greengrocer" => ("Fruits et légumes", "Fruit & vegetables", [6.0, 5.0]),
+        "cosmetics" => ("Cosmétiques", "Cosmetics", [6.0, 5.0]),
+        "bookshop" => ("Librairie", "Books & stationery", [8.0, 6.0]),
+        "autoparts" => ("Pièces auto", "Auto parts", [8.0, 6.0]),
+        "agrovet" => ("Agro-vétérinaire", "Agrovet", [8.0, 6.0]),
+        "bar" => ("Bar", "Bar", [8.0, 6.0]),
+        "kiosk" => ("Kiosque", "Kiosk", [4.0, 3.5]),
+        "restaurant" => ("Restaurant", "Restaurant", [10.0, 8.0]),
+        _ => ("Spécialités", "Specialty", [6.0, 5.0]),
+    }
 }
 
 /// Les 22 profils de commerce (mêmes codes que les types de boutique du compte Eden Dev).
@@ -78,7 +111,19 @@ pub fn profiles() -> Vec<BusinessProfile> {
         track_stock: bool,
         fixtures: &[&'static str],
     ) -> BusinessProfile {
-        BusinessProfile { id, label, description, categories: categories.to_vec(), features: features.to_vec(), track_stock, fixtures: fixtures.to_vec() }
+        let (department, department_en, size) = department(id);
+        BusinessProfile {
+            id,
+            label,
+            description,
+            categories: categories.to_vec(),
+            features: features.to_vec(),
+            track_stock,
+            fixtures: fixtures.to_vec(),
+            department,
+            department_en,
+            size,
+        }
     }
     vec![
         p("boutique", "Boutique de quartier", "Configuration légère : alimentation, boissons, hygiène, entretien, produits divers.",

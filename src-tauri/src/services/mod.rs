@@ -3,6 +3,7 @@ pub mod auth;
 pub mod backup;
 pub mod cash;
 pub mod catalog;
+pub mod devices;
 pub mod locations;
 pub mod media;
 pub mod partners;

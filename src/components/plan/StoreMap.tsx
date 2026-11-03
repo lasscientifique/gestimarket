@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { Maximize, Minus, Plus } from "lucide-react";
 import type { Fixture, Floor } from "../../types";
 import { tl, tm } from "../../lib/i18n";
+import { mediaUrl } from "../../lib/media";
 
 /** Position, taille (mètres) et rotation (degrés) d'un meuble. */
 export interface Geometry {
@@ -262,6 +263,19 @@ export function StoreMap({
           </pattern>
         </defs>
         <rect className="map-floor" x={0} y={0} width={floor.width} height={floor.depth} fill={`url(#grid-${floor.id})`} strokeWidth={unit * 0.25} />
+        {floor.backdrop_id && floor.backdrop && (
+          <image
+            className="map-backdrop"
+            href={mediaUrl(floor.backdrop_id)}
+            x={floor.backdrop.x}
+            y={floor.backdrop.y}
+            width={floor.backdrop.w}
+            height={floor.backdrop.h}
+            opacity={floor.backdrop.opacity}
+            preserveAspectRatio="none"
+            pointerEvents="none"
+          />
+        )}
         {list.map((f) => {
           const sel = f.id === selectedId;
           const hl = highlight.has(f.id);
@@ -283,7 +297,7 @@ export function StoreMap({
                   height={f.h}
                   rx={isZone ? 0 : Math.min(f.w, f.h) * 0.08}
                   fill={isText ? "transparent" : f.type_code === "escalier" ? "url(#stairs)" : f.color}
-                  fillOpacity={isZone ? 0.55 : 0.9}
+                  fillOpacity={isZone ? (floor.backdrop_id ? 0.15 : 0.55) : 0.9}
                   stroke={sel ? "var(--accent-strong)" : isText ? "transparent" : "rgba(15, 23, 42, 0.45)"}
                   strokeWidth={sel ? unit * 0.5 : unit * 0.12}
                   strokeDasharray={isZone ? `${unit} ${unit * 0.6}` : undefined}

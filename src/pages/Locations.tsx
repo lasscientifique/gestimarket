@@ -3,6 +3,8 @@ import {
   Box,
   Boxes,
   Copy,
+  Download,
+  FileImage,
   Footprints,
   Map as MapIcon,
   Repeat,
@@ -22,11 +24,13 @@ import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { HelpTip } from "../components/Help";
 import { Field, Modal, PageHeader, StatCard } from "../components/ui";
-import { useBusinessProfiles } from "../components/BusinessType";
+import { activitiesOf, BusinessTypeGrid, useBusinessProfiles } from "../components/BusinessType";
+import { PlanProposal, defaultProposal, proposalInput, type ProposalValue } from "../components/plan/PlanProposal";
+import { BackdropModal } from "../components/plan/BackdropModal";
 import { DRAG_TYPE, StoreMap, geometryOf, type Geometry } from "../components/plan/StoreMap";
 import { FixtureFront } from "../components/plan/FixtureFront";
 import { printHtml } from "../lib/receipt";
-import type { CellFill, Fixture, FixtureCategory, FixtureType, Floor, FloorStyle, LayoutInput, StorePlanData } from "../types";
+import type { CellFill, Fixture, FixtureCategory, FixtureType, Floor, FloorStyle, StorePlanData } from "../types";
 import { collision, footprint } from "../components/plan3d/geometry";
 import { saveView, savedView, webglAvailable, type PlanView } from "../components/plan3d/support";
 import { tl, tm } from "../lib/i18n";
@@ -79,7 +83,9 @@ export default function LocationsPage() {
   const [front, setFront] = useState<number | null>(null);
   const [undo, setUndo] = useState<UndoStep[]>([]);
   const [redo, setRedo] = useState<UndoStep[]>([]);
-  const [modal, setModal] = useState<null | "floor-new" | Floor | "type-new" | FixtureType | "generate" | "wizard">(null);
+  const [modal, setModal] = useState<null | "floor-new" | Floor | "type-new" | FixtureType | "generate" | "wizard" | "export" | "backdrop">(null);
+  // Capture de la vue 3D ouverte (export en photo ou PDF).
+  const snapshotRef = useRef<(() => string | null) | null>(null);
   const [view, setViewState] = useState<PlanView>(() => savedView(VIEW_KEY, "3d"));
   const setView = (v: PlanView) => {
     setViewState(v);
@@ -334,6 +340,7 @@ export default function LocationsPage() {
           <>
             <button className="btn" onClick={() => setModal("wizard")}><WandSparkles size={16} />  {tl("Créer ma boutique")}</button>
             <button className="btn" onClick={printPlan}><Printer size={16} />  {tl("Imprimer le plan")}</button>
+            <button className="btn" onClick={() => setModal("export")}><Download size={16} />  {tl("Exporter")}</button>
             {edit ? (
               <button className="btn btn-primary" onClick={() => setEdit(false)}>{tl("Terminer la modification")}</button>
             ) : (
@@ -367,6 +374,9 @@ export default function LocationsPage() {
           <>
             <button className="chip" onClick={() => setModal("floor-new")}><Plus size={14} />  {tl("Niveau")}</button>
             <button className="icon-btn" title={tl("Nom et dimensions de ce niveau")} onClick={() => setModal(floor)}><Settings2 size={16} /></button>
+            <button className="chip" title={tl("Photo ou PDF du plan du bâtiment, en fond du plan")} onClick={() => setModal("backdrop")}>
+              <FileImage size={14} />  {floor.backdrop_id ? tl("Dessin du bâtiment ✓") : tl("Dessin du bâtiment")}
+            </button>
             <span className="plan-undo">
               <button className="icon-btn" title={tl("Annuler (Ctrl+Z)")} disabled={!undo.length} onClick={doUndo}><Undo2 size={16} /></button>
               <button className="icon-btn" title={tl("Rétablir (Ctrl+Y)")} disabled={!redo.length} onClick={doRedo}><Redo2 size={16} /></button>
@@ -393,7 +403,7 @@ export default function LocationsPage() {
               <WandSparkles size={26} />
               <div>
                 <strong>{tl("Ce niveau est vide")}</strong>
-                <span className="muted small">{tl("Créez votre boutique en 3 questions (taille, entrée, type de commerce) : murs, caisse, frigos et allées sont posés pour vous.")}</span>
+                <span className="muted small">{tl("Donnez les dimensions de la salle (longueur, largeur, hauteur) : GestiMarket propose un plan selon vos activités (murs, caisse, frigos, allées, rayons). Vous pouvez aussi importer le dessin du bâtiment.")}</span>
               </div>
               <button className="btn btn-primary" onClick={() => setModal("wizard")}>{tl("Créer ma boutique")}</button>
             </div>
@@ -417,6 +427,7 @@ export default function LocationsPage() {
                 }}
                 onUnavailable={() => setView("plan")}
                 height="min(68vh, 720px)"
+                snapshotRef={snapshotRef}
               />
             </Suspense>
           ) : (
@@ -509,6 +520,27 @@ export default function LocationsPage() {
         />
       )}
       {modal === "generate" && <GenerateModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
+      {modal === "export" && (
+        <ExportModal
+          floor={floor}
+          fixtures={fixtures}
+          shopName={settings.shop_name ?? ""}
+          snapshot={view !== "plan" ? snapshotRef.current : null}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal === "backdrop" && (
+        <BackdropModal
+          floor={floor}
+          fixtures={fixtures}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            setView("plan");
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -794,7 +826,7 @@ function FloorForm({ floor, canDelete, onClose, onSaved }: { floor: Floor | null
         <Field label={tl("Nom *")} span={2} hint={tl("Ex. Rez-de-chaussée, 1er étage, Entrepôt, Magasin 2")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label={tl("Largeur (m)")}><input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} /></Field>
         <Field label={tl("Profondeur (m)")}><input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} /></Field>
-        <Field label={tl("Hauteur des murs (m)")}><input inputMode="decimal" value={f.wall_height} onChange={(e) => setF({ ...f, wall_height: e.target.value })} /></Field>
+        <Field label={tl("Hauteur sous plafond (m)")}><input inputMode="decimal" value={f.wall_height} onChange={(e) => setF({ ...f, wall_height: e.target.value })} /></Field>
         <Field label={tl("Sol")}>
           <select value={f.floor_style} onChange={(e) => setF({ ...f, floor_style: e.target.value as FloorStyle })}>
             {FLOOR_STYLES.map((s) => (
@@ -958,50 +990,28 @@ function GenerateModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
   );
 }
 
-type EntrySide = LayoutInput["entry"];
-const ENTRIES: { key: EntrySide; label: string }[] = [
-  { key: "bottom", label: tl("En bas") },
-  { key: "top", label: tl("En haut") },
-  { key: "left", label: tl("À gauche") },
-  { key: "right", label: tl("À droite") },
-];
-
-/** Assistant « Créer ma boutique » : taille de la salle, côté de l'entrée, type de commerce. */
+/** Assistant « Créer ma boutique » : activités, dimensions de la salle (longueur, largeur, hauteur), entrée ;
+ *  aperçu du plan proposé avant de le garder. */
 function WizardModal({ floor, empty, onClose, onDone }: { floor: Floor; empty: boolean; onClose: () => void; onDone: (floorId: number) => void }) {
   const { toast, confirm, settings } = useApp();
   const profiles = useBusinessProfiles();
-  const [f, setF] = useState({
-    width: "12",
-    depth: "9",
-    entry: "bottom" as EntrySide,
-    storage: true,
-    business: settings.business_type ?? "",
-    target: (empty ? "replace" : "new") as "replace" | "new",
-    name: tl("Boutique"),
-  });
+  const [value, setValue] = useState<ProposalValue | null>(null);
+  const [target, setTarget] = useState<"replace" | "new">(empty ? "replace" : "new");
+  const [pick, setPick] = useState(false);
   const [busy, setBusy] = useState(false);
-  const num = (s: string) => Number(s.replace(",", "."));
-  const W = num(f.width);
-  const D = num(f.depth);
-  const valid = W >= 3 && D >= 3 && W <= 200 && D <= 200;
 
-  // Aperçu à l'échelle : un clic sur un côté y place l'entrée.
-  const scale = 170 / Math.max(W || 1, D || 1, 1);
-  const pw = Math.max(24, (W || 1) * scale);
-  const ph = Math.max(24, (D || 1) * scale);
-  const ox = (220 - pw) / 2;
-  const oy = (220 - ph) / 2;
-  const side = (s: EntrySide): [number, number, number, number] =>
-    s === "bottom" ? [ox, oy + ph, ox + pw, oy + ph] : s === "top" ? [ox, oy, ox + pw, oy] : s === "left" ? [ox, oy, ox, oy + ph] : [ox + pw, oy, ox + pw, oy + ph];
-  const [x1, y1, x2, y2] = side(f.entry);
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  const horizontal = y1 === y2;
+  // Plan de départ : activités de la boutique, à leur taille habituelle.
+  useEffect(() => {
+    if (!profiles || value) return;
+    setValue(defaultProposal(profiles.profiles, activitiesOf(settings), empty ? floor.name : tl("Boutique")));
+  }, [profiles, value, settings, empty, floor]);
 
   const submit = async () => {
-    if (!valid || busy) return;
+    if (!value || busy) return;
+    const input = proposalInput(value);
+    if (typeof input === "string") return toast.error(input);
     if (
-      f.target === "replace" &&
+      target === "replace" &&
       !empty &&
       !(await confirm({
         title: tl("Redessiner ce niveau"),
@@ -1013,15 +1023,7 @@ function WizardModal({ floor, empty, onClose, onDone }: { floor: Floor; empty: b
       return;
     setBusy(true);
     try {
-      const id = await api.planGenerateLayout({
-        floor_id: f.target === "replace" ? floor.id : null,
-        name: f.target === "new" ? f.name : null,
-        width: W,
-        depth: D,
-        entry: f.entry,
-        storage_room: f.storage,
-        business_type: f.business || null,
-      });
+      const id = await api.planGenerateLayout({ ...input, floor_id: target === "replace" ? floor.id : null });
       toast.success(tl("Votre boutique est dessinée : ajustez les meubles si besoin, puis rangez-y les produits."));
       onDone(id);
     } catch (e) {
@@ -1031,88 +1033,111 @@ function WizardModal({ floor, empty, onClose, onDone }: { floor: Floor; empty: b
     }
   };
 
+  const names = (value?.activities ?? []).map((id) => profiles?.profiles.find((p) => p.id === id)).filter((p) => !!p);
+
   return (
     <Modal
       title={tl("Créer ma boutique")}
       onClose={onClose}
-      width={760}
+      width={1040}
       footer={
         <>
           <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
-          <button className="btn btn-primary" disabled={!valid || busy} onClick={submit}>
-            <WandSparkles size={16} />  {busy ? tl("Création…") : tl("Créer le plan")}
+          <button className="btn btn-primary" disabled={!value || busy} onClick={submit}>
+            <WandSparkles size={16} />  {busy ? tl("Création…") : tl("Garder ce plan")}
           </button>
         </>
       }
     >
-      <div className="wizard-grid">
-        <div className="form-grid">
-          <Field label={tl("1. Largeur de la salle (m)")}>
-            <input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} autoFocus />
-          </Field>
-          <Field label={tl("Profondeur (m)")}>
-            <input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} />
-          </Field>
-          <div className="span-2">
-            <span className="field-label">{tl("2. Côté de l'entrée")}</span>
-            <div className="segmented">
-              {ENTRIES.map((e) => (
-                <button type="button" key={e.key} className={f.entry === e.key ? "active" : ""} onClick={() => setF({ ...f, entry: e.key })}>
-                  {e.label}
-                </button>
-              ))}
-            </div>
+      {!value || !profiles ? (
+        <p className="muted">{tl("Chargement…")}</p>
+      ) : (
+        <>
+          <div className="wizard-activities">
+            <span className="field-label">{tl("Activités")}</span>
+            <span>{names.length ? names.map((p) => tm(p!.label)).join(" + ") : tl("Meubles courants")}</span>
+            <button type="button" className="link-btn" onClick={() => setPick(!pick)}>{pick ? tl("Fermer") : tl("Changer pour ce plan")}</button>
           </div>
-          <Field label={tl("3. Type de commerce")} span={2} hint={tl("Choisit les meubles : gondoles, frigos, portants, racks, vitrines…")}>
-            <select value={f.business} onChange={(e) => setF({ ...f, business: e.target.value })}>
-              <option value="">{tl("Meubles courants")}</option>
-              {profiles?.profiles.map((p) => (
-                <option key={p.id} value={p.id}>{tm(p.label)}</option>
-              ))}
-            </select>
-          </Field>
-          <label className="check span-2">
-            <input type="checkbox" checked={f.storage} onChange={(e) => setF({ ...f, storage: e.target.checked })} />
-            {tl("Avec une réserve au fond (salle de 6 m × 6 m au moins)")}
-          </label>
-          <div className="span-2 wizard-target">
+          {pick && (
+            <BusinessTypeGrid
+              profiles={profiles.profiles}
+              value={value.activities}
+              onChange={(ids) => {
+                const d = defaultProposal(profiles.profiles, ids, value.name);
+                setValue({ ...value, activities: ids, width: d.width, depth: d.depth, storage: d.storage });
+              }}
+            />
+          )}
+          <PlanProposal value={value} onChange={setValue} profiles={profiles.profiles} showUpstairs previewHeight={340} />
+          <div className="wizard-target">
             <label className="check">
-              <input type="radio" checked={f.target === "replace"} onChange={() => setF({ ...f, target: "replace" })} />
+              <input type="radio" checked={target === "replace"} onChange={() => setTarget("replace")} />
               {tl("Dessiner sur « {0} »", [tm(floor.name)])}
               {!empty && <span className="muted small">  {tl("(ses meubles actuels seront remplacés)")}</span>}
             </label>
             <label className="check">
-              <input type="radio" checked={f.target === "new"} onChange={() => setF({ ...f, target: "new" })} />
-              {tl("Nouveau niveau")}
+              <input type="radio" checked={target === "new"} onChange={() => setTarget("new")} />
+              {tl("Nouveau niveau (nom ci-dessus)")}
             </label>
-            {f.target === "new" && <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={tl("Nom du niveau")} />}
           </div>
-        </div>
-        <div className="wizard-preview">
-          <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label={tl("Aperçu de la salle")}>
-            <rect x={ox} y={oy} width={pw} height={ph} className="wz-room" />
-            {ENTRIES.map((e) => {
-              const [a, b, c, d] = side(e.key);
-              return <line key={e.key} x1={a} y1={b} x2={c} y2={d} className={`wz-side${f.entry === e.key ? " active" : ""}`} onClick={() => setF({ ...f, entry: e.key })} />;
-            })}
-            <line
-              x1={horizontal ? mx - 14 : mx}
-              y1={horizontal ? my : my - 14}
-              x2={horizontal ? mx + 14 : mx}
-              y2={horizontal ? my : my + 14}
-              className="wz-door"
-            />
-            <text x={110} y={Math.max(12, oy - 6)} textAnchor="middle" className="wz-dim">{valid ? meters(W) : "—"}</text>
-            <text x={Math.max(12, ox - 6)} y={110} textAnchor="middle" className="wz-dim" transform={`rotate(-90 ${Math.max(12, ox - 6)} 110)`}>
-              {valid ? meters(D) : "—"}
-            </text>
-          </svg>
-          <span className="muted small">{tl("Cliquez sur un côté pour y placer l'entrée.")}</span>
-        </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/** Export du plan : photo (PNG) ou PDF détaillé. */
+function ExportModal({
+  floor,
+  fixtures,
+  shopName,
+  snapshot,
+  onClose,
+}: {
+  floor: Floor;
+  fixtures: Fixture[];
+  shopName: string;
+  snapshot: (() => string | null) | null;
+  onClose: () => void;
+}) {
+  const { toast } = useApp();
+  const [contents, setContents] = useState(false);
+  const [busy, setBusy] = useState<"" | "png" | "pdf">("");
+  const run = async (kind: "png" | "pdf") => {
+    setBusy(kind);
+    try {
+      const m = await import("../components/plan/exportPlan");
+      const done = kind === "png" ? await m.exportPng(floor, fixtures, snapshot) : await m.exportPdf({ shopName, floor, fixtures, snapshot, contents });
+      if (done) {
+        toast.success(kind === "png" ? tl("Photo du plan enregistrée.") : tl("PDF du plan enregistré."));
+        onClose();
+      }
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <Modal title={tl("Exporter le plan — {0}", [tm(floor.name)])} onClose={onClose} width={520}>
+      <div className="export-choices">
+        <button className="export-choice" disabled={!!busy} onClick={() => run("png")}>
+          <FileImage size={26} />
+          <strong>{tl("Photo (PNG)")}</strong>
+          <span className="muted small">{snapshot ? tl("La vue 3D telle qu'elle est à l'écran.") : tl("Le plan vu de dessus, coté, meubles numérotés.")}</span>
+          {busy === "png" && <span className="muted small">{tl("Préparation…")}</span>}
+        </button>
+        <button className="export-choice" disabled={!!busy} onClick={() => run("pdf")}>
+          <Download size={26} />
+          <strong>{tl("PDF détaillé")}</strong>
+          <span className="muted small">{tl("Plan coté (longueur, largeur, hauteur, surface), liste des meubles avec leurs dimensions, vue 3D.")}</span>
+          {busy === "pdf" && <span className="muted small">{tl("Préparation…")}</span>}
+        </button>
       </div>
-      <p className="muted small">
-        {tl("Murs, entrée, caisse, frigos, étagères, allées et réserve sont posés selon votre commerce. Vous pourrez tout déplacer ensuite.")}
-      </p>
+      <label className="check" style={{ marginTop: 12 }}>
+        <input type="checkbox" checked={contents} onChange={(e) => setContents(e.target.checked)} />
+        {tl("PDF : ajouter le contenu de chaque meuble (produits par case)")}
+      </label>
     </Modal>
   );
 }

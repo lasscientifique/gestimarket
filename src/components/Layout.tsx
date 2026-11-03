@@ -36,7 +36,7 @@ import { LicenceBanner } from "./LicenceBanner";
 import { ROLE_LABELS } from "../lib/format";
 import { BrandLogo } from "./Brand";
 import type { Role } from "../types";
-import { ChangePasswordModal } from "./ChangePasswordModal";
+import { ChangePinModal } from "./ChangePinModal";
 import { ProductFinderModal } from "./ProductFinder";
 import { ConnChip } from "../pages/Poste";
 import { tl } from "../lib/i18n";
@@ -89,7 +89,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/reports", label: tl("Rapports"), icon: <BarChart3 size={18} />, roles: ["admin"] },
       { to: "/payments", label: tl("Paiements mobiles"), icon: <Smartphone size={18} />, roles: ["admin"] },
-      { to: "/users", label: tl("Utilisateurs"), icon: <UserCog size={18} />, roles: ["admin"] },
+      { to: "/users", label: tl("Personnel"), icon: <UserCog size={18} />, roles: ["admin"] },
       { to: "/audit", label: tl("Journal d'activité"), icon: <ScrollText size={18} />, roles: ["admin"] },
       { to: "/poste", label: tl("Poste & réseau"), icon: <Network size={18} />, roles: ["admin", "manager", "cashier"] },
       { to: "/settings", label: tl("Paramètres"), icon: <SettingsIcon size={18} />, roles: ["admin"] },
@@ -229,7 +229,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <button className="icon-btn light" title={theme === "dark" ? tl("Thème clair") : tl("Thème sombre")} onClick={toggleTheme}>
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <button className="icon-btn light" title={tl("Mon compte : mot de passe et code PIN")} onClick={() => setPwdOpen(true)}>
+            <button className="icon-btn light" title={tl("Mon code PIN")} onClick={() => setPwdOpen(true)}>
               <KeyRound size={16} />
             </button>
             <button
@@ -263,7 +263,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
         </nav>
       )}
-      {pwdOpen && <ChangePasswordModal onClose={() => setPwdOpen(false)} />}
+      {pwdOpen && <ChangePinModal onClose={() => setPwdOpen(false)} />}
       {finderOpen && <ProductFinderModal onClose={() => setFinderOpen(false)} />}
     </div>
   );

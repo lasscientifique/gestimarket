@@ -42,6 +42,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("om_require_reference", "1"),
     // Type de commerce et fonctions activées (expiry, brand, sku, packagings, services, decimal)
     ("business_type", ""),
+    // Activités de la boutique (la principale d'abord, 3 au plus), séparées par des virgules
+    ("business_types", ""),
     ("enabled_features", "expiry,brand,sku,packagings,decimal"),
     // Application mobile : publication de l'adresse du poste serveur sur Supabase
     ("supabase_enabled", "0"),

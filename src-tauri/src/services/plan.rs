@@ -31,6 +31,9 @@ pub struct Floor {
     /// Hauteur des murs (mètres) et sol (tiles, concrete, wood, vinyl) pour la vue 3D.
     pub wall_height: f64,
     pub floor_style: String,
+    /// Dessin du bâtiment en fond (image) et son cadrage {x, y, w, h, opacity} en mètres.
+    pub backdrop_id: Option<i64>,
+    pub backdrop: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,7 +169,8 @@ fn product_counts(conn: &Connection) -> AppResult<HashMap<i64, i64>> {
 }
 
 pub fn get(conn: &Connection) -> AppResult<Plan> {
-    let mut stmt = conn.prepare("SELECT id, name, sort, width, depth, wall_height, floor_style FROM store_floors ORDER BY sort, id")?;
+    let mut stmt =
+        conn.prepare("SELECT id, name, sort, width, depth, wall_height, floor_style, backdrop_id, backdrop FROM store_floors ORDER BY sort, id")?;
     let floors = stmt
         .query_map([], |r| {
             Ok(Floor {
@@ -177,6 +181,8 @@ pub fn get(conn: &Connection) -> AppResult<Plan> {
                 depth: r.get(4)?,
                 wall_height: r.get(5)?,
                 floor_style: r.get(6)?,
+                backdrop_id: r.get(7)?,
+                backdrop: r.get::<_, Option<String>>(8)?.and_then(|b| serde_json::from_str(&b).ok()),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -346,10 +352,13 @@ pub fn delete_floor(conn: &Connection, user: &SessionUser, id: i64) -> AppResult
     if placed > 0 {
         return invalid(format!("Ce niveau contient des produits rangés ({placed} case(s)) : déplacez-les d'abord."));
     }
+    let backdrop: Option<i64> = conn.query_row("SELECT backdrop_id FROM store_floors WHERE id = ?1", [id], |r| r.get(0)).optional()?.flatten();
     let n = conn.execute("DELETE FROM store_floors WHERE id = ?1", [id])?;
     if n == 0 {
         return invalid("Niveau introuvable.");
     }
+    // Le dessin du bâtiment de ce niveau n'est plus utilisé.
+    crate::services::media::cleanup(conn, backdrop)?;
     audit::log(conn, user, "Plan : niveau supprimé", "plan", Some(id), "")?;
     Ok(())
 }
@@ -788,7 +797,7 @@ pub fn floor_fill(conn: &Connection, floor_id: i64) -> AppResult<Vec<CellFill>> 
 
 // ───────────────────────────── Assistant « Créer ma boutique » ─────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct LayoutInput {
     /// Niveau à remplacer (sans produits rangés) ; vide : nouveau niveau.
     #[serde(default)]
@@ -798,13 +807,22 @@ pub struct LayoutInput {
     /// Dimensions intérieures de la salle (mètres) : largeur de gauche à droite, profondeur de haut en bas.
     pub width: f64,
     pub depth: f64,
+    /// Hauteur sous plafond (mètres) : hauteur des murs ; un meuble plus haut est abaissé.
+    #[serde(default)]
+    pub height: Option<f64>,
     /// Côté de l'entrée sur le plan : bottom, top, left, right.
     pub entry: String,
     #[serde(default)]
     pub storage_room: bool,
-    /// Type de commerce (vide : celui de la boutique) : choisit les meubles.
+    /// Niveau à l'étage : on y arrive par un escalier (ni porte d'entrée ni caisse).
+    #[serde(default)]
+    pub upstairs: bool,
+    /// Un seul type de commerce (vide : ceux de la boutique).
     #[serde(default)]
     pub business_type: Option<String>,
+    /// Activités de la boutique, la principale d'abord (3 au plus) ; vide : celles de la boutique.
+    #[serde(default)]
+    pub activities: Option<Vec<String>>,
 }
 
 /// Meuble à poser dans le repère « entrée en bas » de la salle : centre, taille et rotation.
@@ -816,10 +834,13 @@ struct Piece {
     h: f64,
     rot: i64,
     sections: Option<i64>,
+    /// Nom et couleur propres (rayon d'une activité).
+    name: Option<String>,
+    color: Option<&'static str>,
 }
 
 fn pc(code: &'static str, cx: f64, cy: f64, w: f64, h: f64, rot: i64) -> Piece {
-    Piece { code, cx, cy, w, h, rot, sections: None }
+    Piece { code, cx, cy, w, h, rot, sections: None, name: None, color: None }
 }
 
 /// Emprise au sol (x, y, largeur, profondeur) d'un rectangle tourné d'un quart de tour ou non.
@@ -832,33 +853,83 @@ fn is_structure(code: &str) -> bool {
     code == "mur" || code == "porte" || code.starts_with("zone_")
 }
 
-/// Disposition proposée pour une salle lw × ld (entrée au milieu du mur du bas).
-fn layout_pieces(lw: f64, ld: f64, storage_room: bool, palette: &[&'static str]) -> Vec<Piece> {
-    const T: f64 = 0.15; // épaisseur des murs, posés autour de la salle
-    const AISLE: f64 = 1.3;
-    let has = |c: &str| palette.iter().any(|p| *p == c);
-    let first_two = &palette[..palette.len().min(2)];
-    let mut v: Vec<Piece> = Vec::new();
+/// Activité d'une salle partagée : nom de son rayon et meubles proposés.
+struct Activity {
+    label: String,
+    palette: Vec<&'static str>,
+}
 
-    // Sol, réserve au fond à droite.
-    v.push(pc("zone_vente", lw / 2.0, ld / 2.0, lw, ld, 0));
+/// Couleurs des rayons au sol, dans l'ordre des activités.
+const DEPT_COLORS: [&str; 3] = ["#dbeafe", "#fef3c7", "#dcfce7"];
+
+/// Part de la salle de chaque activité, la principale d'abord.
+fn shares(n: usize) -> &'static [f64] {
+    match n {
+        0 | 1 => &[1.0],
+        2 => &[0.6, 0.4],
+        _ => &[0.5, 0.25, 0.25],
+    }
+}
+
+/// Ce que les rayons partagent : la salle, la réserve au fond à droite, l'entrée au milieu du bas.
+struct Room {
+    lw: f64,
+    ld: f64,
+    reserve: bool,
+    sw: f64,
+    sd: f64,
+    dx: f64,
+    door: f64,
+    upstairs: bool,
+    multi: bool,
+}
+
+/// Disposition proposée pour une salle lw × ld (entrée au milieu du mur du bas). Avec plusieurs
+/// activités, la salle est partagée en rayons côte à côte (60/40 ou 50/25/25), chacun avec ses meubles.
+fn layout_pieces(lw: f64, ld: f64, storage_room: bool, acts: &[Activity], upstairs: bool) -> Vec<Piece> {
+    const T: f64 = 0.15; // épaisseur des murs, posés autour de la salle
     let reserve = storage_room && lw >= 6.0 && ld >= 6.0;
     let (sw, sd) = ((lw * 0.3).clamp(2.5, 6.0), (ld * 0.25).clamp(2.0, 5.0));
+    let room = Room { lw, ld, reserve, sw, sd, dx: lw / 2.0, door: 1.6, upstairs, multi: acts.len() > 1 };
+    let mut bands = Vec::new();
+    let mut x = 0.0;
+    for (i, share) in shares(acts.len()).iter().enumerate().take(acts.len().max(1)) {
+        let x1 = if i + 1 >= acts.len() { lw } else { x + lw * share };
+        bands.push((x, x1));
+        x = x1;
+    }
+    let mut v: Vec<Piece> = Vec::new();
+
+    // Sol : un rayon par activité (nommé, en couleur), sinon la salle de vente ; réserve au fond à droite.
+    if room.multi {
+        for (i, (a, (x0, x1))) in acts.iter().zip(&bands).enumerate() {
+            let mut z = pc("zone_vente", (x0 + x1) / 2.0, ld / 2.0, x1 - x0, ld, 0);
+            z.name = Some(a.label.clone());
+            z.color = Some(DEPT_COLORS[i % DEPT_COLORS.len()]);
+            v.push(z);
+        }
+    } else {
+        v.push(pc("zone_vente", lw / 2.0, ld / 2.0, lw, ld, 0));
+    }
     if reserve {
         v.push(pc("zone_reserve", lw - sw / 2.0, sd / 2.0, sw, sd, 0));
     }
 
-    // Murs et entrée (porte de 1,6 m au milieu du mur du bas).
-    let door = 1.6;
-    let dx = lw / 2.0;
+    // Murs ; entrée (porte de 1,6 m au milieu du mur du bas) ou, à l'étage, escalier.
+    let (door, dx) = (room.door, room.dx);
     v.push(pc("mur", lw / 2.0, -T / 2.0, lw + 2.0 * T, T, 0));
     v.push(pc("mur", -T / 2.0, ld / 2.0, T, ld, 0));
     v.push(pc("mur", lw + T / 2.0, ld / 2.0, T, ld, 0));
-    let left_len = dx - door / 2.0 + T;
-    v.push(pc("mur", -T + left_len / 2.0, ld + T / 2.0, left_len, T, 0));
-    let right_len = lw + T - (dx + door / 2.0);
-    v.push(pc("mur", dx + door / 2.0 + right_len / 2.0, ld + T / 2.0, right_len, T, 0));
-    v.push(pc("porte", dx, ld + T / 2.0, door, 0.2, 0));
+    if upstairs {
+        v.push(pc("mur", lw / 2.0, ld + T / 2.0, lw + 2.0 * T, T, 0));
+        v.push(pc("escalier", dx, ld - 1.25, 1.0, 2.3, 0));
+    } else {
+        let left_len = dx - door / 2.0 + T;
+        v.push(pc("mur", -T + left_len / 2.0, ld + T / 2.0, left_len, T, 0));
+        let right_len = lw + T - (dx + door / 2.0);
+        v.push(pc("mur", dx + door / 2.0 + right_len / 2.0, ld + T / 2.0, right_len, T, 0));
+        v.push(pc("porte", dx, ld + T / 2.0, door, 0.2, 0));
+    }
     if reserve {
         // Cloison de la réserve avec sa porte, rack contre le mur du fond.
         let x0 = lw - sw;
@@ -875,30 +946,67 @@ fn layout_pieces(lw: f64, ld: f64, storage_room: bool, palette: &[&'static str])
         }
     }
 
-    // Caisse à droite de l'entrée.
-    let cash_x = (dx + door / 2.0 + 1.6).min(lw - 0.9);
-    v.push(pc("caisse", cash_x, ld - 1.4, 1.2, 0.7, 0));
+    // Caisse à droite de l'entrée (une seule pour toute la boutique).
+    if !upstairs {
+        let cash_x = (dx + door / 2.0 + 1.6).min(lw - 0.9);
+        v.push(pc("caisse", cash_x, ld - 1.4, 1.2, 0.7, 0));
+    }
+
+    for (i, a) in acts.iter().enumerate() {
+        department(&mut v, &a.palette, bands[i], i == 0, i + 1 == acts.len(), &room);
+    }
+
+    // Aucun meuble ne déborde de la salle ni n'en chevauche un autre.
+    let mut kept: Vec<Piece> = Vec::new();
+    for p in v {
+        if !is_structure(p.code) {
+            let a = footprint(p.cx, p.cy, p.w, p.h, p.rot);
+            let inside = a.0 >= -1e-6 && a.1 >= -1e-6 && a.0 + a.2 <= lw + 1e-6 && a.1 + a.3 <= ld + 1e-6;
+            let shrink = |r: (f64, f64, f64, f64)| (r.0 + 0.01, r.1 + 0.01, r.2 - 0.02, r.3 - 0.02);
+            let clash = kept
+                .iter()
+                .filter(|k| !k.code.starts_with("zone_"))
+                .any(|k| overlaps(shrink(a), shrink(footprint(k.cx, k.cy, k.w, k.h, k.rot))));
+            if !inside || clash {
+                continue;
+            }
+        }
+        kept.push(p);
+    }
+    kept
+}
+
+/// Meubles d'une activité dans sa bande de salle [bx0, bx1] : froid au fond, étagères au mur,
+/// allées du meuble principal, comptoir ou vitrine réfrigérée face aux clients.
+fn department(v: &mut Vec<Piece>, palette: &[&'static str], (bx0, bx1): (f64, f64), first: bool, last: bool, r: &Room) {
+    const AISLE: f64 = 1.3;
+    let has = |c: &str| palette.iter().any(|p| *p == c);
+    let first_two = &palette[..palette.len().min(2)];
+    let (lw, ld) = (r.lw, r.ld);
+    let bw = bx1 - bx0;
+    let mid = (bx0 + bx1) / 2.0;
 
     // Comptoir réfrigéré face aux clients (boulangerie, boucherie…).
     let counter_showcase = palette.first() == Some(&"vitrine_refrigeree");
     if counter_showcase {
-        let n = (((lw * 0.6) / 2.0).floor() as i64).clamp(1, 2);
+        let n = (((bw * 0.6) / 2.0).floor() as i64).clamp(1, 2);
         let total = n as f64 * 2.0;
         for i in 0..n {
-            v.push(pc("vitrine_refrigeree", lw / 2.0 - total / 2.0 + 1.0 + i as f64 * 2.0, ld * 0.4, 2.0, 0.9, 0));
+            v.push(pc("vitrine_refrigeree", mid - total / 2.0 + 1.0 + i as f64 * 2.0, ld * 0.4, 2.0, 0.9, 0));
         }
     }
 
-    // Froid le long du mur du fond.
-    let back_end = if reserve { lw - sw - 0.4 } else { lw - 0.3 };
-    let mut x = 0.3;
+    // Froid le long du mur du fond (sans entrer dans la réserve).
+    let back_end = if r.reserve && bx1 > lw - r.sw { (lw - r.sw - 0.4).min(bx1 - 0.3) } else { bx1 - 0.3 };
+    let start = bx0 + 0.3;
+    let mut x = start;
     let mut back_used = false;
     let cold = ["refrigerateur", "congelateur_armoire", "vitrine_refrigeree"]
         .into_iter()
-        .find(|c| has(*c) && !(counter_showcase && *c == "vitrine_refrigeree"));
+        .find(|c| has(c) && !(counter_showcase && *c == "vitrine_refrigeree"));
     if let Some(code) = cold {
         let (uw, ud, max_n) = if code == "vitrine_refrigeree" { (2.0, 0.9, 2) } else { (0.7, 0.7, 8) };
-        let limit = (0.3 + (back_end - 0.3) * 0.7).max(0.3 + uw);
+        let limit = (start + (back_end - start) * 0.7).max(start + uw);
         let mut n = 0;
         while n < max_n && x + uw <= limit && x + uw <= back_end {
             v.push(pc(code, x + uw / 2.0, 0.05 + ud / 2.0, uw, ud, 0));
@@ -918,20 +1026,32 @@ fn layout_pieces(lw: f64, ld: f64, storage_room: bool, palette: &[&'static str])
         }
     }
 
-    // Étagères murales le long du mur de gauche (face à la salle).
-    let left_shelves = has("etagere_murale");
+    // Étagères murales (2 m, ou 1 m dans une petite salle) : mur de gauche pour la première activité,
+    // mur de droite pour la dernière quand la salle est partagée.
+    let shelf = if ld < 6.0 { 1.0 } else { 2.0 };
+    let left_shelves = first && has("etagere_murale");
     if left_shelves {
         let mut y = if back_used { 1.0 } else { 0.3 };
-        while y + 2.0 <= ld - 2.2 {
-            v.push(pc("etagere_murale", 0.3, y + 1.0, 2.0, 0.5, 270));
-            y += 2.0;
+        while y + shelf <= ld - 2.2 {
+            v.push(pc("etagere_murale", 0.3, y + shelf / 2.0, shelf, 0.5, 270));
+            y += shelf;
+        }
+    }
+    let mut right_shelves = false;
+    if last && r.multi && has("etagere_murale") {
+        let mut y = if r.reserve { r.sd + 0.4 } else if back_used { 1.0 } else { 0.3 };
+        while y + shelf <= ld - 2.2 {
+            v.push(pc("etagere_murale", lw - 0.3, y + shelf / 2.0, shelf, 0.5, 90));
+            y += shelf;
+            right_shelves = true;
         }
     }
 
-    // Allées : le meuble principal du commerce, en rangées parallèles à la profondeur.
+    // Allées : le meuble principal de l'activité, en rangées parallèles à la profondeur.
     let main = ["gondole", "portant", "vitrine_fermee", "presentoir", "bac_vrac", "rack", "palette"]
         .into_iter()
         .find(|c| first_two.contains(c));
+    let mut placed_main = false;
     if let Some(code) = main {
         let (uw, ud, linear) = match code {
             "gondole" => (3.0, 0.9, true),
@@ -941,12 +1061,19 @@ fn layout_pieces(lw: f64, ld: f64, storage_room: bool, palette: &[&'static str])
             "presentoir" => (1.0, 1.0, false),
             _ => (1.2, 0.8, false),
         };
-        let xl = if left_shelves { 0.55 + AISLE } else { AISLE };
-        let xr = lw - AISLE;
-        let yt = if reserve { sd + 1.2 } else if back_used { 0.75 + AISLE } else { AISLE };
+        let xl = if first { if left_shelves { 0.55 + AISLE } else { AISLE } } else { bx0 + AISLE / 2.0 };
+        let xr = if last { if right_shelves { lw - 0.55 - AISLE } else { lw - AISLE } } else { bx1 - AISLE / 2.0 };
+        let yt = if r.reserve && xr > lw - r.sw - AISLE {
+            r.sd + 1.2
+        } else if back_used {
+            0.75 + AISLE
+        } else {
+            AISLE
+        };
         let yb = ld - 2.4;
         let len = yb - yt;
         if xr - xl >= ud && len >= 1.0 {
+            placed_main = true;
             let n = (((xr - xl + AISLE) / (ud + AISLE)).floor() as i64).clamp(1, 8);
             let total = n as f64 * ud + (n - 1) as f64 * AISLE;
             let x0 = xl + (xr - xl - total) / 2.0;
@@ -973,34 +1100,18 @@ fn layout_pieces(lw: f64, ld: f64, storage_room: bool, palette: &[&'static str])
                 }
             }
         }
-    } else if has("comptoir") && !counter_showcase {
-        // Petit commerce : comptoir au milieu, les étagères derrière.
-        v.push(pc("comptoir", lw / 2.0, ld * 0.45, (lw * 0.5).clamp(1.5, 4.0), 0.6, 0));
+    }
+    if !placed_main && has("comptoir") && !counter_showcase {
+        // Petit commerce ou rayon au comptoir : comptoir au milieu, les étagères derrière.
+        // Dans une petite salle, il reste en retrait de la caisse.
+        v.push(pc("comptoir", mid, (ld * 0.45).min(ld - 2.2), (bw * 0.5).clamp(1.5, 4.0).min(bw - 0.6), 0.6, 0));
     }
 
     // Présentoir près de l'entrée.
-    if has("presentoir") && main != Some("presentoir") && dx - door / 2.0 - 1.7 > 0.0 {
-        v.push(pc("presentoir", dx - door / 2.0 - 1.2, ld - 1.4, 1.0, 1.0, 0));
+    let px = r.dx - r.door / 2.0 - 1.2;
+    if has("presentoir") && main != Some("presentoir") && !r.upstairs && px - 0.5 > bx0 && px + 0.5 < bx1 {
+        v.push(pc("presentoir", px, ld - 1.4, 1.0, 1.0, 0));
     }
-
-    // Aucun meuble ne déborde de la salle ni n'en chevauche un autre.
-    let mut kept: Vec<Piece> = Vec::new();
-    for p in v {
-        if !is_structure(p.code) {
-            let a = footprint(p.cx, p.cy, p.w, p.h, p.rot);
-            let inside = a.0 >= -1e-6 && a.1 >= -1e-6 && a.0 + a.2 <= lw + 1e-6 && a.1 + a.3 <= ld + 1e-6;
-            let shrink = |r: (f64, f64, f64, f64)| (r.0 + 0.01, r.1 + 0.01, r.2 - 0.02, r.3 - 0.02);
-            let clash = kept
-                .iter()
-                .filter(|k| !k.code.starts_with("zone_"))
-                .any(|k| overlaps(shrink(a), shrink(footprint(k.cx, k.cy, k.w, k.h, k.rot))));
-            if !inside || clash {
-                continue;
-            }
-        }
-        kept.push(p);
-    }
-    kept
 }
 
 /// Repère « entrée en bas » (salle lw × ld) → plan : centre et rotation selon le côté de l'entrée.
@@ -1017,30 +1128,167 @@ fn r2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
-/// Dessine une boutique complète en une fois : murs, entrée, caisse, froid, étagères, allées et réserve,
-/// selon les dimensions de la salle et le type de commerce. Retourne le niveau créé ou remplacé.
-pub fn generate_layout(conn: &mut Connection, user: &SessionUser, input: LayoutInput) -> AppResult<i64> {
+/// Activités de la salle : celles demandées, sinon celles de la boutique (paramètre « business_types »).
+fn layout_activities(conn: &Connection, input: &LayoutInput) -> AppResult<Vec<Activity>> {
+    let mut ids: Vec<String> = match (&input.activities, db::clean(&input.business_type)) {
+        (Some(list), _) if !list.is_empty() => list.clone(),
+        (_, Some(b)) => vec![b],
+        _ => {
+            let all = settings::get(conn, "business_types")?;
+            if all.trim().is_empty() {
+                vec![settings::get(conn, "business_type")?]
+            } else {
+                all.split(',').map(|s| s.trim().to_string()).collect()
+            }
+        }
+    };
+    ids.dedup();
+    let en = settings::get(conn, "shop_lang")? == "en";
+    let profiles = templates::profiles();
+    let mut acts: Vec<Activity> = Vec::new();
+    for id in ids {
+        if acts.len() >= 3 {
+            break;
+        }
+        if let Some(p) = profiles.iter().find(|p| p.id == id) {
+            let label = if en { p.department_en } else { p.department }.to_string();
+            if !acts.iter().any(|a| a.label == label && a.palette == p.fixtures) {
+                acts.push(Activity { label, palette: p.fixtures.clone() });
+            }
+        }
+    }
+    if acts.is_empty() {
+        acts.push(Activity { label: String::new(), palette: vec!["gondole", "etagere_murale", "refrigerateur", "comptoir"] });
+    }
+    Ok(acts)
+}
+
+/// Meuble proposé, dans le repère du plan (coin haut gauche du rectangle non tourné).
+struct Placed {
+    t: FixtureType,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    rot: i64,
+    sections: Option<i64>,
+    name: Option<String>,
+    color: Option<String>,
+    height: Option<f64>,
+}
+
+/// Marge d'un mètre autour de la salle, sur le niveau.
+const ROOM_MARGIN: f64 = 1.0;
+
+/// Calcule le plan proposé (sans rien enregistrer) : hauteur sous plafond et meubles placés.
+fn propose(conn: &Connection, input: &LayoutInput) -> AppResult<(f64, Vec<Placed>)> {
     if !(3.0..=200.0).contains(&input.width) || !(3.0..=200.0).contains(&input.depth) {
         return invalid("Dimensions de la salle : de 3 à 200 mètres.");
+    }
+    let ceiling = input.height.unwrap_or(3.0);
+    if !(2.0..=12.0).contains(&ceiling) {
+        return invalid("Hauteur sous plafond : de 2 à 12 mètres.");
     }
     let entry = input.entry.as_str();
     if !["bottom", "top", "left", "right"].contains(&entry) {
         return invalid("Côté de l'entrée inconnu.");
     }
-    let business = match db::clean(&input.business_type) {
-        Some(b) => b,
-        None => settings::get(conn, "business_type")?,
-    };
-    let palette: Vec<&'static str> = templates::profiles()
-        .into_iter()
-        .find(|p| p.id == business)
-        .map(|p| p.fixtures)
-        .unwrap_or_else(|| vec!["gondole", "etagere_murale", "refrigerateur", "comptoir"]);
+    let acts = layout_activities(conn, input)?;
     let (lw, ld) = if matches!(entry, "left" | "right") { (input.depth, input.width) } else { (input.width, input.depth) };
-    let pieces = layout_pieces(lw, ld, input.storage_room, &palette);
-    // Marge d'un mètre autour de la salle.
-    const M: f64 = 1.0;
+    let pieces = layout_pieces(lw, ld, input.storage_room, &acts, input.upstairs);
+    let mut types: HashMap<&'static str, Option<FixtureType>> = HashMap::new();
+    let mut placed = Vec::new();
+    for p in pieces {
+        if !types.contains_key(p.code) {
+            let id: Option<i64> = conn.query_row("SELECT id FROM fixture_types WHERE code = ?1", [p.code], |r| r.get(0)).optional()?;
+            types.insert(p.code, id.map(|id| get_type(conn, id)).transpose()?);
+        }
+        let Some(t) = types.get(p.code).cloned().flatten() else { continue };
+        let (cx, cy, rot) = to_plan(&p, entry, lw, ld);
+        // Murs à hauteur du plafond ; un meuble plus haut que le plafond est abaissé.
+        let wanted = if p.code == "mur" { ceiling } else if t.category != "zone" && t.height > ceiling - 0.1 { r2(ceiling - 0.1) } else { t.height };
+        placed.push(Placed {
+            x: r2(cx + ROOM_MARGIN - p.w / 2.0),
+            y: r2(cy + ROOM_MARGIN - p.h / 2.0),
+            w: r2(p.w),
+            h: r2(p.h),
+            rot: norm_rotation(rot),
+            sections: p.sections,
+            name: p.name,
+            color: p.color.map(String::from),
+            height: if (wanted - t.height).abs() > 1e-9 { Some(wanted) } else { None },
+            t,
+        });
+    }
+    Ok((ceiling, placed))
+}
 
+#[derive(Debug, Serialize)]
+pub struct LayoutPreview {
+    pub floor: Floor,
+    pub fixtures: Vec<Fixture>,
+}
+
+/// Aperçu du plan proposé (rien n'est enregistré) : affiché en 3D et vu de dessus avant « Garder ce plan ».
+pub fn preview_layout(conn: &Connection, input: LayoutInput) -> AppResult<LayoutPreview> {
+    let (ceiling, placed) = propose(conn, &input)?;
+    let floor = Floor {
+        id: 0,
+        name: db::clean(&input.name).unwrap_or_else(|| "Boutique".into()),
+        sort: 0,
+        width: input.width + 2.0 * ROOM_MARGIN,
+        depth: input.depth + 2.0 * ROOM_MARGIN,
+        wall_height: ceiling,
+        floor_style: "tiles".into(),
+        backdrop_id: None,
+        backdrop: None,
+    };
+    let mut counters: HashMap<String, i64> = HashMap::new();
+    let fixtures = placed
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let prefix = p.t.prefix.to_uppercase();
+            let n = counters.entry(prefix.clone()).or_insert(0);
+            *n += 1;
+            let code = format!("{prefix}{n}");
+            let t = p.t;
+            let name = p.name.unwrap_or_else(|| if t.storage { format!("{} {code}", short_name(&t.name)) } else { short_name(&t.name).to_string() });
+            Fixture {
+                id: -(i as i64) - 1,
+                floor_id: 0,
+                type_id: t.id,
+                type_code: t.code.clone(),
+                type_name: t.name.clone(),
+                category: t.category.clone(),
+                storage: t.storage,
+                code,
+                name,
+                x: p.x,
+                y: p.y,
+                w: p.w,
+                h: p.h,
+                rotation: p.rot,
+                color: p.color.clone().unwrap_or_else(|| t.color.clone()),
+                custom_color: p.color,
+                levels: if t.storage { t.levels } else { 1 },
+                sections: if t.storage { p.sections.unwrap_or(t.sections).clamp(1, MAX_SECTIONS) } else { 1 },
+                notes: None,
+                product_count: 0,
+                model: if t.model.is_empty() { t.code.clone() } else { t.model.clone() },
+                height: p.height.unwrap_or(t.height),
+                custom_height: p.height,
+            }
+        })
+        .collect();
+    Ok(LayoutPreview { floor, fixtures })
+}
+
+/// Dessine une boutique complète en une fois : murs, entrée, caisse, froid, étagères, allées et réserve,
+/// selon les dimensions de la salle et les activités. Retourne le niveau créé ou remplacé.
+pub fn generate_layout(conn: &mut Connection, user: &SessionUser, input: LayoutInput) -> AppResult<i64> {
+    let (ceiling, placed) = propose(conn, &input)?;
+    let (fw, fd) = (input.width + 2.0 * ROOM_MARGIN, input.depth + 2.0 * ROOM_MARGIN);
     let tx = conn.transaction()?;
     let floor_id = match input.floor_id {
         Some(id) => {
@@ -1058,8 +1306,8 @@ pub fn generate_layout(conn: &mut Connection, user: &SessionUser, input: LayoutI
             tx.execute("DELETE FROM locations WHERE fixture_id IN (SELECT id FROM fixtures WHERE floor_id = ?1)", [id])?;
             tx.execute("DELETE FROM fixtures WHERE floor_id = ?1", [id])?;
             tx.execute(
-                "UPDATE store_floors SET width = ?1, depth = ?2 WHERE id = ?3",
-                params![input.width + 2.0 * M, input.depth + 2.0 * M, id],
+                "UPDATE store_floors SET width = ?1, depth = ?2, wall_height = ?3, name = COALESCE(?4, name) WHERE id = ?5",
+                params![fw, fd, ceiling, db::clean(&input.name), id],
             )?;
             id
         }
@@ -1067,35 +1315,34 @@ pub fn generate_layout(conn: &mut Connection, user: &SessionUser, input: LayoutI
             let name = db::clean(&input.name).unwrap_or_else(|| "Boutique".to_string());
             let sort: i64 = tx.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM store_floors", [], |r| r.get(0))?;
             tx.execute(
-                "INSERT INTO store_floors (name, sort, width, depth) VALUES (?1, ?2, ?3, ?4)",
-                params![name, sort, input.width + 2.0 * M, input.depth + 2.0 * M],
+                "INSERT INTO store_floors (name, sort, width, depth, wall_height) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![name, sort, fw, fd, ceiling],
             )?;
             tx.last_insert_rowid()
         }
     };
     let mut created = 0;
-    for p in &pieces {
-        let type_id: Option<i64> = tx.query_row("SELECT id FROM fixture_types WHERE code = ?1", [p.code], |r| r.get(0)).optional()?;
-        let Some(type_id) = type_id else { continue };
-        let (cx, cy, rot) = to_plan(p, entry, lw, ld);
-        let (x, y) = (r2(cx + M - p.w / 2.0), r2(cy + M - p.h / 2.0));
+    for p in placed {
         let f = create_fixture(
             &tx,
             None,
             FixtureInput {
                 floor_id: Some(floor_id),
-                type_id: Some(type_id),
-                x: Some(x),
-                y: Some(y),
-                w: Some(r2(p.w)),
-                h: Some(r2(p.h)),
-                rotation: Some(rot),
+                type_id: Some(p.t.id),
+                name: p.name,
+                color: p.color,
+                x: Some(p.x),
+                y: Some(p.y),
+                w: Some(p.w),
+                h: Some(p.h),
+                rotation: Some(p.rot),
                 sections: p.sections,
+                height: p.height,
                 ..Default::default()
             },
         )?;
         // Position exacte (create_fixture ramène dans le niveau la boîte non tournée).
-        tx.execute("UPDATE fixtures SET x = ?1, y = ?2 WHERE id = ?3", params![x, y, f.id])?;
+        tx.execute("UPDATE fixtures SET x = ?1, y = ?2 WHERE id = ?3", params![p.x, p.y, f.id])?;
         created += 1;
     }
     audit::log(
@@ -1104,10 +1351,62 @@ pub fn generate_layout(conn: &mut Connection, user: &SessionUser, input: LayoutI
         "Plan : boutique dessinée par l'assistant",
         "plan",
         Some(floor_id),
-        format!("{} × {} m, entrée {entry}, {created} élément(s)", input.width, input.depth),
+        format!("{} × {} m, hauteur {ceiling} m, entrée {}, {created} élément(s)", input.width, input.depth, input.entry),
     )?;
     tx.commit()?;
     Ok(floor_id)
+}
+
+// ───────────────────────────── Dessin du bâtiment en fond ─────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct BackdropInput {
+    pub floor_id: i64,
+    /// Image du dessin (photo, ou page de PDF convertie en image) ; vide : retirer le dessin.
+    pub media_id: Option<i64>,
+    #[serde(default)]
+    pub x: f64,
+    #[serde(default)]
+    pub y: f64,
+    #[serde(default)]
+    pub w: f64,
+    #[serde(default)]
+    pub h: f64,
+    #[serde(default)]
+    pub opacity: Option<f64>,
+}
+
+/// Pose, recadre ou retire le dessin du bâtiment sous le plan d'un niveau (cadrage en mètres).
+pub fn set_backdrop(conn: &Connection, user: &SessionUser, input: BackdropInput) -> AppResult<()> {
+    let old: Option<i64> = conn
+        .query_row("SELECT backdrop_id FROM store_floors WHERE id = ?1", [input.floor_id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| crate::error::AppError::Validation("Niveau du bâtiment introuvable.".into()))?;
+    match input.media_id {
+        None => {
+            conn.execute("UPDATE store_floors SET backdrop_id = NULL, backdrop = NULL WHERE id = ?1", [input.floor_id])?;
+            audit::log(conn, user, "Plan : dessin du bâtiment retiré", "plan", Some(input.floor_id), "")?;
+        }
+        Some(media) => {
+            let ok = |v: f64| v.is_finite() && v.abs() <= 1000.0;
+            if !(ok(input.x) && ok(input.y) && ok(input.w) && ok(input.h)) || input.w < 0.5 || input.h < 0.5 {
+                return invalid("Cadrage du dessin invalide.");
+            }
+            let opacity = input.opacity.unwrap_or(0.6).clamp(0.1, 1.0);
+            let frame = serde_json::json!({ "x": r2(input.x), "y": r2(input.y), "w": r2(input.w), "h": r2(input.h), "opacity": opacity });
+            conn.execute(
+                "UPDATE store_floors SET backdrop_id = ?1, backdrop = ?2 WHERE id = ?3",
+                params![media, frame.to_string(), input.floor_id],
+            )?;
+            if old != Some(media) {
+                audit::log(conn, user, "Plan : dessin du bâtiment posé", "plan", Some(input.floor_id), "")?;
+            }
+        }
+    }
+    if old.is_some() && old != input.media_id {
+        crate::services::media::cleanup(conn, old)?;
+    }
+    Ok(())
 }
 
 // ───────────────────────────── Contenu d'un meuble (vue de face) ─────────────────────────────
@@ -1358,4 +1657,87 @@ pub fn set_primary(conn: &mut Connection, user: &SessionUser, product_id: i64, l
     audit::log(&tx, user, "Emplacement principal changé", "plan", Some(product_id), format!("{name} → {place}"))?;
     tx.commit()?;
     product_places(conn, product_id)
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    fn activity(id: &str) -> Activity {
+        let p = templates::profiles().into_iter().find(|p| p.id == id).unwrap();
+        Activity { label: p.department.into(), palette: p.fixtures }
+    }
+
+    /// Vérifie une proposition : rien ne déborde ni ne se chevauche ; porte (ou escalier) et caisse ;
+    /// si `each` : chaque activité a au moins un de ses meubles dans son rayon.
+    fn check(ids: &[&str], lw: f64, ld: f64, storage: bool, upstairs: bool, each: bool) {
+        let acts: Vec<Activity> = ids.iter().map(|id| activity(id)).collect();
+        let v = layout_pieces(lw, ld, storage, &acts, upstairs);
+        let what = format!("{ids:?} {lw}×{ld} réserve={storage} étage={upstairs}");
+        let items: Vec<&Piece> = v.iter().filter(|p| !is_structure(p.code)).collect();
+        for (i, a) in items.iter().enumerate() {
+            let ra = footprint(a.cx, a.cy, a.w, a.h, a.rot);
+            assert!(ra.0 >= -1e-6 && ra.1 >= -1e-6 && ra.0 + ra.2 <= lw + 1e-6 && ra.1 + ra.3 <= ld + 1e-6, "{what} : {} déborde", a.code);
+            for b in &items[i + 1..] {
+                let rb = footprint(b.cx, b.cy, b.w, b.h, b.rot);
+                let clash = ra.0 + 0.02 < rb.0 + rb.2 && rb.0 + 0.02 < ra.0 + ra.2 && ra.1 + 0.02 < rb.1 + rb.3 && rb.1 + 0.02 < ra.1 + ra.3;
+                assert!(!clash, "{what} : {} chevauche {}", a.code, b.code);
+            }
+        }
+        let n = |code: &str| v.iter().filter(|p| p.code == code).count();
+        if upstairs {
+            assert_eq!((n("escalier"), n("caisse")), (1, 0), "{what}");
+        } else {
+            assert_eq!(n("caisse"), 1, "{what}");
+            assert!(n("porte") >= 1, "{what}");
+        }
+        if each {
+            let mut x = 0.0;
+            for (i, (a, share)) in acts.iter().zip(shares(acts.len())).enumerate() {
+                let x1 = if i + 1 == acts.len() { lw } else { x + lw * share };
+                let found = items.iter().any(|p| a.palette.contains(&p.code) && p.cx >= x - 1e-6 && p.cx <= x1 + 1e-6);
+                assert!(found, "{what} : rien pour {}", a.label);
+                x = x1;
+            }
+            if acts.len() > 1 {
+                let zones = v.iter().filter(|p| p.code == "zone_vente" && p.name.is_some()).count();
+                assert_eq!(zones, acts.len(), "{what} : un rayon nommé par activité");
+            }
+        }
+    }
+
+    #[test]
+    fn every_type_and_every_pair_gets_a_clean_plan() {
+        let ids: Vec<&str> = templates::profiles().iter().map(|p| p.id).collect();
+        assert_eq!(ids.len(), 22);
+        for a in &ids {
+            for (w, d) in [(4.0, 3.5), (5.0, 3.5), (12.0, 9.0), (25.0, 18.0)] {
+                check(&[*a], w, d, true, false, w >= 5.0);
+                check(&[*a], w, d, false, false, w >= 5.0);
+            }
+            check(&[*a], 10.0, 8.0, false, true, true);
+            for b in &ids {
+                if a != b {
+                    for (w, d) in [(5.0, 4.0), (12.0, 9.0), (25.0, 18.0)] {
+                        check(&[*a, *b], w, d, true, false, w >= 12.0);
+                    }
+                }
+            }
+        }
+        // Trios : la principale avec deux autres.
+        for (i, a) in ids.iter().enumerate() {
+            let b = ids[(i + 7) % ids.len()];
+            let c = ids[(i + 13) % ids.len()];
+            check(&[*a, b, c], 25.0, 18.0, true, false, true);
+            check(&[*a, b, c], 8.0, 6.0, true, false, false);
+        }
+    }
+
+    #[test]
+    fn single_activity_keeps_the_0_13_layout() {
+        let v = layout_pieces(14.0, 10.0, true, &[activity("supermarket")], false);
+        let n = |code: &str| v.iter().filter(|p| p.code == code).count();
+        assert!(n("gondole") >= 4 && n("refrigerateur") >= 2 && n("caisse") == 1 && n("zone_vente") == 1);
+        assert!(v.iter().all(|p| p.name.is_none()), "une seule activité : pas de rayon nommé");
+    }
 }

@@ -22,6 +22,19 @@ pub struct AuditFilter {
     pub from: Option<String>,
     pub to: Option<String>,
     pub limit: Option<i64>,
+    /// Actions d'une personne seulement (« Voir ses actions » dans Personnel).
+    #[serde(default)]
+    pub user_id: Option<i64>,
+}
+
+/// Action sans personne connectée (téléphone autorisé ou PIN refait avec le compte boutique).
+pub fn log_system(conn: &Connection, action: &str, entity: &str, entity_id: Option<i64>, details: impl AsRef<str>) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO audit_log (user_id, username, action, entity, entity_id, details, created_at)
+         VALUES (NULL, 'compte boutique', ?1, ?2, ?3, ?4, ?5)",
+        params![action, entity, entity_id, details.as_ref(), db::now()],
+    )?;
+    Ok(())
 }
 
 /// Enregistre une action dans le journal d'activité.
@@ -51,6 +64,9 @@ pub fn list(conn: &Connection, filter: &AuditFilter) -> AppResult<Vec<AuditEntry
             "(action LIKE ? OR details LIKE ? OR username LIKE ?)",
             vec![db::text(&like), db::text(&like), db::text(&like)],
         );
+    }
+    if let Some(id) = filter.user_id {
+        q.and("user_id = ?", vec![db::int(id)]);
     }
     if let Some(from) = db::clean(&filter.from) {
         q.and("created_at >= ?", vec![db::text(from)]);

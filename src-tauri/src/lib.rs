@@ -137,6 +137,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::rpc,
             commands::save_text_file,
+            commands::save_binary_file,
             commands::read_text_file,
             commands::get_network_config,
             commands::save_network_config,

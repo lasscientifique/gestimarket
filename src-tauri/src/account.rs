@@ -171,6 +171,22 @@ pub fn login(email: &str, password: &str) -> Result<Value, String> {
     Ok(json!({ "status": "ok", "email": email, "stores": stores }))
 }
 
+/// Vérifie que l'e-mail et le mot de passe sont ceux du compte de la boutique reliée à ce PC
+/// (autoriser un téléphone, refaire le PIN administrateur oublié). Le jeton n'est pas gardé.
+pub fn verify_owner(email: &str, password: &str) -> Result<(), String> {
+    let store_code = license::account().store_code;
+    if store_code.is_empty() {
+        return Err("Ce PC n'est relié à aucun compte boutique (menu Abonnement & licence).".into());
+    }
+    let token = password_login(&email.trim().to_lowercase(), password)?;
+    let stores = rpc_call("gm_my_stores", &token, json!({}))?;
+    let owns = stores.as_array().is_some_and(|list| list.iter().any(|s| s["code"].as_str() == Some(store_code.as_str())));
+    if !owns {
+        return Err("Ce compte n'est pas celui de cette boutique.".into());
+    }
+    Ok(())
+}
+
 /// Nouvelle boutique sur le compte connecté (5 au maximum), rattachée à ce PC.
 pub fn create_store(state: &AppState, input: StoreInput) -> Result<Value, String> {
     input.validate()?;

@@ -1,7 +1,7 @@
 {
   "name": "gestimarket",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "type": "module",
   "description": "GestiMarket — logiciel de gestion de supermarché et de boutiques (Tauri + React)",
   "scripts": {
@@ -19,7 +19,9 @@
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "@zxing/library": "^0.21.3",
     "jsbarcode": "^3.12.3",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.66.0",
+    "pdfjs-dist": "^4.10.38",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

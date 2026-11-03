@@ -33,6 +33,18 @@ pub async fn save_text_file(path: String, contents: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Écrit un fichier binaire (photo PNG ou PDF du plan), reçu en base64.
+#[tauri::command]
+pub async fn save_binary_file(path: String, base64: String) -> AppResult<()> {
+    use base64::Engine;
+    if path.trim().is_empty() {
+        return invalid("Chemin invalide.");
+    }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(base64.trim()).map_err(internal)?;
+    std::fs::write(&path, bytes)?;
+    Ok(())
+}
+
 /// Lit un fichier texte choisi par l'utilisateur (import CSV).
 #[tauri::command]
 pub async fn read_text_file(path: String) -> AppResult<String> {

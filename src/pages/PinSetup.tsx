@@ -7,8 +7,8 @@ import { BrandLogo } from "../components/Brand";
 import { tl } from "../lib/i18n";
 
 /**
- * Création obligatoire du code PIN à la première connexion.
- * Le PIN sert à confirmer les actions critiques et à se connecter rapidement.
+ * Mise à jour depuis la 0.13 : l'administrateur qui n'avait pas encore de PIN le crée ici
+ * (6 chiffres), avec son ancien mot de passe, qui est ensuite effacé.
  */
 export default function PinSetupPage() {
   const { user, setUser, logout } = useApp();
@@ -18,6 +18,7 @@ export default function PinSetupPage() {
   const [pin2, setPin2] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const min = user?.role === "admin" ? 6 : 4;
 
   const current = step === "confirm" ? pin2 : pin;
   const setCurrent = step === "confirm" ? setPin2 : setPin;
@@ -31,7 +32,7 @@ export default function PinSetupPage() {
   const next = async () => {
     setError("");
     if (step === "pin") {
-      if (pin.length < 4) return setError(tl("4 à 6 chiffres."));
+      if (pin.length < min) return setError(min === 6 ? tl("6 chiffres.") : tl("4 à 6 chiffres."));
       return setStep("confirm");
     }
     if (pin2 !== pin) {
@@ -57,7 +58,7 @@ export default function PinSetupPage() {
         <BrandLogo size={58} />
         <h1>{tl("Bonjour")} {user?.full_name.split(" ")[0]}</h1>
         <p className="muted">
-          {tl("Créez votre")} <strong>{tl("code PIN personnel")}</strong>  {tl("(4 à 6 chiffres). Il sert à vous connecter rapidement et à confirmer les actions importantes (annulation, clôture de caisse, changement de prix…). Ne le communiquez à personne.")}</p>
+          {tl("Créez votre")} <strong>{tl("code PIN personnel")}</strong>  {min === 6 ? tl("(6 chiffres). Les mots de passe disparaissent : votre identifiant et ce code servent à vous connecter et à confirmer les actions importantes. Ne le communiquez à personne.") : tl("(4 à 6 chiffres). Il sert à vous connecter rapidement et à confirmer les actions importantes (annulation, clôture de caisse, changement de prix…). Ne le communiquez à personne.")}</p>
 
         {step === "password" ? (
           <form
@@ -68,7 +69,7 @@ export default function PinSetupPage() {
             className="form-grid one"
           >
             <label className="field">
-              <span className="field-label">{tl("Votre mot de passe actuel (pour confirmer votre identité)")}</span>
+              <span className="field-label">{tl("Votre ancien mot de passe (une dernière fois)")}</span>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
             </label>
             {error && <div className="alert alert-danger">{error}</div>}
@@ -84,7 +85,7 @@ export default function PinSetupPage() {
             </div>
             <div className="pin-error">{error}</div>
             <NumPad onKey={press} />
-            <button className="btn btn-primary btn-lg btn-block" disabled={current.length < 4 || busy} onClick={next}>
+            <button className="btn btn-primary btn-lg btn-block" disabled={current.length < min || busy} onClick={next}>
               <ShieldCheck size={18} /> {step === "pin" ? tl("Suivant") : tl("Enregistrer mon code PIN")}
             </button>
           </>

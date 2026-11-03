@@ -224,6 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           title={pinState.title}
           message={pinState.message}
           level={pinState.level}
+          currentRole={user?.role}
           verify={async (pin) => {
             await api.verifyPin(pin, pinState.level ?? "cashier", pinState.action);
           }}

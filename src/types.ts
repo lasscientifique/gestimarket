@@ -21,6 +21,53 @@ export interface User extends SessionUser {
   active: boolean;
   created_at: string;
   last_login_at: string | null;
+  /** Accès depuis Internet autorisé par l'administrateur, et téléphones autorisés pour la personne. */
+  internet_access: boolean;
+  devices: number;
+}
+
+/** Poste de l'équipe (première configuration) : le PIN n'est connu qu'à sa création. */
+export interface TeamMember {
+  role: Role;
+  full_name: string;
+  username: string;
+  pin: string;
+}
+
+/** Compte affiché sur l'écran de connexion (ou dans la fenêtre de validation). */
+export interface LoginUser {
+  id: number;
+  username: string;
+  full_name: string;
+  role: Role;
+  has_pin: boolean;
+  /** Administrateur sans PIN (mise à jour depuis la 0.13) : ancien mot de passe une dernière fois. */
+  legacy_password: boolean;
+}
+
+/** Téléphone (ou navigateur) autorisé à se connecter depuis Internet. */
+export interface TrustedDevice {
+  id: number;
+  user_id: number | null;
+  user_name: string | null;
+  method: "account" | "code";
+  label: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface LoginInfo {
+  internet: boolean;
+  device: TrustedDevice | null;
+  /** Ce poste serveur est relié à un compte boutique. */
+  account: boolean;
+}
+
+export interface AccessCode {
+  code: string;
+  expires_at: string;
+  full_name: string;
+  username: string;
 }
 
 export type Settings = Record<string, string>;
@@ -67,6 +114,10 @@ export interface BusinessProfile {
   track_stock: boolean;
   /** Meubles proposés en tête de la palette du plan (codes des types). */
   fixtures?: string[];
+  /** Nom du rayon sur le plan (activités combinées) et taille habituelle de la salle (largeur, profondeur). */
+  department?: string;
+  department_en?: string;
+  size?: [number, number];
 }
 
 export interface CatalogueSummary {
@@ -116,6 +167,17 @@ export interface Floor {
   /** Vue 3D : hauteur des murs (mètres) et revêtement du sol. */
   wall_height: number;
   floor_style: FloorStyle;
+  /** Dessin du bâtiment (photo, PDF) en fond, et son cadrage en mètres. */
+  backdrop_id: number | null;
+  backdrop: Backdrop | null;
+}
+
+export interface Backdrop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  opacity: number;
 }
 
 export interface FixtureType {
@@ -186,6 +248,17 @@ export interface LayoutInput {
   entry: "bottom" | "top" | "left" | "right";
   storage_room: boolean;
   business_type?: string | null;
+  /** Hauteur sous plafond (mètres). */
+  height?: number;
+  /** Niveau à l'étage : escalier, ni porte d'entrée ni caisse. */
+  upstairs?: boolean;
+  /** Activités (la principale d'abord, 3 au plus) ; vide : celles de la boutique. */
+  activities?: string[];
+}
+
+export interface LayoutPreview {
+  floor: Floor;
+  fixtures: Fixture[];
 }
 
 export interface StorePlanData {

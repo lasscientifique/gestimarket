@@ -74,6 +74,8 @@ struct RemoteSession {
     ip: String,
     route: String,
     since: chrono::DateTime<chrono::Local>,
+    /// Téléphone autorisé utilisé pour une connexion depuis Internet.
+    device: Option<i64>,
 }
 
 /// Session ouverte, pour la liste « Postes connectés » de l'administrateur.
@@ -98,9 +100,8 @@ pub struct AppState {
     remote_sessions: Mutex<HashMap<String, RemoteSession>>,
     /// Contenu des écrans clients, par poste de caisse.
     displays: Mutex<HashMap<String, serde_json::Value>>,
-    /// Tentatives de code PIN erronées (anti force brute) : nombre, dernier échec.
-    pin_failures: Mutex<(u32, Option<Instant>)>,
-    /// Échecs de connexion par appareil (adresse IP, ou « local ») : nombre, dernier échec.
+    /// Échecs de connexion par appareil (adresse IP, ou « local ») et codes PIN faux par compte
+    /// (« compte:<id> ») : nombre, dernier échec.
     login_failures: Mutex<HashMap<String, (u32, Instant)>>,
     pub db_path: std::path::PathBuf,
     /// Présence des postes et tickets en cours (temps réel).
@@ -129,7 +130,6 @@ impl AppState {
             session: Mutex::new(None),
             remote_sessions: Mutex::new(HashMap::new()),
             displays: Mutex::new(HashMap::new()),
-            pin_failures: Mutex::new((0, None)),
             login_failures: Mutex::new(HashMap::new()),
             db_path,
             live: Default::default(),
@@ -169,10 +169,10 @@ impl AppState {
     /// Ouvre (ou ferme) la session, sans contrôle du nombre de postes. Pour un poste distant,
     /// retourne le jeton créé.
     pub fn set_user(&self, origin: &Origin, user: Option<SessionUser>) -> Option<String> {
-        self.open_session(origin, user, "", "local")
+        self.open_session(origin, user, "", "local", None)
     }
 
-    fn open_session(&self, origin: &Origin, user: Option<SessionUser>, ip: &str, route: &str) -> Option<String> {
+    fn open_session(&self, origin: &Origin, user: Option<SessionUser>, ip: &str, route: &str, device: Option<i64>) -> Option<String> {
         match origin {
             Origin::Local => {
                 *lock(&self.session) = user.map(|u| (u, chrono::Local::now()));
@@ -188,7 +188,15 @@ impl AppState {
                     let id = new_token()[..12].to_string();
                     sessions.insert(
                         t.clone(),
-                        RemoteSession { id, user: u, seen: Instant::now(), ip: ip.to_string(), route: route.to_string(), since: chrono::Local::now() },
+                        RemoteSession {
+                            id,
+                            user: u,
+                            seen: Instant::now(),
+                            ip: ip.to_string(),
+                            route: route.to_string(),
+                            since: chrono::Local::now(),
+                            device,
+                        },
                     );
                     t
                 })
@@ -231,9 +239,41 @@ impl AppState {
     }
 
     /// Connexion d'un utilisateur : contrôle du nombre de postes, puis ouverture de la session.
-    pub fn start_session(&self, origin: &Origin, user: SessionUser, ip: &str, route: &str) -> AppResult<Option<String>> {
+    /// `device` : téléphone autorisé utilisé depuis Internet (sa session se ferme s'il est retiré).
+    pub fn start_session(
+        &self,
+        origin: &Origin,
+        user: SessionUser,
+        ip: &str,
+        route: &str,
+        device: Option<i64>,
+    ) -> AppResult<Option<String>> {
         self.ensure_slot(origin, &user, crate::license::max_postes())?;
-        Ok(self.open_session(origin, Some(user), ip, route))
+        Ok(self.open_session(origin, Some(user), ip, route, device))
+    }
+
+    /// Ferme toutes les sessions d'une personne (compte bloqué ou supprimé). Retourne leur nombre.
+    pub fn kick_user(&self, user_id: i64) -> usize {
+        let mut n = 0;
+        {
+            let mut local = lock(&self.session);
+            if local.as_ref().is_some_and(|(u, _)| u.id == user_id) {
+                *local = None;
+                n += 1;
+            }
+        }
+        let mut sessions = lock(&self.remote_sessions);
+        let before = sessions.len();
+        sessions.retain(|_, s| s.user.id != user_id);
+        n + before - sessions.len()
+    }
+
+    /// Ferme les sessions ouvertes depuis un téléphone retiré.
+    pub fn kick_device(&self, device_id: i64) -> usize {
+        let mut sessions = lock(&self.remote_sessions);
+        let before = sessions.len();
+        sessions.retain(|_, s| s.device != Some(device_id));
+        before - sessions.len()
     }
 
     /// Sessions ouvertes (liste de l'administrateur).
@@ -290,6 +330,21 @@ impl AppState {
         Ok(())
     }
 
+    /// Refuse temporairement un compte après des codes PIN faux répétés (connexion ou validation).
+    pub fn account_guard(&self, user_id: i64) -> AppResult<()> {
+        if let Some((n, last)) = lock(&self.login_failures).get(&format!("compte:{user_id}")) {
+            let wait = login_lockout(*n).saturating_sub(last.elapsed().as_secs());
+            if wait > 0 {
+                return Err(AppError::Validation(format!("Trop de codes PIN faux pour ce compte. Réessayez dans {wait} s.")));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn account_result(&self, user_id: i64, ok: bool) {
+        self.login_result(&format!("compte:{user_id}"), ok);
+    }
+
     pub fn login_result(&self, key: &str, ok: bool) {
         let mut m = lock(&self.login_failures);
         m.retain(|_, (_, last)| last.elapsed() < Duration::from_secs(3600));
@@ -343,30 +398,6 @@ impl AppState {
         let user = self.require(origin, access)?;
         let mut conn = self.conn();
         f(&mut conn, &user)
-    }
-
-    /// Refuse temporairement les codes PIN après 5 échecs consécutifs (1 minute).
-    pub fn pin_guard(&self) -> AppResult<()> {
-        let f = lock(&self.pin_failures);
-        if f.0 >= 5 {
-            if let Some(t) = f.1 {
-                let wait = 60u64.saturating_sub(t.elapsed().as_secs());
-                if wait > 0 {
-                    return Err(AppError::Validation(format!("Trop d'essais de code PIN. Réessayez dans {wait} s.")));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn pin_result(&self, ok: bool) {
-        let mut f = lock(&self.pin_failures);
-        if ok {
-            *f = (0, None);
-        } else {
-            f.0 = if f.0 >= 5 { 1 } else { f.0 + 1 };
-            f.1 = Some(Instant::now());
-        }
     }
 
     pub fn set_display(&self, poste: &str, value: serde_json::Value) {

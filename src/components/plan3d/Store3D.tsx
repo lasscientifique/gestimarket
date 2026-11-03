@@ -39,6 +39,8 @@ export interface Store3DProps {
   height?: number | string;
   /** Recherche d'un produit : outils réduits. */
   compact?: boolean;
+  /** Reçoit la fonction qui capture la vue actuelle en image PNG (export du plan). */
+  snapshotRef?: { current: (() => string | null) | null };
 }
 
 /**
@@ -78,7 +80,9 @@ export default function Store3D(p: Store3DProps) {
       return;
     }
     engine.current = e;
+    if (props.current.snapshotRef) props.current.snapshotRef.current = () => e.snapshot();
     return () => {
+      if (props.current.snapshotRef) props.current.snapshotRef.current = null;
       e.dispose();
       engine.current = null;
     };

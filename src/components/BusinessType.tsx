@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Apple,
   Beef,
@@ -66,26 +66,71 @@ export function useBusinessProfiles() {
   return data;
 }
 
-/** Grille de choix du type de commerce. */
+/** Activités de la boutique (la principale d'abord) : paramètre « business_types », sinon « business_type ». */
+export function activitiesOf(settings: Record<string, string | undefined>): string[] {
+  const list = (settings.business_types ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  return list.length > 0 ? list : settings.business_type ? [settings.business_type] : [];
+}
+
+/** Fonctions activées par défaut pour des activités : celles de chacune, réunies. */
+export function featuresOf(profiles: BusinessProfile[], ids: string[]): string[] {
+  const out: string[] = [];
+  for (const id of ids) for (const f of profiles.find((p) => p.id === id)?.features ?? []) if (!out.includes(f)) out.push(f);
+  return out;
+}
+
+export const MAX_ACTIVITIES = 3;
+
+/**
+ * Grille de choix des activités : une principale (la première touchée) et jusqu'à deux autres,
+ * pour une boutique qui en combine plusieurs (ex. supérette + quincaillerie).
+ */
 export function BusinessTypeGrid({
   profiles,
   value,
   onChange,
 }: {
   profiles: BusinessProfile[];
-  value: string;
-  onChange: (p: BusinessProfile) => void;
+  value: string[];
+  onChange: (ids: string[]) => void;
 }) {
+  const toggle = (id: string) => {
+    if (value.includes(id)) onChange(value.filter((x) => x !== id));
+    else if (value.length < MAX_ACTIVITIES) onChange([...value, id]);
+  };
+  const full = value.length >= MAX_ACTIVITIES;
   return (
     <div className="biz-grid">
-      {profiles.map((p) => (
-        <button type="button" key={p.id} className={`biz-card ${value === p.id ? "active" : ""}`} onClick={() => onChange(p)}>
-          <span className="biz-icon">{ICONS[p.id] ?? <Building2 size={22} />}</span>
-          <span className="biz-label">{tm(p.label)}</span>
-          <span className="biz-desc">{tm(p.description)}</span>
-          {value === p.id && <span className="biz-check"><Check size={14} /></span>}
-        </button>
-      ))}
+      {profiles.map((p) => {
+        const rank = value.indexOf(p.id);
+        return (
+          <button
+            type="button"
+            key={p.id}
+            className={`biz-card ${rank >= 0 ? "active" : ""} ${rank < 0 && full ? "disabled" : ""}`}
+            onClick={() => toggle(p.id)}
+            title={rank < 0 && full ? tl("Trois activités au plus : retirez-en une d'abord.") : undefined}
+          >
+            <span className="biz-icon">{ICONS[p.id] ?? <Building2 size={22} />}</span>
+            <span className="biz-label">{tm(p.label)}</span>
+            <span className="biz-desc">{tm(p.description)}</span>
+            {rank === 0 && <span className="biz-rank main">{value.length > 1 ? tl("Principale") : <Check size={14} />}</span>}
+            {rank > 0 && (
+              <span
+                className="biz-rank"
+                role="button"
+                title={tl("En faire l'activité principale")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChange([p.id, ...value.filter((x) => x !== p.id)]);
+                }}
+              >
+                + {tl("Activité {0}", [rank + 1])}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -117,10 +162,14 @@ export function CataloguePicker({ onDone }: { onDone: (created: number) => void 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
   const profile = data?.profiles.find((p) => p.id === settings.business_type);
+  const recommended = useMemo(() => {
+    const ids = activitiesOf(settings);
+    return [...new Set(ids.flatMap((id) => data?.profiles.find((p) => p.id === id)?.categories ?? []))];
+  }, [data, settings]);
 
   useEffect(() => {
-    if (data) setSelected(new Set(profile?.categories ?? []));
-  }, [data, profile]);
+    if (data) setSelected(new Set(recommended));
+  }, [data, recommended]);
 
   if (!data) return <div className="muted pad">{tl("Chargement du catalogue…")}</div>;
 
@@ -152,7 +201,7 @@ export function CataloguePicker({ onDone }: { onDone: (created: number) => void 
         <div className="row-gap">
           <button className="btn btn-sm" onClick={() => setSelected(new Set(data.catalogue.map((c) => c.index)))}>{tl("Tout cocher")}</button>
           <button className="btn btn-sm" onClick={() => setSelected(new Set())}>{tl("Tout décocher")}</button>
-          {profile && <button className="btn btn-sm" onClick={() => setSelected(new Set(profile.categories))}>{tl("Recommandées")}</button>}
+          {profile && <button className="btn btn-sm" onClick={() => setSelected(new Set(recommended))}>{tl("Recommandées")}</button>}
         </div>
         <span className="muted small">{selected.size}  {tl("catégorie(s) ·")} {total}  {tl("élément(s) au total")}</span>
       </div>

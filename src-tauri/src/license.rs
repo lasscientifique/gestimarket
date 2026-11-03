@@ -448,9 +448,11 @@ pub fn set_sync_result(result: &Result<String, String>) {
 /// paramètres (dossier de sauvegarde…) et clôture des caisses ouvertes avant l'expiration.
 const ALWAYS: &[&str] = &[
     "needs_setup", "initial_setup", "login", "logout", "current_user", "list_login_users", "login_pin",
-    "get_settings", "update_settings", "set_my_lang", "server_info", "display_state", "display_update", "set_my_pin", "verify_pin", "change_password",
+    "get_settings", "update_settings", "set_my_lang", "server_info", "display_state", "display_update", "set_my_pin", "verify_pin", "change_my_pin",
+    "login_info", "login_password", "authorize_device_account", "authorize_device_code", "reset_admin_pin", "list_approvers",
+    "suggest_staff", "delete_user", "list_devices", "revoke_device", "create_access_code",
     "close_cash_session", "force_close_cash_session",
-    "save_user", "reset_user_password", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
+    "save_user", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",
     "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup",
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
@@ -463,7 +465,7 @@ const READ: &[&str] = &[
     "list_users", "list_categories", "list_products", "get_product", "scan_code", "find_product_by_barcode",
     "list_locations", "list_stock_movements", "stock_summary", "list_suppliers", "list_customers", "customer_statement",
     "list_sales", "get_sale", "list_electronic_payments", "list_purchases", "get_purchase", "current_cash_session",
-    "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places",
+    "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places", "plan_floor_fill", "plan_preview_layout",
 ];
 
 pub fn command_allowed_read_only(cmd: &str) -> bool {

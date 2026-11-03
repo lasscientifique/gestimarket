@@ -707,6 +707,16 @@ export class StoreEngine {
     if (more) this.render();
   };
 
+  /** Image PNG de la vue actuelle (export du plan) ; vide si le navigateur la refuse (photos d'une autre origine). */
+  snapshot(): string | null {
+    try {
+      this.renderer.render(this.scene, this.camera);
+      return this.renderer.domElement.toDataURL("image/png");
+    } catch {
+      return null;
+    }
+  }
+
   private animate(ms: number, step: (k: number) => void, done?: () => void) {
     this.anims.push({ t0: performance.now(), ms, step, done });
     this.render();

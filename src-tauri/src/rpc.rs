@@ -11,8 +11,8 @@ use serde_json::{json, Value};
 
 use crate::error::{invalid, AppError, AppResult};
 use crate::services::{
-    audit, auth, backup, cash, catalog, locations, media, partners, plan, purchases, reports, sales, settings, stock, templates,
-    users,
+    audit, auth, backup, cash, catalog, devices, locations, media, partners, plan, purchases, reports, sales, settings, stock,
+    templates, users,
 };
 use crate::state::{Access, AppState, Origin};
 
@@ -49,28 +49,94 @@ fn confirm_pin_ex(
     action: Option<&str>,
 ) -> AppResult<crate::state::SessionUser> {
     let pin: Option<String> = arg(a, "pin")?;
-    let Some(pin) = pin.filter(|p| !p.trim().is_empty()) else {
+    let Some(raw) = pin.filter(|p| !p.trim().is_empty()) else {
         return invalid("Code PIN requis pour confirmer cette action.");
     };
-    state.pin_guard()?;
-    match auth::pin_approver(conn, user, pin.trim(), level)? {
-        Some(approver) => {
-            state.pin_result(true);
+    let (approver, pin) = parse_pin(&raw);
+    state.account_guard(approver.unwrap_or(user.id))?;
+    match auth::approve(conn, user, approver, &pin, level)? {
+        auth::Approval::Approved(approver) => {
+            state.account_result(approver.id, true);
             if let Some(action) = action {
-                let detail = if approver.id == user.id { action.to_string() } else { format!("{action} — autorisé par {}", approver.full_name) };
+                let detail = if approver.id == user.id { action.to_string() } else { format!("{action} — validé par {}", approver.full_name) };
                 audit::log(conn, user, "Confirmation par PIN", "pin", Some(approver.id), detail)?;
             }
             Ok(approver)
         }
-        None => {
-            state.pin_result(false);
-            invalid(match level {
-                3 => "Code PIN incorrect ou insuffisant : un administrateur doit confirmer.",
-                2 => "Code PIN incorrect ou insuffisant : un gestionnaire ou un administrateur doit confirmer.",
-                _ => "Code PIN incorrect.",
-            })
+        auth::Approval::WrongPin(id) => {
+            state.account_result(id, false);
+            invalid("Code PIN incorrect.")
+        }
+        auth::Approval::NotAllowed => invalid(match level {
+            3 => "Cette action doit être validée par un administrateur : choisissez-le, puis tapez son code PIN.",
+            2 => "Cette action doit être validée par un gestionnaire ou un administrateur : choisissez-le, puis tapez son code PIN.",
+            _ => "Code PIN incorrect.",
+        }),
+    }
+}
+
+/// PIN de la fenêtre de validation : « PIN » (la personne connectée) ou « id:PIN » (le responsable
+/// choisi dans la liste). Deux personnes pouvant avoir le même PIN, celui-ci ne vaut que pour elle.
+fn parse_pin(raw: &str) -> (Option<i64>, String) {
+    match raw.split_once(':') {
+        Some((id, pin)) => (id.trim().parse().ok(), pin.trim().to_string()),
+        None => (None, raw.trim().to_string()),
+    }
+}
+
+/// Depuis Internet, le téléphone doit avoir été autorisé (jeton « device ») : son identifiant et,
+/// s'il a été autorisé par un code d'accès, la seule personne qui peut s'y connecter.
+fn internet_device(state: &AppState, a: &Value, from_internet: bool) -> AppResult<Option<(i64, Option<i64>)>> {
+    if !from_internet {
+        return Ok(None);
+    }
+    let token: Option<String> = arg(a, "device")?;
+    let found = match token {
+        Some(t) => devices::check(&state.conn(), &t)?,
+        None => None,
+    };
+    match found {
+        Some(d) => Ok(Some(d)),
+        None => invalid(
+            "Ce téléphone n'est pas encore autorisé : utilisez le code d'accès donné par l'administrateur, ou le compte boutique.",
+        ),
+    }
+}
+
+/// Connexion par code PIN (tuile du nom, ou identifiant tapé) : anti force brute par appareil et par
+/// compte, puis contrôle du téléphone autorisé depuis Internet.
+#[allow(clippy::too_many_arguments)]
+fn pin_login(
+    state: &AppState,
+    origin: &Origin,
+    ip: &str,
+    route: &str,
+    account: auth::Account,
+    pin: &str,
+    device: Option<(i64, Option<i64>)>,
+    wrong: &str,
+) -> AppResult<Value> {
+    state.account_guard(account.id)?;
+    let checked = auth::check_pin(&state.conn(), &account, pin)?;
+    let Some(user) = checked else {
+        state.login_result(ip, false);
+        state.account_result(account.id, false);
+        return invalid(wrong.to_string());
+    };
+    state.login_result(ip, true);
+    state.account_result(account.id, true);
+    if let Some((_, owner)) = device {
+        if owner.is_some_and(|o| o != user.id) {
+            return invalid("Ce téléphone est autorisé pour une autre personne.");
+        }
+        if !account.internet_access {
+            return invalid("L'accès depuis Internet n'est pas autorisé pour ce compte : demandez-le à l'administrateur.");
         }
     }
+    let what = if device.is_some() { "Connexion depuis Internet" } else { "Connexion" };
+    audit::log(&state.conn(), &user, what, "user", Some(user.id), "")?;
+    let token = state.start_session(origin, user.clone(), ip, route, device.map(|d| d.0))?;
+    out(json!({ "user": user, "token": token }))
 }
 
 fn out<T: Serialize>(v: T) -> AppResult<Value> {
@@ -79,7 +145,7 @@ fn out<T: Serialize>(v: T) -> AppResult<Value> {
 
 /// Paramètres lisibles sans connexion depuis Internet (écran de connexion) : rien d'autre ne sort.
 const PUBLIC_SETTINGS: &[&str] =
-    &["shop_name", "shop_logo_id", "currency_symbol", "currency_decimals", "theme_color", "theme_mode", "sidebar_style", "enabled_features", "business_type"];
+    &["shop_name", "shop_logo_id", "currency_symbol", "currency_decimals", "theme_color", "theme_mode", "sidebar_style", "enabled_features", "business_type", "business_types"];
 
 /// Opérations du compte boutique : sur ce PC uniquement (poste serveur ou poste unique),
 /// à la première configuration ou par l'administrateur.
@@ -109,19 +175,31 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         // ───── Authentification (sans session) ─────
         "needs_setup" => out(auth::needs_setup(&state.conn())?),
         "initial_setup" => {
-            let user = auth::initial_setup(&mut state.conn(), arg(&a, "input")?)?;
-            let token = state.start_session(origin, user.clone(), &ip, &route)?;
-            out(json!({ "user": user, "token": token }))
+            let r = auth::initial_setup(&mut state.conn(), arg(&a, "input")?)?;
+            let token = state.start_session(origin, r.user.clone(), &ip, &route, None)?;
+            out(json!({ "user": r.user, "token": token, "team": r.team }))
         }
+        // Écran de connexion : depuis Internet ? téléphone autorisé ? compte boutique relié ?
+        "login_info" => {
+            let device: Option<String> = arg(&a, "device")?;
+            let dev = match (from_internet, device) {
+                (true, Some(t)) => devices::describe(&state.conn(), &t)?,
+                _ => None,
+            };
+            out(json!({ "internet": from_internet, "device": dev, "account": !crate::license::account().store_code.is_empty() }))
+        }
+        // Identifiant et code PIN (clavier, ou depuis Internet avec un téléphone autorisé).
         "login" => {
             state.login_guard(&ip)?;
+            let device = internet_device(state, &a, from_internet)?;
             let username: String = arg(&a, "username")?;
-            let password: String = arg(&a, "password")?;
-            let result = auth::login(&state.conn(), &username, &password);
-            state.login_result(&ip, result.is_ok());
-            let user = result?;
-            let token = state.start_session(origin, user.clone(), &ip, &route)?;
-            out(json!({ "user": user, "token": token }))
+            let pin: String = arg(&a, "pin")?;
+            let account = auth::account_by_username(&state.conn(), &username)?;
+            let Some(account) = account else {
+                state.login_result(&ip, false);
+                return invalid("Identifiant ou code PIN incorrect.");
+            };
+            pin_login(state, origin, &ip, &route, account, &pin, device, "Identifiant ou code PIN incorrect.")
         }
         "logout" => {
             if let Some(user) = state.user(origin) {
@@ -131,21 +209,85 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(())
         }
         "current_user" => out(state.user(origin)),
-        // Depuis Internet : pas de liste du personnel (connexion par identifiant et mot de passe).
+        // Depuis Internet : pas de liste du personnel (identifiant et code PIN à taper).
         "list_login_users" if from_internet => out(Vec::<Value>::new()),
         "list_login_users" => out(auth::login_users(&state.conn())?),
+        // On touche son nom, puis on tape son code PIN (réseau du magasin).
         "login_pin" => {
             if from_internet {
-                return invalid("Connexion par code PIN impossible depuis Internet : utilisez votre identifiant et votre mot de passe.");
+                return invalid("Depuis Internet, tapez votre identifiant et votre code PIN.");
             }
             state.login_guard(&ip)?;
-            let user_id: i64 = arg(&a, "user_id")?;
-            let pin: String = arg(&a, "pin")?;
-            let found = auth::login_pin(&state.conn(), user_id, pin.trim());
-            state.login_result(&ip, matches!(found, Ok(Some(_))));
-            let Some(user) = found? else { return invalid("Code PIN incorrect.") };
-            let token = state.start_session(origin, user.clone(), &ip, &route)?;
+            let account = auth::account_by_id(&state.conn(), arg(&a, "user_id")?)?;
+            let Some(account) = account else { return invalid("Compte introuvable.") };
+            pin_login(state, origin, &ip, &route, account, &arg::<String>(&a, "pin")?, None, "Code PIN incorrect.")
+        }
+        // Ancien mot de passe : administrateur sans PIN (mise à jour depuis la 0.13), au magasin seulement.
+        "login_password" => {
+            if from_internet {
+                return invalid("Depuis Internet, tapez votre identifiant et votre code PIN.");
+            }
+            state.login_guard(&ip)?;
+            let result = auth::login_password(&state.conn(), &arg::<String>(&a, "username")?, &arg::<String>(&a, "password")?);
+            state.login_result(&ip, result.is_ok());
+            let user = result?;
+            let token = state.start_session(origin, user.clone(), &ip, &route, None)?;
             out(json!({ "user": user, "token": token }))
+        }
+        // Téléphone autorisé une fois par le compte boutique (e-mail et mot de passe Eden Dev).
+        "authorize_device_account" => {
+            state.login_guard(&ip)?;
+            let checked = crate::account::verify_owner(&arg::<String>(&a, "email")?, &arg::<String>(&a, "password")?);
+            state.login_result(&ip, checked.is_ok());
+            checked.map_err(AppError::Validation)?;
+            let label = arg::<Option<String>>(&a, "label")?.unwrap_or_default();
+            let conn = state.conn();
+            let (id, token) = devices::register(&conn, None, "account", &label)?;
+            audit::log_system(&conn, "Téléphone autorisé par le compte boutique", "device", Some(id), &label)?;
+            out(json!({ "device": token }))
+        }
+        // Téléphone d'un gestionnaire ou d'une caissière : identifiant, PIN et code d'accès de l'administrateur.
+        "authorize_device_code" => {
+            state.login_guard(&ip)?;
+            let account = auth::account_by_username(&state.conn(), &arg::<String>(&a, "username")?)?;
+            let Some(account) = account else {
+                state.login_result(&ip, false);
+                return invalid("Identifiant ou code PIN incorrect.");
+            };
+            state.account_guard(account.id)?;
+            let pin: String = arg(&a, "pin")?;
+            let checked = auth::check_pin(&state.conn(), &account, &pin)?;
+            let Some(user) = checked else {
+                state.login_result(&ip, false);
+                state.account_result(account.id, false);
+                return invalid("Identifiant ou code PIN incorrect.");
+            };
+            let label = arg::<Option<String>>(&a, "label")?.unwrap_or_default();
+            let used = devices::use_code(&state.conn(), account.id, &arg::<String>(&a, "code")?, &label)?;
+            let Some((device_id, token)) = used else {
+                state.login_result(&ip, false);
+                return invalid("Code d'accès faux, déjà utilisé ou expiré : demandez un nouveau code à l'administrateur.");
+            };
+            state.login_result(&ip, true);
+            state.account_result(account.id, true);
+            audit::log(&state.conn(), &user, "Téléphone autorisé par code d'accès", "device", Some(device_id), &label)?;
+            let session = state.start_session(origin, user.clone(), &ip, &route, Some(device_id))?;
+            out(json!({ "device": token, "user": user, "token": session }))
+        }
+        // Code PIN administrateur oublié : refait avec le compte boutique, au magasin seulement.
+        "reset_admin_pin" => {
+            if from_internet {
+                return invalid("À faire au magasin (sur un poste du réseau de la boutique).");
+            }
+            state.login_guard(&ip)?;
+            let checked = crate::account::verify_owner(&arg::<String>(&a, "email")?, &arg::<String>(&a, "password")?);
+            state.login_result(&ip, checked.is_ok());
+            checked.map_err(AppError::Validation)?;
+            let pin: String = arg(&a, "pin")?;
+            auth::validate_pin(pin.trim(), "admin")?;
+            let username: Option<String> = arg(&a, "username")?;
+            let conn = state.conn();
+            out(auth::reset_admin_pin(&conn, username.as_deref(), pin.trim())?)
         }
         "get_settings" => {
             let mut all = settings::get_all(&state.conn())?;
@@ -165,6 +307,7 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }
 
         // ───── Code PIN ─────
+        // Création du PIN avec l'ancien mot de passe (administrateur, mise à jour depuis la 0.13).
         "set_my_pin" => run(Any, &|c, u| {
             auth::set_own_pin(c, u, &arg::<String>(&a, "password")?, arg::<String>(&a, "pin")?.trim())?;
             let mut updated = u.clone();
@@ -191,26 +334,65 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             state.update_user(origin, updated.clone());
             out(updated)
         }),
-        "change_password" => run(Any, &|c, u| {
-            out(auth::change_password(c, u, &arg::<String>(&a, "current")?, &arg::<String>(&a, "password")?)?)
+        // Changer son propre code PIN (l'actuel est demandé).
+        "change_my_pin" => run(Any, &|c, u| {
+            state.account_guard(u.id)?;
+            let ok = auth::change_own_pin(c, u, &arg::<String>(&a, "current")?, &arg::<String>(&a, "pin")?)?;
+            state.account_result(u.id, ok);
+            if !ok {
+                return invalid("Code PIN actuel incorrect.");
+            }
+            out(())
+        }),
+        // Responsables pouvant valider une action (fenêtre de validation).
+        "list_approvers" => run(Any, &|c, _| {
+            let level = level_of(&arg::<Option<String>>(&a, "level")?.unwrap_or_default());
+            out(auth::approvers(c, level)?)
         }),
 
         // ───── Utilisateurs ─────
         "list_users" => run(Admin, &|c, _| out(users::list(c)?)),
+        // Identifiant et PIN proposés pour un nouveau poste.
+        "suggest_staff" => run(Admin, &|c, _| {
+            let role: String = arg(&a, "role")?;
+            let len = if role == "admin" { auth::ADMIN_PIN_LEN } else { 4 };
+            out(json!({ "username": users::next_username(c, &role)?, "pin": auth::random_pin(len) }))
+        }),
         "save_user" => run(Admin, &|c, u| {
-            confirm_pin(state, c, u, &a, 3, "Modification d'utilisateur")?;
+            confirm_pin(state, c, u, &a, 3, "Modification du personnel")?;
             match arg::<Option<i64>>(&a, "id")? {
-                Some(id) => out(users::update(c, u, id, arg(&a, "input")?)?),
+                Some(id) => {
+                    if users::update(c, u, id, arg(&a, "input")?)? {
+                        state.kick_user(id);
+                    }
+                    out(())
+                }
                 None => out(users::create(c, u, arg(&a, "input")?).map(|_| ())?),
             }
         }),
-        "reset_user_password" => run(Admin, &|c, u| {
-            confirm_pin(state, c, u, &a, 3, "Réinitialisation de mot de passe")?;
-            out(users::reset_password(c, u, arg(&a, "id")?, &arg::<String>(&a, "password")?)?)
-        }),
         "reset_user_pin" => run(Admin, &|c, u| {
-            confirm_pin(state, c, u, &a, 3, "Réinitialisation de code PIN")?;
+            confirm_pin(state, c, u, &a, 3, "Nouveau code PIN")?;
             out(users::reset_pin(c, u, arg(&a, "id")?, arg::<String>(&a, "new_pin")?.trim())?)
+        }),
+        "delete_user" => run(Admin, &|c, u| {
+            confirm_pin(state, c, u, &a, 3, "Suppression d'un compte du personnel")?;
+            let id: i64 = arg(&a, "id")?;
+            let erased = users::delete(c, u, id)?;
+            state.kick_user(id);
+            out(json!({ "erased": erased }))
+        }),
+        // Téléphones autorisés pour l'accès Internet.
+        "list_devices" => run(Admin, &|c, _| out(devices::list(c)?)),
+        "revoke_device" => run(Admin, &|c, u| {
+            let id: i64 = arg(&a, "id")?;
+            devices::revoke(c, u, id)?;
+            state.kick_device(id);
+            out(())
+        }),
+        // Code d'accès téléphone (8 lettres et chiffres) pour une personne.
+        "create_access_code" => run(Admin, &|c, u| {
+            confirm_pin(state, c, u, &a, 3, "Code d'accès téléphone")?;
+            out(devices::create_code(c, u, arg(&a, "user_id")?)?)
         }),
         "update_settings" => run(Admin, &|c, u| {
             confirm_pin(state, c, u, &a, 3, "Modification des paramètres")?;
@@ -247,20 +429,55 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "seed_catalogue" => run(Admin, &|c, u| out(templates::seed(c, u, &arg::<Vec<usize>>(&a, "indexes")?)?)),
         "import_categories" => run(Manager, &|c, u| out(templates::import_paths(c, u, arg(&a, "paths")?)?)),
         // Choix du type de commerce : enregistre le profil et ses fonctions, charge ses catégories si demandé.
+        // Activités de la boutique (la principale d'abord, 3 au plus) : profils, fonctions et catégories réunis.
         "set_business_type" => run(Admin, &|c, u| {
-            let id: String = arg(&a, "id")?;
-            let profile = templates::profiles().into_iter().find(|p| p.id == id);
-            let Some(profile) = profile else { return invalid("Type de commerce inconnu.") };
-            // PIN exigé, sauf à la première configuration (l'administrateur n'a pas encore de PIN).
-            if u.has_pin {
+            let mut ids: Vec<String> = arg::<Option<Vec<String>>>(&a, "ids")?.unwrap_or_default();
+            if ids.is_empty() {
+                ids.push(arg(&a, "id")?);
+            }
+            ids.dedup();
+            if ids.len() > 3 {
+                return invalid("Trois activités au plus : une principale et deux autres.");
+            }
+            let all = templates::profiles();
+            let mut chosen = Vec::new();
+            for id in &ids {
+                let Some(p) = all.iter().find(|p| p.id == id.as_str()) else { return invalid("Type de commerce inconnu.") };
+                if !chosen.iter().any(|c: &&templates::BusinessProfile| c.id == p.id) {
+                    chosen.push(p);
+                }
+            }
+            // PIN exigé, sauf au premier choix (première configuration).
+            if !settings::get(c, "business_type")?.trim().is_empty() {
                 confirm_pin(state, c, u, &a, 3, "Changement du type de commerce")?;
             }
             let features: Option<Vec<String>> = arg(&a, "features")?;
-            let features = features.unwrap_or_else(|| profile.features.iter().map(|f| f.to_string()).collect());
-            settings::set(c, "business_type", &id)?;
+            let features = features.unwrap_or_else(|| {
+                let mut f: Vec<String> = Vec::new();
+                for p in &chosen {
+                    for x in &p.features {
+                        if !f.iter().any(|y| y == x) {
+                            f.push(x.to_string());
+                        }
+                    }
+                }
+                f
+            });
+            let mut categories: Vec<usize> = Vec::new();
+            for p in &chosen {
+                for i in &p.categories {
+                    if !categories.contains(i) {
+                        categories.push(*i);
+                    }
+                }
+            }
+            let ids: Vec<&str> = chosen.iter().map(|p| p.id).collect();
+            settings::set(c, "business_type", ids[0])?;
+            settings::set(c, "business_types", &ids.join(","))?;
             settings::set(c, "enabled_features", &features.join(","))?;
-            let created = if arg::<Option<bool>>(&a, "seed")?.unwrap_or(false) { templates::seed(c, u, &profile.categories)? } else { 0 };
-            audit::log(c, u, "Type de commerce", "settings", None, format!("{} — {}", profile.label, features.join(", ")))?;
+            let created = if arg::<Option<bool>>(&a, "seed")?.unwrap_or(false) { templates::seed(c, u, &categories)? } else { 0 };
+            let labels: Vec<&str> = chosen.iter().map(|p| p.label).collect();
+            audit::log(c, u, "Type de commerce", "settings", None, format!("{} — {}", labels.join(" + "), features.join(", ")))?;
             out(json!({ "created": created, "settings": settings::get_all(c)? }))
         }),
         "find_product_by_barcode" => run(Any, &|c, _| out(catalog::find_by_barcode(c, &arg::<String>(&a, "code")?)?)),
@@ -303,6 +520,10 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "plan_fixture_contents" => run(Any, &|c, _| out(plan::contents(c, arg(&a, "id")?)?)),
         "plan_floor_fill" => run(Any, &|c, _| out(plan::floor_fill(c, arg(&a, "floor_id")?)?)),
         "plan_generate_layout" => run(Manager, &|c, u| out(plan::generate_layout(c, u, arg(&a, "input")?)?)),
+        // Aperçu du plan proposé (rien n'est enregistré) : configuration et assistant.
+        "plan_preview_layout" => run(Any, &|c, _| out(plan::preview_layout(c, arg(&a, "input")?)?)),
+        // Dessin du bâtiment (photo, PDF) en fond d'un niveau.
+        "plan_set_backdrop" => run(Manager, &|c, u| out(plan::set_backdrop(c, u, arg(&a, "input")?)?)),
         "product_places" => run(Any, &|c, _| out(plan::product_places(c, arg(&a, "product_id")?)?)),
         "plan_save_floor" => run(Manager, &|c, u| out(plan::save_floor(c, u, arg(&a, "id")?, arg(&a, "input")?)?)),
         "plan_delete_floor" => run(Manager, &|c, u| {

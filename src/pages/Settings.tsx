@@ -14,11 +14,11 @@ import { BrandLogo } from "../components/Brand";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { Badge } from "../components/ui";
-import { BusinessTypeGrid, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
+import { activitiesOf, BusinessTypeGrid, featuresOf, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
 import { Building2 } from "lucide-react";
 import { currencySymbol, dateTime, isoDate, minorToInput, toMinor } from "../lib/format";
 import type { CloudStatus, Settings } from "../types";
-import { LANGS, tl } from "../lib/i18n";
+import { LANGS, tl, tm } from "../lib/i18n";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
@@ -446,10 +446,10 @@ function SecurityTab({ f, setF }: { f: Settings; setF: (s: Settings) => void }) 
             <tr><td>{tl("Modification d'un prix, archivage d'un produit, import, ajustement de stock")}</td><td>{tl("Gestionnaire ou administrateur")}</td></tr>
             <tr><td>{tl("Suppression de catégorie, d'emplacement, archivage de fournisseur")}</td><td>{tl("Gestionnaire ou administrateur")}</td></tr>
             <tr><td>{tl("Clôture de caisse, entrée / sortie d'espèces")}</td><td>{tl("Caissier (son propre PIN)")}</td></tr>
-            <tr><td>{tl("Utilisateurs, paramètres, archivage de client")}</td><td>{tl("Administrateur")}</td></tr>
+            <tr><td>{tl("Personnel, paramètres, archivage de client")}</td><td>{tl("Administrateur")}</td></tr>
           </tbody>
         </table>
-        <p className="muted small">{tl("Après 5 codes erronés, la saisie est bloquée 1 minute. Les codes sont chiffrés (Argon2) : personne, pas même l'administrateur, ne peut les lire.")}</p>
+        <p className="muted small">{tl("Si la personne connectée n'a pas le droit, elle touche le nom du responsable, qui tape son propre code PIN. Après 5 codes faux, le compte est bloqué 1 minute (puis 5, puis 30). Les codes sont chiffrés (Argon2) : personne, pas même l'administrateur, ne peut les lire.")}</p>
       </div>
     </>
   );
@@ -459,20 +459,20 @@ function SecurityTab({ f, setF }: { f: Settings; setF: (s: Settings) => void }) 
 function BusinessTab() {
   const { settings, setSettings, toast, askPin } = useApp();
   const data = useBusinessProfiles();
-  const [type, setType] = useState(settings.business_type ?? "");
+  const [types, setTypes] = useState<string[]>(activitiesOf(settings));
   const [features, setFeatures] = useState<string[]>((settings.enabled_features ?? "").split(",").filter(Boolean));
   const [seed, setSeed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const current = data?.profiles.find((p) => p.id === settings.business_type);
-  const dirty = type !== (settings.business_type ?? "") || features.slice().sort().join(",") !== (settings.enabled_features ?? "").split(",").filter(Boolean).sort().join(",") || seed;
+  const current = activitiesOf(settings).map((id) => data?.profiles.find((p) => p.id === id)).filter((p) => !!p);
+  const dirty = types.join(",") !== activitiesOf(settings).join(",") || features.slice().sort().join(",") !== (settings.enabled_features ?? "").split(",").filter(Boolean).sort().join(",") || seed;
 
   const apply = async () => {
-    if (!type) return toast.error(tl("Choisissez un type de commerce."));
+    if (types.length === 0) return toast.error(tl("Choisissez un type de commerce."));
     setBusy(true);
     try {
       const pin = await askPin({ title: tl("Changer le type de commerce"), level: "admin" });
       if (!pin) return;
-      const r = await api.setBusinessType(type, features, seed, pin);
+      const r = await api.setBusinessType(types, features, seed, pin);
       setSettings(r.settings);
       setSeed(false);
       toast.success(seed ? tl("Type de commerce enregistré — {0} catégorie(s) ajoutée(s).", [r.created]) : tl("Type de commerce enregistré."));
@@ -489,14 +489,14 @@ function BusinessTab() {
       <div className="card">
         <h3 className="card-title"><Building2 size={18} />  {tl("Votre type de commerce")} <HelpTip k="business_type" /></h3>
         <p className="muted">
-          {current ? <>{tl("Actuellement :")} <strong>{current.label}</strong>. </> : <>{tl("Aucun type choisi : toutes les fonctions sont affichées.")} </>}
-          {tl("GestiMarket adapte les catégories proposées et les champs affichés. Les catégories restent libres : vous pouvez en ajouter, masquer ou supprimer à tout moment.")}</p>
+          {current.length > 0 ? <>{tl("Actuellement :")} <strong>{current.map((p) => tm(p!.label)).join(" + ")}</strong>. </> : <>{tl("Aucun type choisi : toutes les fonctions sont affichées.")} </>}
+          {tl("GestiMarket adapte les catégories proposées, les champs affichés et le plan de départ. Une boutique peut combiner jusqu'à 3 activités : touchez la principale, puis les autres. Les catégories restent libres : vous pouvez en ajouter, masquer ou supprimer à tout moment.")}</p>
         <BusinessTypeGrid
           profiles={data.profiles}
-          value={type}
-          onChange={(p) => {
-            setType(p.id);
-            setFeatures(p.features);
+          value={types}
+          onChange={(ids) => {
+            setTypes(ids);
+            setFeatures(featuresOf(data.profiles, ids));
           }}
         />
       </div>
