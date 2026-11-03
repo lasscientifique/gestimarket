@@ -85,13 +85,18 @@ export const PAGE_HELP: Record<string, PageHelp> = {
     purpose:
       tl("Dessiner la boutique comme un plan d'architecte (pièces, murs, portes, rayons, frigos, congélateurs, vitrines, réserve…) et y ranger les produits : il suffit ensuite de regarder le plan pour trouver un produit."),
     steps: [
+      tl("« Créer ma boutique » : donnez la taille de la salle, le côté de l'entrée et votre commerce ; murs, caisse, frigos, allées et réserve sont posés pour vous."),
+      tl("Trois vues : « Dessus » (plan précis et imprimable), « 3D » (tourner autour, zoomer) et « Visite » (marcher dans les allées)."),
       tl("« Modifier le plan » : prenez un meuble dans la palette et posez-le sur le plan (glisser, ou cliquer pour le poser à une place libre)."),
       tl("Déplacez-le, agrandissez-le par son coin, tournez-le (R), donnez-lui un nom, un nombre d'étages et de cases."),
       tl("Double-cliquez sur un meuble : vue de face. Glissez les produits dans les cases (poser), d'une case à l'autre (déplacer), ✕ pour les retirer (prendre)."),
       tl("Un produit peut avoir plusieurs emplacements (rayon, réserve, frigo) : ★ choisit l'emplacement principal."),
     ],
     tips: [
-      tl("Créez vos propres meubles (« Meuble personnalisé ») : vous n'êtes pas limité à la palette."),
+      tl("En 3D, un meuble déplacé s'aligne tout seul sur les murs et ses voisins ; s'il chevauche un autre meuble, il revient à sa place."),
+      tl("« Répéter ×3 » crée une rangée de meubles identiques avec des allées de 1,30 m."),
+      tl("Ordinateur lent : passez la 3D en qualité « Simple »."),
+      tl("Créez vos propres meubles (« Meuble personnalisé ») et choisissez leur dessin en 3D : vous n'êtes pas limité à la palette."),
       tl("Plusieurs niveaux : rez-de-chaussée, étage, entrepôt…"),
       tl("Imprimez les étiquettes des cases (vue de face) : leur QR code se scanne dans « Localiser un produit »."),
     ],

@@ -14,6 +14,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/005_catalog_v2.sql"),
     include_str!("../migrations/006_store_plan.sql"),
     include_str!("../migrations/007_international.sql"),
+    include_str!("../migrations/008_plan_3d.sql"),
 ];
 
 pub fn open(path: &Path) -> AppResult<Connection> {

@@ -105,12 +105,17 @@ export interface Location {
 
 export type FixtureCategory = "rayon" | "froid" | "presentation" | "rangement" | "zone" | "batiment";
 
+export type FloorStyle = "tiles" | "concrete" | "wood" | "vinyl";
+
 export interface Floor {
   id: number;
   name: string;
   sort: number;
   width: number;
   depth: number;
+  /** Vue 3D : hauteur des murs (mètres) et revêtement du sol. */
+  wall_height: number;
+  floor_style: FloorStyle;
 }
 
 export interface FixtureType {
@@ -128,6 +133,10 @@ export interface FixtureType {
   builtin: boolean;
   sort: number;
   used: number;
+  /** Forme 3D : code d'un meuble de base (gondole, refrigerateur…). */
+  model: string;
+  /** Hauteur par défaut (mètres). */
+  height: number;
 }
 
 /** Meuble posé sur le plan : position, taille (mètres) et rotation (degrés). */
@@ -152,6 +161,31 @@ export interface Fixture {
   sections: number;
   notes: string | null;
   product_count: number;
+  /** Forme 3D et hauteur (celle du meuble, sinon celle du type). */
+  model: string;
+  height: number;
+  custom_height: number | null;
+}
+
+/** Case garnie (vue 3D) : nombre de produits, couleur de leur catégorie, photo du premier. */
+export interface CellFill {
+  fixture_id: number;
+  level: number;
+  section: number;
+  products: number;
+  color: string | null;
+  image_id: number | null;
+}
+
+/** Assistant « Créer ma boutique ». */
+export interface LayoutInput {
+  floor_id: number | null;
+  name?: string | null;
+  width: number;
+  depth: number;
+  entry: "bottom" | "top" | "left" | "right";
+  storage_room: boolean;
+  business_type?: string | null;
 }
 
 export interface StorePlanData {

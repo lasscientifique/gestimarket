@@ -13,12 +13,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::db;
 use crate::error::{invalid, AppResult};
-use crate::services::audit;
+use crate::services::{audit, settings, templates};
 use crate::state::SessionUser;
 
 pub const MAX_LEVELS: i64 = 30;
 pub const MAX_SECTIONS: i64 = 30;
 const CATEGORIES: &[&str] = &["rayon", "froid", "presentation", "rangement", "zone", "batiment"];
+const FLOOR_STYLES: &[&str] = &["tiles", "concrete", "wood", "vinyl"];
 
 #[derive(Debug, Serialize)]
 pub struct Floor {
@@ -27,6 +28,9 @@ pub struct Floor {
     pub sort: i64,
     pub width: f64,
     pub depth: f64,
+    /// Hauteur des murs (mètres) et sol (tiles, concrete, wood, vinyl) pour la vue 3D.
+    pub wall_height: f64,
+    pub floor_style: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -46,6 +50,10 @@ pub struct FixtureType {
     pub sort: i64,
     /// Nombre de meubles de ce type sur le plan.
     pub used: i64,
+    /// Forme 3D : code d'un meuble de base (gondole, refrigerateur…).
+    pub model: String,
+    /// Hauteur par défaut (mètres).
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +81,10 @@ pub struct Fixture {
     pub notes: Option<String>,
     /// Produits rangés dans ce meuble (emplacement principal ou autre).
     pub product_count: i64,
+    /// Forme 3D (celle du type) et hauteur (celle du meuble, sinon celle du type).
+    pub model: String,
+    pub height: f64,
+    pub custom_height: Option<f64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -83,7 +95,7 @@ pub struct Plan {
 }
 
 const TYPE_SELECT: &str = "SELECT t.id, t.code, t.name, t.category, t.prefix, t.color, t.width, t.depth, t.levels, t.sections,
-        t.storage, t.builtin, t.sort, (SELECT COUNT(*) FROM fixtures f WHERE f.type_id = t.id)
+        t.storage, t.builtin, t.sort, (SELECT COUNT(*) FROM fixtures f WHERE f.type_id = t.id), t.model, t.height
     FROM fixture_types t";
 
 fn type_from_row(r: &Row) -> rusqlite::Result<FixtureType> {
@@ -102,11 +114,14 @@ fn type_from_row(r: &Row) -> rusqlite::Result<FixtureType> {
         builtin: r.get(11)?,
         sort: r.get(12)?,
         used: r.get(13)?,
+        model: r.get(14)?,
+        height: r.get(15)?,
     })
 }
 
 const FIXTURE_SELECT: &str = "SELECT f.id, f.floor_id, f.type_id, t.code, t.name, t.category, t.storage, f.code, f.name,
-        f.x, f.y, f.w, f.h, f.rotation, COALESCE(NULLIF(f.color, ''), t.color), NULLIF(f.color, ''), f.levels, f.sections, f.notes
+        f.x, f.y, f.w, f.h, f.rotation, COALESCE(NULLIF(f.color, ''), t.color), NULLIF(f.color, ''), f.levels, f.sections, f.notes,
+        COALESCE(NULLIF(t.model, ''), t.code), COALESCE(f.height, t.height), f.height
     FROM fixtures f JOIN fixture_types t ON t.id = f.type_id";
 
 fn fixture_from_row(r: &Row) -> rusqlite::Result<Fixture> {
@@ -131,6 +146,9 @@ fn fixture_from_row(r: &Row) -> rusqlite::Result<Fixture> {
         sections: r.get(17)?,
         notes: r.get(18)?,
         product_count: 0,
+        model: r.get(19)?,
+        height: r.get(20)?,
+        custom_height: r.get(21)?,
     })
 }
 
@@ -148,9 +166,19 @@ fn product_counts(conn: &Connection) -> AppResult<HashMap<i64, i64>> {
 }
 
 pub fn get(conn: &Connection) -> AppResult<Plan> {
-    let mut stmt = conn.prepare("SELECT id, name, sort, width, depth FROM store_floors ORDER BY sort, id")?;
+    let mut stmt = conn.prepare("SELECT id, name, sort, width, depth, wall_height, floor_style FROM store_floors ORDER BY sort, id")?;
     let floors = stmt
-        .query_map([], |r| Ok(Floor { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)?, width: r.get(3)?, depth: r.get(4)? }))?
+        .query_map([], |r| {
+            Ok(Floor {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                sort: r.get(2)?,
+                width: r.get(3)?,
+                depth: r.get(4)?,
+                wall_height: r.get(5)?,
+                floor_style: r.get(6)?,
+            })
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut stmt = conn.prepare(&format!("{TYPE_SELECT} ORDER BY t.builtin DESC, t.sort, t.name"))?;
     let types = stmt.query_map([], type_from_row)?.collect::<Result<Vec<_>, _>>()?;
@@ -256,11 +284,15 @@ pub fn slot_text(conn: &Connection, location_id: i64) -> AppResult<String> {
 
 // ───────────────────────────── Niveaux du bâtiment ─────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct FloorInput {
     pub name: String,
     pub width: f64,
     pub depth: f64,
+    #[serde(default)]
+    pub wall_height: Option<f64>,
+    #[serde(default)]
+    pub floor_style: Option<String>,
 }
 
 pub fn save_floor(conn: &Connection, user: &SessionUser, id: Option<i64>, input: FloorInput) -> AppResult<i64> {
@@ -271,14 +303,27 @@ pub fn save_floor(conn: &Connection, user: &SessionUser, id: Option<i64>, input:
     if !(2.0..=500.0).contains(&input.width) || !(2.0..=500.0).contains(&input.depth) {
         return invalid("Dimensions du niveau : de 2 à 500 mètres.");
     }
+    if input.wall_height.is_some_and(|h| !(2.0..=12.0).contains(&h)) {
+        return invalid("Hauteur des murs : de 2 à 12 mètres.");
+    }
+    if input.floor_style.as_deref().is_some_and(|s| !FLOOR_STYLES.contains(&s)) {
+        return invalid("Revêtement de sol inconnu.");
+    }
     let id = match id {
         Some(id) => {
-            conn.execute("UPDATE store_floors SET name = ?1, width = ?2, depth = ?3 WHERE id = ?4", params![name, input.width, input.depth, id])?;
+            conn.execute(
+                "UPDATE store_floors SET name = ?1, width = ?2, depth = ?3, wall_height = COALESCE(?4, wall_height),
+                        floor_style = COALESCE(?5, floor_style) WHERE id = ?6",
+                params![name, input.width, input.depth, input.wall_height, input.floor_style, id],
+            )?;
             id
         }
         None => {
             let sort: i64 = conn.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM store_floors", [], |r| r.get(0))?;
-            conn.execute("INSERT INTO store_floors (name, sort, width, depth) VALUES (?1, ?2, ?3, ?4)", params![name, sort, input.width, input.depth])?;
+            conn.execute(
+                "INSERT INTO store_floors (name, sort, width, depth, wall_height, floor_style) VALUES (?1, ?2, ?3, ?4, COALESCE(?5, 3.0), COALESCE(?6, 'tiles'))",
+                params![name, sort, input.width, input.depth, input.wall_height, input.floor_style],
+            )?;
             conn.last_insert_rowid()
         }
     };
@@ -392,6 +437,8 @@ pub struct FixtureInput {
     pub levels: Option<i64>,
     pub sections: Option<i64>,
     pub notes: Option<String>,
+    /// Hauteur propre (mètres) ; 0 : celle du type.
+    pub height: Option<f64>,
 }
 
 fn norm_rotation(r: i64) -> i64 {
@@ -403,6 +450,16 @@ fn check_size(w: f64, h: f64) -> AppResult<()> {
         return invalid("Taille du meuble : de 5 cm à 200 m.");
     }
     Ok(())
+}
+
+/// Hauteur d'un meuble : vide ou 0 = celle de son type.
+fn check_height(h: Option<f64>) -> AppResult<Option<f64>> {
+    match h {
+        None => Ok(None),
+        Some(h) if h <= 0.0 => Ok(None),
+        Some(h) if h.is_finite() && h <= 20.0 => Ok(Some(h)),
+        Some(_) => invalid("Hauteur du meuble : 20 mètres au plus."),
+    }
 }
 
 fn check_color(color: &Option<String>) -> AppResult<Option<String>> {
@@ -445,12 +502,13 @@ pub fn create_fixture(conn: &Connection, user: Option<&SessionUser>, input: Fixt
         (1, 1)
     };
     let color = check_color(&input.color)?;
+    let height = check_height(input.height)?;
     conn.execute(
-        "INSERT INTO fixtures (floor_id, type_id, code, name, x, y, w, h, rotation, color, levels, sections, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        "INSERT INTO fixtures (floor_id, type_id, code, name, x, y, w, h, rotation, color, levels, sections, notes, height)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             floor_id, t.id, code, name, x, y, w, h, norm_rotation(input.rotation.unwrap_or(0)), color, levels, sections,
-            db::clean(&input.notes)
+            db::clean(&input.notes), height
         ],
     )?;
     let id = conn.last_insert_rowid();
@@ -502,13 +560,17 @@ pub fn update_fixture(conn: &mut Connection, user: &SessionUser, id: i64, input:
         Some(_) => db::clean(&input.notes),
         None => cur.notes.clone(),
     };
+    let height = match input.height {
+        Some(_) => check_height(input.height)?,
+        None => cur.custom_height,
+    };
     tx.execute(
         "UPDATE fixtures SET floor_id = ?1, code = ?2, name = ?3, x = ?4, y = ?5, w = ?6, h = ?7, rotation = ?8, color = ?9,
-                levels = ?10, sections = ?11, notes = ?12, updated_at = ?13
+                levels = ?10, sections = ?11, notes = ?12, updated_at = ?13, height = ?15
          WHERE id = ?14",
         params![
             floor_id, code, name, x, y, w, h, norm_rotation(input.rotation.unwrap_or(cur.rotation)), color, levels, sections, notes,
-            db::now(), id
+            db::now(), id, height
         ],
     )?;
     if code != cur.code {
@@ -583,7 +645,7 @@ pub fn delete_fixture(conn: &mut Connection, user: &SessionUser, id: i64) -> App
 
 // ───────────────────────────── Palette : meubles personnalisés ─────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct TypeInput {
     pub name: String,
     pub category: String,
@@ -593,6 +655,23 @@ pub struct TypeInput {
     pub depth: f64,
     pub levels: i64,
     pub sections: i64,
+    /// Forme 3D : code d'un meuble de base (vide : selon la famille).
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub height: Option<f64>,
+}
+
+/// Forme 3D proposée pour une famille de meubles.
+fn default_model(category: &str) -> &'static str {
+    match category {
+        "rayon" => "etagere_murale",
+        "froid" => "refrigerateur",
+        "presentation" => "presentoir",
+        "rangement" => "armoire",
+        "zone" => "zone_autre",
+        _ => "texte",
+    }
 }
 
 pub fn save_type(conn: &Connection, user: &SessionUser, id: Option<i64>, input: TypeInput) -> AppResult<i64> {
@@ -611,6 +690,17 @@ pub fn save_type(conn: &Connection, user: &SessionUser, id: Option<i64>, input: 
     check_size(input.width, input.depth)?;
     let storage = !matches!(input.category.as_str(), "zone" | "batiment");
     let (levels, sections) = if storage { (input.levels.clamp(1, MAX_LEVELS), input.sections.clamp(1, MAX_SECTIONS)) } else { (1, 1) };
+    let model = db::clean(&input.model).unwrap_or_else(|| default_model(&input.category).to_string());
+    let known: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM fixture_types WHERE builtin = 1 AND code = ?1)", [&model], |r| r.get(0))?;
+    if !known {
+        return invalid("Forme 3D inconnue.");
+    }
+    let height = match input.height {
+        Some(h) if h.is_finite() && (0.0..=20.0).contains(&h) => h,
+        Some(_) => return invalid("Hauteur du meuble : 20 mètres au plus."),
+        None if input.category == "zone" => 0.02,
+        None => 1.8,
+    };
     let id = match id {
         Some(id) => {
             let t = get_type(conn, id)?;
@@ -621,18 +711,19 @@ pub fn save_type(conn: &Connection, user: &SessionUser, id: Option<i64>, input: 
                 return invalid("Ce meuble est déjà posé sur le plan : sa famille ne peut plus changer (rangement ou non).");
             }
             conn.execute(
-                "UPDATE fixture_types SET name = ?1, category = ?2, prefix = ?3, color = ?4, width = ?5, depth = ?6, levels = ?7, sections = ?8, storage = ?9
+                "UPDATE fixture_types SET name = ?1, category = ?2, prefix = ?3, color = ?4, width = ?5, depth = ?6, levels = ?7, sections = ?8, storage = ?9,
+                        model = ?11, height = ?12
                  WHERE id = ?10",
-                params![name, input.category, prefix, color, input.width, input.depth, levels, sections, storage, id],
+                params![name, input.category, prefix, color, input.width, input.depth, levels, sections, storage, id, model, height],
             )?;
             id
         }
         None => {
             let code = format!("perso_{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
             conn.execute(
-                "INSERT INTO fixture_types (code, name, category, prefix, color, width, depth, levels, sections, storage, builtin, sort)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, 100)",
-                params![code, name, input.category, prefix, color, input.width, input.depth, levels, sections, storage],
+                "INSERT INTO fixture_types (code, name, category, prefix, color, width, depth, levels, sections, storage, builtin, sort, model, height)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, 100, ?11, ?12)",
+                params![code, name, input.category, prefix, color, input.width, input.depth, levels, sections, storage, model, height],
             )?;
             conn.last_insert_rowid()
         }
@@ -652,6 +743,371 @@ pub fn delete_type(conn: &Connection, user: &SessionUser, id: i64) -> AppResult<
     conn.execute("DELETE FROM fixture_types WHERE id = ?1", [id])?;
     audit::log(conn, user, "Plan : meuble personnalisé supprimé", "plan", Some(id), &t.name)?;
     Ok(())
+}
+
+// ───────────────────────────── Vue 3D : contenu des cases d'un niveau ─────────────────────────────
+
+/// Case garnie d'un meuble (vue 3D) : nombre de produits, couleur de la catégorie et photo du premier.
+#[derive(Debug, Serialize)]
+pub struct CellFill {
+    pub fixture_id: i64,
+    pub level: i64,
+    pub section: i64,
+    pub products: i64,
+    pub color: Option<String>,
+    pub image_id: Option<i64>,
+}
+
+pub fn floor_fill(conn: &Connection, floor_id: i64) -> AppResult<Vec<CellFill>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.fixture_id, l.level, l.section, c.color, p.image_id FROM (
+             SELECT id AS pid, location_id AS lid FROM products WHERE active = 1 AND location_id IS NOT NULL
+             UNION
+             SELECT pl.product_id, pl.location_id FROM product_locations pl JOIN products pp ON pp.id = pl.product_id WHERE pp.active = 1
+         ) x
+         JOIN locations l ON l.id = x.lid
+         JOIN fixtures f ON f.id = l.fixture_id
+         JOIN products p ON p.id = x.pid
+         LEFT JOIN categories c ON c.id = p.category_id
+         WHERE f.floor_id = ?1
+         ORDER BY l.fixture_id, l.level, l.section, p.image_id IS NULL, p.name COLLATE NOCASE",
+    )?;
+    let rows = stmt.query_map([floor_id], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, Option<String>>(3)?, r.get::<_, Option<i64>>(4)?))
+    })?;
+    let mut cells: Vec<CellFill> = Vec::new();
+    for row in rows {
+        let (fixture_id, level, section, color, image_id) = row?;
+        match cells.last_mut() {
+            Some(c) if c.fixture_id == fixture_id && c.level == level && c.section == section => c.products += 1,
+            _ => cells.push(CellFill { fixture_id, level, section, products: 1, color, image_id }),
+        }
+    }
+    Ok(cells)
+}
+
+// ───────────────────────────── Assistant « Créer ma boutique » ─────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct LayoutInput {
+    /// Niveau à remplacer (sans produits rangés) ; vide : nouveau niveau.
+    #[serde(default)]
+    pub floor_id: Option<i64>,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Dimensions intérieures de la salle (mètres) : largeur de gauche à droite, profondeur de haut en bas.
+    pub width: f64,
+    pub depth: f64,
+    /// Côté de l'entrée sur le plan : bottom, top, left, right.
+    pub entry: String,
+    #[serde(default)]
+    pub storage_room: bool,
+    /// Type de commerce (vide : celui de la boutique) : choisit les meubles.
+    #[serde(default)]
+    pub business_type: Option<String>,
+}
+
+/// Meuble à poser dans le repère « entrée en bas » de la salle : centre, taille et rotation.
+struct Piece {
+    code: &'static str,
+    cx: f64,
+    cy: f64,
+    w: f64,
+    h: f64,
+    rot: i64,
+    sections: Option<i64>,
+}
+
+fn pc(code: &'static str, cx: f64, cy: f64, w: f64, h: f64, rot: i64) -> Piece {
+    Piece { code, cx, cy, w, h, rot, sections: None }
+}
+
+/// Emprise au sol (x, y, largeur, profondeur) d'un rectangle tourné d'un quart de tour ou non.
+fn footprint(cx: f64, cy: f64, w: f64, h: f64, rot: i64) -> (f64, f64, f64, f64) {
+    let (fw, fh) = if rot.rem_euclid(180) == 90 { (h, w) } else { (w, h) };
+    (cx - fw / 2.0, cy - fh / 2.0, fw, fh)
+}
+
+fn is_structure(code: &str) -> bool {
+    code == "mur" || code == "porte" || code.starts_with("zone_")
+}
+
+/// Disposition proposée pour une salle lw × ld (entrée au milieu du mur du bas).
+fn layout_pieces(lw: f64, ld: f64, storage_room: bool, palette: &[&'static str]) -> Vec<Piece> {
+    const T: f64 = 0.15; // épaisseur des murs, posés autour de la salle
+    const AISLE: f64 = 1.3;
+    let has = |c: &str| palette.iter().any(|p| *p == c);
+    let first_two = &palette[..palette.len().min(2)];
+    let mut v: Vec<Piece> = Vec::new();
+
+    // Sol, réserve au fond à droite.
+    v.push(pc("zone_vente", lw / 2.0, ld / 2.0, lw, ld, 0));
+    let reserve = storage_room && lw >= 6.0 && ld >= 6.0;
+    let (sw, sd) = ((lw * 0.3).clamp(2.5, 6.0), (ld * 0.25).clamp(2.0, 5.0));
+    if reserve {
+        v.push(pc("zone_reserve", lw - sw / 2.0, sd / 2.0, sw, sd, 0));
+    }
+
+    // Murs et entrée (porte de 1,6 m au milieu du mur du bas).
+    let door = 1.6;
+    let dx = lw / 2.0;
+    v.push(pc("mur", lw / 2.0, -T / 2.0, lw + 2.0 * T, T, 0));
+    v.push(pc("mur", -T / 2.0, ld / 2.0, T, ld, 0));
+    v.push(pc("mur", lw + T / 2.0, ld / 2.0, T, ld, 0));
+    let left_len = dx - door / 2.0 + T;
+    v.push(pc("mur", -T + left_len / 2.0, ld + T / 2.0, left_len, T, 0));
+    let right_len = lw + T - (dx + door / 2.0);
+    v.push(pc("mur", dx + door / 2.0 + right_len / 2.0, ld + T / 2.0, right_len, T, 0));
+    v.push(pc("porte", dx, ld + T / 2.0, door, 0.2, 0));
+    if reserve {
+        // Cloison de la réserve avec sa porte, rack contre le mur du fond.
+        let x0 = lw - sw;
+        v.push(pc("mur", x0 - T / 2.0, sd / 2.0, T, sd, 0));
+        let gap = 1.0;
+        let wall_len = sw - gap - 0.1;
+        v.push(pc("mur", x0 + 0.1 + gap + wall_len / 2.0, sd + T / 2.0, wall_len, T, 0));
+        v.push(pc("porte", x0 + 0.1 + gap / 2.0, sd + T / 2.0, gap, 0.2, 0));
+        let rl = (sw - 0.4).min(2.5);
+        if rl >= 1.2 && sd >= 2.0 {
+            let mut p = pc("rack", x0 + 0.2 + rl / 2.0, 0.55, rl, 1.0, 0);
+            p.sections = Some(((rl * 1.2).round() as i64).max(1));
+            v.push(p);
+        }
+    }
+
+    // Caisse à droite de l'entrée.
+    let cash_x = (dx + door / 2.0 + 1.6).min(lw - 0.9);
+    v.push(pc("caisse", cash_x, ld - 1.4, 1.2, 0.7, 0));
+
+    // Comptoir réfrigéré face aux clients (boulangerie, boucherie…).
+    let counter_showcase = palette.first() == Some(&"vitrine_refrigeree");
+    if counter_showcase {
+        let n = (((lw * 0.6) / 2.0).floor() as i64).clamp(1, 2);
+        let total = n as f64 * 2.0;
+        for i in 0..n {
+            v.push(pc("vitrine_refrigeree", lw / 2.0 - total / 2.0 + 1.0 + i as f64 * 2.0, ld * 0.4, 2.0, 0.9, 0));
+        }
+    }
+
+    // Froid le long du mur du fond.
+    let back_end = if reserve { lw - sw - 0.4 } else { lw - 0.3 };
+    let mut x = 0.3;
+    let mut back_used = false;
+    let cold = ["refrigerateur", "congelateur_armoire", "vitrine_refrigeree"]
+        .into_iter()
+        .find(|c| has(*c) && !(counter_showcase && *c == "vitrine_refrigeree"));
+    if let Some(code) = cold {
+        let (uw, ud, max_n) = if code == "vitrine_refrigeree" { (2.0, 0.9, 2) } else { (0.7, 0.7, 8) };
+        let limit = (0.3 + (back_end - 0.3) * 0.7).max(0.3 + uw);
+        let mut n = 0;
+        while n < max_n && x + uw <= limit && x + uw <= back_end {
+            v.push(pc(code, x + uw / 2.0, 0.05 + ud / 2.0, uw, ud, 0));
+            x += uw;
+            n += 1;
+        }
+        back_used = n > 0;
+    }
+    if has("congelateur_coffre") {
+        x += 0.4;
+        for _ in 0..2 {
+            if x + 1.5 <= back_end {
+                v.push(pc("congelateur_coffre", x + 0.75, 0.4, 1.5, 0.7, 0));
+                x += 1.6;
+                back_used = true;
+            }
+        }
+    }
+
+    // Étagères murales le long du mur de gauche (face à la salle).
+    let left_shelves = has("etagere_murale");
+    if left_shelves {
+        let mut y = if back_used { 1.0 } else { 0.3 };
+        while y + 2.0 <= ld - 2.2 {
+            v.push(pc("etagere_murale", 0.3, y + 1.0, 2.0, 0.5, 270));
+            y += 2.0;
+        }
+    }
+
+    // Allées : le meuble principal du commerce, en rangées parallèles à la profondeur.
+    let main = ["gondole", "portant", "vitrine_fermee", "presentoir", "bac_vrac", "rack", "palette"]
+        .into_iter()
+        .find(|c| first_two.contains(c));
+    if let Some(code) = main {
+        let (uw, ud, linear) = match code {
+            "gondole" => (3.0, 0.9, true),
+            "rack" => (2.5, 1.0, true),
+            "portant" => (1.5, 0.6, true),
+            "vitrine_fermee" => (1.5, 0.6, true),
+            "presentoir" => (1.0, 1.0, false),
+            _ => (1.2, 0.8, false),
+        };
+        let xl = if left_shelves { 0.55 + AISLE } else { AISLE };
+        let xr = lw - AISLE;
+        let yt = if reserve { sd + 1.2 } else if back_used { 0.75 + AISLE } else { AISLE };
+        let yb = ld - 2.4;
+        let len = yb - yt;
+        if xr - xl >= ud && len >= 1.0 {
+            let n = (((xr - xl + AISLE) / (ud + AISLE)).floor() as i64).clamp(1, 8);
+            let total = n as f64 * ud + (n - 1) as f64 * AISLE;
+            let x0 = xl + (xr - xl - total) / 2.0;
+            for i in 0..n {
+                let cx = x0 + ud / 2.0 + i as f64 * (ud + AISLE);
+                if linear {
+                    let k = (len / uw).ceil().max(1.0) as i64;
+                    let seg = len / k as f64;
+                    for j in 0..k {
+                        let mut p = pc(code, cx, yt + seg * (j as f64 + 0.5), seg, ud, 90);
+                        if code == "gondole" || code == "rack" {
+                            let per_metre = if code == "gondole" { 2.0 } else { 1.2 };
+                            p.sections = Some(((seg * per_metre).round() as i64).max(1));
+                        }
+                        v.push(p);
+                    }
+                } else {
+                    let step = uw + 0.8;
+                    let k = (((len + 0.8) / step).floor() as i64).max(1);
+                    let start = yt + (len - (k as f64 * step - 0.8)) / 2.0;
+                    for j in 0..k {
+                        v.push(pc(code, cx, start + uw / 2.0 + j as f64 * step, uw, ud, 90));
+                    }
+                }
+            }
+        }
+    } else if has("comptoir") && !counter_showcase {
+        // Petit commerce : comptoir au milieu, les étagères derrière.
+        v.push(pc("comptoir", lw / 2.0, ld * 0.45, (lw * 0.5).clamp(1.5, 4.0), 0.6, 0));
+    }
+
+    // Présentoir près de l'entrée.
+    if has("presentoir") && main != Some("presentoir") && dx - door / 2.0 - 1.7 > 0.0 {
+        v.push(pc("presentoir", dx - door / 2.0 - 1.2, ld - 1.4, 1.0, 1.0, 0));
+    }
+
+    // Aucun meuble ne déborde de la salle ni n'en chevauche un autre.
+    let mut kept: Vec<Piece> = Vec::new();
+    for p in v {
+        if !is_structure(p.code) {
+            let a = footprint(p.cx, p.cy, p.w, p.h, p.rot);
+            let inside = a.0 >= -1e-6 && a.1 >= -1e-6 && a.0 + a.2 <= lw + 1e-6 && a.1 + a.3 <= ld + 1e-6;
+            let shrink = |r: (f64, f64, f64, f64)| (r.0 + 0.01, r.1 + 0.01, r.2 - 0.02, r.3 - 0.02);
+            let clash = kept
+                .iter()
+                .filter(|k| !k.code.starts_with("zone_"))
+                .any(|k| overlaps(shrink(a), shrink(footprint(k.cx, k.cy, k.w, k.h, k.rot))));
+            if !inside || clash {
+                continue;
+            }
+        }
+        kept.push(p);
+    }
+    kept
+}
+
+/// Repère « entrée en bas » (salle lw × ld) → plan : centre et rotation selon le côté de l'entrée.
+fn to_plan(p: &Piece, entry: &str, lw: f64, ld: f64) -> (f64, f64, i64) {
+    match entry {
+        "top" => (lw - p.cx, ld - p.cy, p.rot + 180),
+        "left" => (ld - p.cy, p.cx, p.rot + 90),
+        "right" => (p.cy, lw - p.cx, p.rot + 270),
+        _ => (p.cx, p.cy, p.rot),
+    }
+}
+
+fn r2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+/// Dessine une boutique complète en une fois : murs, entrée, caisse, froid, étagères, allées et réserve,
+/// selon les dimensions de la salle et le type de commerce. Retourne le niveau créé ou remplacé.
+pub fn generate_layout(conn: &mut Connection, user: &SessionUser, input: LayoutInput) -> AppResult<i64> {
+    if !(3.0..=200.0).contains(&input.width) || !(3.0..=200.0).contains(&input.depth) {
+        return invalid("Dimensions de la salle : de 3 à 200 mètres.");
+    }
+    let entry = input.entry.as_str();
+    if !["bottom", "top", "left", "right"].contains(&entry) {
+        return invalid("Côté de l'entrée inconnu.");
+    }
+    let business = match db::clean(&input.business_type) {
+        Some(b) => b,
+        None => settings::get(conn, "business_type")?,
+    };
+    let palette: Vec<&'static str> = templates::profiles()
+        .into_iter()
+        .find(|p| p.id == business)
+        .map(|p| p.fixtures)
+        .unwrap_or_else(|| vec!["gondole", "etagere_murale", "refrigerateur", "comptoir"]);
+    let (lw, ld) = if matches!(entry, "left" | "right") { (input.depth, input.width) } else { (input.width, input.depth) };
+    let pieces = layout_pieces(lw, ld, input.storage_room, &palette);
+    // Marge d'un mètre autour de la salle.
+    const M: f64 = 1.0;
+
+    let tx = conn.transaction()?;
+    let floor_id = match input.floor_id {
+        Some(id) => {
+            floor_size(&tx, id)?;
+            let busy: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM locations l JOIN fixtures f ON f.id = l.fixture_id WHERE f.floor_id = ?1
+                   AND (EXISTS (SELECT 1 FROM products p WHERE p.location_id = l.id)
+                        OR EXISTS (SELECT 1 FROM product_locations pl WHERE pl.location_id = l.id))",
+                [id],
+                |r| r.get(0),
+            )?;
+            if busy > 0 {
+                return invalid("Ce niveau contient des produits rangés : dessinez la boutique sur un nouveau niveau.");
+            }
+            tx.execute("DELETE FROM locations WHERE fixture_id IN (SELECT id FROM fixtures WHERE floor_id = ?1)", [id])?;
+            tx.execute("DELETE FROM fixtures WHERE floor_id = ?1", [id])?;
+            tx.execute(
+                "UPDATE store_floors SET width = ?1, depth = ?2 WHERE id = ?3",
+                params![input.width + 2.0 * M, input.depth + 2.0 * M, id],
+            )?;
+            id
+        }
+        None => {
+            let name = db::clean(&input.name).unwrap_or_else(|| "Boutique".to_string());
+            let sort: i64 = tx.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM store_floors", [], |r| r.get(0))?;
+            tx.execute(
+                "INSERT INTO store_floors (name, sort, width, depth) VALUES (?1, ?2, ?3, ?4)",
+                params![name, sort, input.width + 2.0 * M, input.depth + 2.0 * M],
+            )?;
+            tx.last_insert_rowid()
+        }
+    };
+    let mut created = 0;
+    for p in &pieces {
+        let type_id: Option<i64> = tx.query_row("SELECT id FROM fixture_types WHERE code = ?1", [p.code], |r| r.get(0)).optional()?;
+        let Some(type_id) = type_id else { continue };
+        let (cx, cy, rot) = to_plan(p, entry, lw, ld);
+        let (x, y) = (r2(cx + M - p.w / 2.0), r2(cy + M - p.h / 2.0));
+        let f = create_fixture(
+            &tx,
+            None,
+            FixtureInput {
+                floor_id: Some(floor_id),
+                type_id: Some(type_id),
+                x: Some(x),
+                y: Some(y),
+                w: Some(r2(p.w)),
+                h: Some(r2(p.h)),
+                rotation: Some(rot),
+                sections: p.sections,
+                ..Default::default()
+            },
+        )?;
+        // Position exacte (create_fixture ramène dans le niveau la boîte non tournée).
+        tx.execute("UPDATE fixtures SET x = ?1, y = ?2 WHERE id = ?3", params![x, y, f.id])?;
+        created += 1;
+    }
+    audit::log(
+        &tx,
+        user,
+        "Plan : boutique dessinée par l'assistant",
+        "plan",
+        Some(floor_id),
+        format!("{} × {} m, entrée {entry}, {created} élément(s)", input.width, input.depth),
+    )?;
+    tx.commit()?;
+    Ok(floor_id)
 }
 
 // ───────────────────────────── Contenu d'un meuble (vue de face) ─────────────────────────────

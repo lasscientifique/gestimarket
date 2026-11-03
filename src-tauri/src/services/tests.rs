@@ -525,7 +525,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 7);
+    assert_eq!(count("PRAGMA user_version"), 8);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -995,7 +995,7 @@ fn store_plan_put_take_move_and_resize() {
     // Meuble personnalisé : créé, posé, puis impossible à supprimer tant qu'il est posé.
     let custom = plan::save_type(&conn, &admin, None, plan::TypeInput {
         name: "Frigo à boissons Coca".into(), category: "froid".into(), prefix: "fb".into(), color: "#dc2626".into(),
-        width: 0.6, depth: 0.6, levels: 4, sections: 2,
+        width: 0.6, depth: 0.6, levels: 4, sections: 2, ..Default::default()
     }).unwrap();
     let fb = plan::create_fixture(&conn, None, plan::FixtureInput { type_id: Some(custom), ..Default::default() }).unwrap();
     assert_eq!((fb.code.as_str(), fb.levels * fb.sections), ("FB1", 8));
@@ -1006,7 +1006,7 @@ fn store_plan_put_take_move_and_resize() {
 
     // Niveaux du bâtiment : le dernier ne se supprime pas.
     let first = plan::get(&conn).unwrap().floors[0].id;
-    let up = plan::save_floor(&conn, &admin, None, plan::FloorInput { name: "1er étage".into(), width: 15.0, depth: 10.0 }).unwrap();
+    let up = plan::save_floor(&conn, &admin, None, plan::FloorInput { name: "1er étage".into(), width: 15.0, depth: 10.0, ..Default::default() }).unwrap();
     assert_eq!(plan::get(&conn).unwrap().floors.len(), 2);
     plan::delete_floor(&conn, &admin, up).unwrap();
     assert!(plan::delete_floor(&conn, &admin, first).is_err());
@@ -1027,7 +1027,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 7);
+    assert_eq!(count("PRAGMA user_version"), 8);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
@@ -1039,4 +1039,101 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     assert_eq!(riz.fixture_name.as_deref(), Some("Rayon B"));
     assert_eq!(plan::product_places(&conn, 1).unwrap()[0].level, 2);
     assert_eq!(locations::list(&conn).unwrap().len(), 5);
+}
+
+#[test]
+fn plan_3d_heights_models_and_layout_wizard() {
+    fn rect(f: &plan::Fixture) -> (f64, f64, f64, f64) {
+        let (w, h) = if f.rotation % 180 == 90 { (f.h, f.w) } else { (f.w, f.h) };
+        let (cx, cy) = (f.x + f.w / 2.0, f.y + f.h / 2.0);
+        (cx - w / 2.0, cy - h / 2.0, w, h)
+    }
+    let (mut conn, admin) = setup();
+    let plan0 = plan::get(&conn).unwrap();
+    let fridge = plan0.types.iter().find(|t| t.code == "refrigerateur").unwrap();
+    assert_eq!((fridge.model.as_str(), fridge.height), ("refrigerateur", 2.0));
+    assert_eq!(plan0.floors[0].wall_height, 3.0);
+    // Hauteur propre d'un meuble, puis retour à celle du type.
+    let fr = plan::create_fixture(&conn, None, plan::FixtureInput { type_id: Some(fridge.id), height: Some(1.6), ..Default::default() }).unwrap();
+    assert_eq!((fr.height, fr.custom_height), (1.6, Some(1.6)));
+    let fr = plan::update_fixture(&mut conn, &admin, fr.id, plan::FixtureInput { height: Some(0.0), ..Default::default() }).unwrap();
+    assert_eq!((fr.height, fr.custom_height, fr.model.as_str()), (2.0, None, "refrigerateur"));
+    // Meuble personnalisé : forme 3D au choix ; forme inconnue refusée.
+    let custom = plan::save_type(&conn, &admin, None, plan::TypeInput {
+        name: "Frigo Coca".into(), category: "froid".into(), prefix: "FC".into(), color: "#dc2626".into(),
+        width: 0.6, depth: 0.6, levels: 4, sections: 1, model: Some("congelateur_armoire".into()), height: Some(1.9),
+    }).unwrap();
+    let t = plan::get(&conn).unwrap().types.into_iter().find(|t| t.id == custom).unwrap();
+    assert_eq!((t.model.as_str(), t.height), ("congelateur_armoire", 1.9));
+    assert!(plan::save_type(&conn, &admin, None, plan::TypeInput {
+        name: "X".into(), category: "rayon".into(), prefix: "X".into(), color: "#000000".into(),
+        width: 1.0, depth: 1.0, levels: 1, sections: 1, model: Some("soucoupe".into()), height: None,
+    }).is_err());
+    // Murs et sol d'un niveau.
+    let first = plan0.floors[0].id;
+    plan::save_floor(&conn, &admin, Some(first), plan::FloorInput {
+        name: "RDC".into(), width: 20.0, depth: 12.0, wall_height: Some(3.5), floor_style: Some("wood".into()),
+    }).unwrap();
+    let f0 = plan::get(&conn).unwrap().floors.into_iter().find(|f| f.id == first).unwrap();
+    assert_eq!((f0.wall_height, f0.floor_style.as_str()), (3.5, "wood"));
+    assert!(plan::save_floor(&conn, &admin, Some(first), plan::FloorInput {
+        name: "RDC".into(), width: 20.0, depth: 12.0, floor_style: Some("lave".into()), ..Default::default()
+    }).is_err());
+
+    // Assistant : boutique complète pour chaque côté d'entrée, sans débordement ni chevauchement.
+    settings::set(&conn, "business_type", "supermarket").unwrap();
+    for entry in ["bottom", "top", "left", "right"] {
+        let input = plan::LayoutInput {
+            floor_id: None, name: Some(format!("Test {entry}")), width: 14.0, depth: 10.0, entry: entry.into(),
+            storage_room: true, business_type: None,
+        };
+        let floor_id = plan::generate_layout(&mut conn, &admin, input).unwrap();
+        let p = plan::get(&conn).unwrap();
+        let floor = p.floors.iter().find(|f| f.id == floor_id).unwrap();
+        assert_eq!((floor.width, floor.depth), (16.0, 12.0));
+        let items: Vec<&plan::Fixture> = p.fixtures.iter().filter(|f| f.floor_id == floor_id).collect();
+        let n = |code: &str| items.iter().filter(|f| f.type_code == code).count();
+        assert_eq!(n("caisse"), 1, "{entry}");
+        assert!(n("porte") >= 2 && n("gondole") >= 2 && n("refrigerateur") >= 2 && n("mur") >= 5, "{entry}");
+        for f in &items {
+            let r = rect(f);
+            assert!(
+                r.0 >= -0.01 && r.1 >= -0.01 && r.0 + r.2 <= floor.width + 0.01 && r.1 + r.3 <= floor.depth + 0.01,
+                "{entry} : {} déborde",
+                f.code
+            );
+        }
+        let storage: Vec<&plan::Fixture> = items.iter().copied().filter(|f| f.storage).collect();
+        for (i, a) in storage.iter().enumerate() {
+            for b in &storage[i + 1..] {
+                let (ra, rb) = (rect(a), rect(b));
+                let clash = ra.0 + 0.02 < rb.0 + rb.2 && rb.0 + 0.02 < ra.0 + ra.2 && ra.1 + 0.02 < rb.1 + rb.3 && rb.1 + 0.02 < ra.1 + ra.3;
+                assert!(!clash, "{entry} : {} chevauche {}", a.code, b.code);
+            }
+        }
+    }
+    // Petite boutique de quartier ; salle trop petite refusée.
+    let small = plan::generate_layout(&mut conn, &admin, plan::LayoutInput {
+        floor_id: None, name: None, width: 4.0, depth: 5.0, entry: "bottom".into(), storage_room: true,
+        business_type: Some("boutique".into()),
+    }).unwrap();
+    let p = plan::get(&conn).unwrap();
+    assert!(p.fixtures.iter().any(|f| f.floor_id == small && f.type_code == "caisse"));
+    assert!(plan::generate_layout(&mut conn, &admin, plan::LayoutInput {
+        floor_id: None, name: None, width: 1.0, depth: 5.0, entry: "bottom".into(), storage_room: false, business_type: None,
+    }).is_err());
+
+    // Contenu des cases pour la vue 3D ; un niveau garni ne se redessine pas.
+    let gondola = p.fixtures.iter().find(|f| f.type_code == "gondole").unwrap();
+    let slot = plan::contents(&conn, gondola.id).unwrap().slots[0].id;
+    let prod = product(&mut conn, &admin, "Lait UHT", 500, 700, 10.0);
+    plan::put(&mut conn, &admin, plan::PutInput { product_id: prod, location_id: slot, from_location_id: None, primary: None }).unwrap();
+    let fill = plan::floor_fill(&conn, gondola.floor_id).unwrap();
+    assert_eq!(fill.len(), 1);
+    assert_eq!((fill[0].fixture_id, fill[0].level, fill[0].section, fill[0].products), (gondola.id, 1, 1, 1));
+    let again = plan::LayoutInput {
+        floor_id: Some(gondola.floor_id), name: None, width: 10.0, depth: 8.0, entry: "bottom".into(), storage_room: false,
+        business_type: None,
+    };
+    assert!(plan::generate_layout(&mut conn, &admin, again).is_err());
 }

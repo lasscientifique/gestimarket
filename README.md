@@ -4,10 +4,10 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.12.0**
+- Version actuelle : **0.13.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
-> État des tests : 43 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. Test d'interface de bout en bout sous Xvfb avec Playwright : 38 vérifications sur 38 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan). Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
+> État des tests : 44 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, hauteurs et dessins 3D, assistant « Créer ma boutique » pour les 4 côtés d'entrée sans chevauchement, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. La vue 3D a été vérifiée à l'écran sur une boutique d'exemple (vue d'ensemble, visite, déplacement refusé sur un meuble, chemin vers un produit, miniatures de la palette) ; sa fluidité sur un PC modeste n'a pas été mesurée. Test d'interface de bout en bout sous Xvfb avec Playwright : 38 vérifications sur 38 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan). Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
 
 ---
 
@@ -49,8 +49,10 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 ### Magasin
 - **Plan de la boutique**, comme un plan d'architecte, à l'échelle en mètres : niveaux du bâtiment (rez-de-chaussée, étage, entrepôt), pièces (salle de vente, réserve…), murs, portes, caisse, et une **palette de meubles** à glisser sur le plan : gondoles, têtes de gondole, étagères murales, réfrigérateurs, congélateurs, vitrines réfrigérées, chambres froides, présentoirs, bacs vrac, palettes, portants, racks, armoires, armoires à tiroirs, vitrines fermées, comptoirs, **et des meubles personnalisés** créés par la boutique. Déplacer, redimensionner, tourner, dupliquer, annuler / rétablir, imprimer le plan.
+- **Plan en 3D réaliste** (vues *Dessus*, *3D* et *Visite*) : chaque meuble est dessiné à ses vraies dimensions et garni de ses produits (couleur de leur catégorie, photo en option) : gondoles double face avec tablettes et bandes de prix, frigos à portes vitrées éclairés, congélateurs coffres à couvercles vitrés, vitrines réfrigérées bombées, chambres froides, racks de réserve avec palettes, portants avec vêtements, bacs vrac, caisse avec tapis et écran, murs, portes vitrées, fenêtres, escaliers ; sol en carrelage, béton, parquet ou lino. Tourner autour, zoomer, murs coupés pour voir l'intérieur ; **visite** à hauteur d'homme (flèches, Z Q S D ou boutons à l'écran). Qualité *Réaliste* (ombres) ou *Simple* (PC modeste) ; plan vu de dessus si l'appareil n'a pas de 3D.
+- **Très facile à dessiner** : assistant **« Créer ma boutique »** en 3 questions (taille de la salle, côté de l'entrée, type de commerce) qui pose murs, entrée, caisse, froid, étagères, allées et réserve ; en 3D, un meuble glissé s'aimante aux murs et à ses voisins et revient à sa place s'il en chevauche un autre ; **Répéter ×3** pour une rangée ; palette illustrée par l'image 3D de chaque meuble ; double-clic : la porte du frigo s'ouvre et ses cases s'affichent.
 - **Vue de face** de chaque meuble (étages × cases) : **poser** un produit dans une case, le **prendre** (retirer), le déplacer ; un produit peut avoir plusieurs emplacements (rayon, réserve, frigo) dont un principal ; étiquettes de cases avec QR code.
-- **Où est le produit ?** (Ctrl + K, aussi pour les caissiers) : le meuble clignote sur le plan et la case est montrée dans la vue de face ; scanner l'étiquette d'une case montre son contenu.
+- **Où est le produit ?** (Ctrl + K, aussi pour les caissiers) : en 3D, la caméra va au meuble, la case clignote et un **chemin vert au sol** mène de l'entrée au rayon ; la case est montrée dans la vue de face ; scanner l'étiquette d'une case montre son contenu.
 - Stock : ajustements, inventaire, historique des mouvements.
 - Achats / réceptions avec coût moyen pondéré, fournisseurs.
 - Clients : dettes, règlements, relevé de compte.
@@ -300,7 +302,7 @@ gestimarket/
 - **Transport** : `lib/transport.ts` choisit automatiquement l'appel local (Tauri), l'appel réseau (poste client) ou le navigateur (tablette, téléphone).
 
 ### Bibliothèques principales
-Tauri 2, rusqlite (SQLite intégré), argon2, axum + tower-http, axum-server (HTTPS rustls), rcgen, ureq, chrono · React 19, react-router (HashRouter), recharts, lucide-react, qrcode, jsbarcode, @zxing/library.
+Tauri 2, rusqlite (SQLite intégré), argon2, axum + tower-http, axum-server (HTTPS rustls), rcgen, ureq, chrono · React 19, react-router (HashRouter), recharts, lucide-react, qrcode, jsbarcode, @zxing/library, three.js (vue 3D du plan, chargée seulement à l'ouverture du plan).
 
 ---
 
@@ -317,6 +319,7 @@ SQLite, migrations versionnées (`PRAGMA user_version`, clés étrangères véri
 | 005 | Catalogue v2 : catégories actives, marque, référence, conditionnements, quantités en unités de base |
 | 006 | Plan de la boutique : niveaux (`store_floors`), palette de meubles (`fixture_types`), meubles posés en mètres (`fixtures`), cases étage × case (`locations`), autres emplacements d'un produit (`product_locations`) ; les anciens blocs deviennent des gondoles |
 | 007 | International : langue de chaque utilisateur (`users.lang`) |
+| 008 | Plan en 3D : forme 3D et hauteur des types de meubles, hauteur propre d'un meuble, hauteur des murs et sol de chaque niveau |
 
 Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix de vente enregistrés TTC (même saisis HT), dates locales.
 
@@ -346,6 +349,7 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Comptes boutique, formules FREE / STARTER / PRO / BUSINESS, licences signées Ed25519, lecture seule à l'expiration, postes simultanés
 - [x] Paiement des abonnements : carte de bon (activation immédiate), Orange Money (Sarali), carte Visa (Cybersource) ; formule supérieure immédiate
 - [x] Plan de la boutique façon architecte (meubles, frigos, réserve, meubles personnalisés, poser / prendre), 22 types de commerce
+- [x] Plan en 3D réaliste : meubles dessinés et garnis, visite dans les allées, assistant « Créer ma boutique », chemin jusqu'au produit
 - [x] Français / anglais et utilisation dans tous les pays (devises, taxes, paiements mobiles configurables, prix des formules par devise)
 - [ ] Retours et avoirs, prix de gros et promotions, rapport Z, dépenses, bons de commande, variantes, codes-barres de balance, imprimante thermique
 - [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées

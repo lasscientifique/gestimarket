@@ -178,7 +178,8 @@ try {
   check("adresse publique testée par le serveur : disponible", cloud.public_ok === true, JSON.stringify({ ok: cloud.public_ok, ms: cloud.public_ms, err: cloud.public_error }));
 
   // ── Appareils
-  browser = await chromium.launch();
+  // WebGL logiciel (SwiftShader) : la vue 3D du plan s'affiche sans carte graphique.
+  browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
   const android = "Mozilla/5.0 (Linux; Android 14; SM-A546B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36";
   const tabletUa = "Mozilla/5.0 (Linux; Android 14; SM-X210) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36";
   const pc = await device(browser, { name: "pc", url: SRV, token: await login(), viewport: { width: 1366, height: 850 } });
@@ -253,6 +254,27 @@ try {
     JSON.stringify(places[0] ?? {}),
   );
   await pc.goto(`${SRV}/#/locations`);
+  // Vue 3D (par défaut si WebGL) : canevas affiché, visite ; puis plan vu de dessus pour la suite.
+  const view3d = pc.getByRole("button", { name: "3D", exact: true });
+  await pc.getByRole("button", { name: "Modifier le plan" }).waitFor({ timeout: 45_000 });
+  const has3d = (await view3d.count()) > 0;
+  if (has3d) {
+    await view3d.click();
+    try {
+      await pc.locator("canvas.plan3d-canvas").waitFor({ state: "visible", timeout: 30_000 });
+      check("plan en 3D : boutique affichée", true);
+    } catch {
+      check("plan en 3D : boutique affichée", false, "canevas 3D absent");
+    }
+    await pc.waitForTimeout(2500);
+    await shot(pc, "12-plan-3d.png");
+    await pc.getByRole("button", { name: "Visite", exact: true }).click();
+    await pc.waitForTimeout(2000);
+    await shot(pc, "13-plan-visite.png");
+    await pc.getByRole("button", { name: "Dessus", exact: true }).click();
+  } else {
+    check("plan en 3D : WebGL indisponible ici, plan vu de dessus affiché", true);
+  }
   await seen(pc, "Plan de la boutique", "Salle de vente");
   await seen(pc, "Plan de la boutique", "FR1");
   await shot(pc, "08-plan-de-la-boutique.png");
@@ -266,7 +288,27 @@ try {
   await pc.goto(`${SRV}/#/finder`);
   await pc.locator(".finder-search input").fill("Coca");
   await seen(pc, "Localiser un produit", "Réfrigérateur vitré FR1");
+  await pc.waitForTimeout(2000);
   await shot(pc, "09-localiser-un-produit.png");
+  // Assistant « Créer ma boutique » : un supermarché complet sur un nouveau niveau.
+  const wizFloor = await rpc(
+    "plan_generate_layout",
+    { input: { floor_id: null, name: "Magasin 2", width: 14, depth: 10, entry: "bottom", storage_room: true, business_type: "supermarket" } },
+    admin,
+  );
+  const made = (await rpc("plan_get", {}, admin)).fixtures.filter((f) => f.floor_id === wizFloor);
+  check(
+    "assistant « Créer ma boutique » : murs, porte, caisse, frigos et gondoles posés",
+    ["mur", "porte", "caisse", "refrigerateur", "gondole"].every((c) => made.some((f) => f.type_code === c)),
+    `${made.length} élément(s)`,
+  );
+  if (has3d) {
+    await pc.goto(`${SRV}/#/locations`);
+    await pc.getByRole("button", { name: "Magasin 2" }).click();
+    await pc.getByRole("button", { name: "3D", exact: true }).click();
+    await pc.waitForTimeout(3000);
+    await shot(pc, "14-assistant-boutique-3d.png");
+  }
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

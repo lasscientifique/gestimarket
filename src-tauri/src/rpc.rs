@@ -301,6 +301,8 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
         "plan_get" => run(Any, &|c, _| out(plan::get(c)?)),
         "plan_fixture_contents" => run(Any, &|c, _| out(plan::contents(c, arg(&a, "id")?)?)),
+        "plan_floor_fill" => run(Any, &|c, _| out(plan::floor_fill(c, arg(&a, "floor_id")?)?)),
+        "plan_generate_layout" => run(Manager, &|c, u| out(plan::generate_layout(c, u, arg(&a, "input")?)?)),
         "product_places" => run(Any, &|c, _| out(plan::product_places(c, arg(&a, "product_id")?)?)),
         "plan_save_floor" => run(Manager, &|c, u| out(plan::save_floor(c, u, arg(&a, "id")?, arg(&a, "input")?)?)),
         "plan_delete_floor" => run(Manager, &|c, u| {

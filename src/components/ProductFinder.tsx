@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MapPin, ScanSearch, X, Package, Camera, Star } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Box, MapPin, Map as MapIcon, ScanSearch, X, Package, Camera, Star } from "lucide-react";
 import { CameraScanner } from "./CameraScanner";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { money, qty } from "../lib/format";
-import type { Location, Place, Product, StorePlanData } from "../types";
+import type { CellFill, Location, Place, Product, StorePlanData } from "../types";
 import { StoreMap } from "./plan/StoreMap";
 import { FixtureFront, slotName } from "./plan/FixtureFront";
 import { categoryPath } from "./CategorySelect";
 import { Badge, LocationBadge, Thumb } from "./ui";
 import { tl, tm } from "../lib/i18n";
+import { saveView, savedView, webglAvailable, type PlanView } from "./plan3d/support";
+
+const Store3D = lazy(() => import("./plan3d/Store3D"));
+const VIEW_KEY = "gm-finder-view";
 
 /**
  * Recherche « Où se trouve ce produit ? » : nom, code-barres (douchette) ou catégorie.
@@ -28,6 +32,12 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
   const [plan, setPlan] = useState<StorePlanData | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
   const [focus, setFocus] = useState(0);
+  const [view, setViewState] = useState<PlanView>(() => savedView(VIEW_KEY, "3d"));
+  const [fill, setFill] = useState<CellFill[]>([]);
+  const setView = (v: PlanView) => {
+    setViewState(v);
+    saveView(VIEW_KEY, v);
+  };
 
   useEffect(() => {
     api.listLocations().then(setLocations).catch(toast.error);
@@ -68,6 +78,11 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
 
   const place = places[Math.min(focus, places.length - 1)] ?? null;
   const mapFloor = place && plan ? plan.floors.find((f) => f.id === place.floor_id) ?? null : null;
+  const mapFloorId = mapFloor?.id ?? null;
+  useEffect(() => {
+    if (!mapFloorId || view === "plan") return;
+    api.planFloorFill(mapFloorId).then(setFill).catch(() => setFill([]));
+  }, [mapFloorId, view]);
 
   const choose = (i: number) => {
     setActive(i);
@@ -169,7 +184,28 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
                       ))}
                     </div>
                   )}
-                  {mapFloor && place && (
+                  {mapFloor && place && webglAvailable() && (
+                    <div className="segmented finder-views">
+                      <button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}><MapIcon size={14} />  {tl("Dessus")}</button>
+                      <button className={view !== "plan" ? "active" : ""} onClick={() => setView("3d")}><Box size={14} />  {tl("3D et chemin")}</button>
+                    </div>
+                  )}
+                  {mapFloor && place && view !== "plan" && (
+                    <Suspense fallback={<div className="plan3d plan3d-loading" style={{ height: 320 }}>{tl("Chargement de la 3D…")}</div>}>
+                      <Store3D
+                        floor={mapFloor}
+                        fixtures={plan!.fixtures.filter((f) => f.floor_id === mapFloor.id)}
+                        fill={fill}
+                        mode="orbit"
+                        highlight={{ fixtureId: place.fixture_id, level: place.level, section: place.section }}
+                        showPath
+                        onUnavailable={() => setView("plan")}
+                        height={320}
+                        compact
+                      />
+                    </Suspense>
+                  )}
+                  {mapFloor && place && view === "plan" && (
                     <StoreMap
                       floor={mapFloor}
                       fixtures={plan!.fixtures.filter((f) => f.floor_id === mapFloor.id)}

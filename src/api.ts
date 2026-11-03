@@ -3,50 +3,52 @@ import type {
   AccountLinkResult,
   AccountOptions,
   AccountStore,
-  CardStart,
-  Fixture,
-  FixtureContents,
-  Place,
-  StorePlanData,
-  LicenseStatus,
-  SessionInfo,
-  StoreInput,
-  SubscriptionPayment,
-  VoucherResult,
   AuditEntry,
+  BoutiquesInfo,
+  BusinessProfile,
+  CardStart,
   CashMovement,
   CashSession,
   CashierStats,
-  BoutiquesInfo,
-  CloudStatus,
-  LiveCart,
-  LiveCartContent,
-  PosteInfo,
-  Category,
-  BusinessProfile,
   CatalogueSummary,
-  ScanResult,
-  TemplateNode,
+  Category,
+  CellFill,
+  CloudStatus,
   Customer,
   Dashboard,
   ElectronicPayment,
+  Fixture,
+  FixtureContents,
   ImportResult,
   ImportRow,
+  LayoutInput,
+  LicenseStatus,
+  LiveCart,
+  LiveCartContent,
   Location,
+  Place,
+  PosteInfo,
   Product,
   ProductInput,
   Purchase,
+  Role,
   Sale,
   SaleInput,
   SalesReport,
+  ScanResult,
+  SessionInfo,
   SessionUser,
-  Role,
   Settings,
   StatementLine,
   StockMovement,
   StockSummary,
+  StoreInput,
+  StorePlanData,
+  SubscriptionPayment,
   Supplier,
+  TemplateNode,
   User,
+  VoucherResult,
 } from "./types";
 
 const call = rpc;
@@ -146,7 +148,10 @@ export const api = {
   planGet: () => call<StorePlanData>("plan_get"),
   planFixtureContents: (id: number) => call<FixtureContents>("plan_fixture_contents", { id }),
   productPlaces: (product_id: number) => call<Place[]>("product_places", { product_id }),
-  planSaveFloor: (id: number | null, input: { name: string; width: number; depth: number }) => call<number>("plan_save_floor", { id, input }),
+  planSaveFloor: (id: number | null, input: { name: string; width: number; depth: number; wall_height?: number; floor_style?: string }) =>
+    call<number>("plan_save_floor", { id, input }),
+  planFloorFill: (floor_id: number) => call<CellFill[]>("plan_floor_fill", { floor_id }),
+  planGenerateLayout: (input: LayoutInput) => call<number>("plan_generate_layout", { input }),
   planDeleteFloor: (id: number, pin: string) => call<void>("plan_delete_floor", { id, pin }),
   planSaveFixture: (id: number | null, input: Partial<Omit<Fixture, "id" | "color">> & { color?: string | null }) =>
     call<Fixture>("plan_save_fixture", { id, input }),
@@ -155,7 +160,18 @@ export const api = {
   planDeleteFixture: (id: number, pin?: string | null) => call<number>("plan_delete_fixture", { id, pin }),
   planSaveType: (
     id: number | null,
-    input: { name: string; category: string; prefix: string; color: string; width: number; depth: number; levels: number; sections: number },
+    input: {
+      name: string;
+      category: string;
+      prefix: string;
+      color: string;
+      width: number;
+      depth: number;
+      levels: number;
+      sections: number;
+      model?: string;
+      height?: number;
+    },
   ) => call<number>("plan_save_type", { id, input }),
   planDeleteType: (id: number) => call<void>("plan_delete_type", { id }),
   planPut: (input: { product_id: number; location_id: number; from_location_id?: number | null; primary?: boolean }) =>

@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Box,
   Boxes,
   Copy,
+  Footprints,
+  Map as MapIcon,
+  Repeat,
+  WandSparkles,
   Eye,
   LayoutGrid,
   Pencil,
@@ -21,7 +26,9 @@ import { useBusinessProfiles } from "../components/BusinessType";
 import { DRAG_TYPE, StoreMap, geometryOf, type Geometry } from "../components/plan/StoreMap";
 import { FixtureFront } from "../components/plan/FixtureFront";
 import { printHtml } from "../lib/receipt";
-import type { Fixture, FixtureCategory, FixtureType, Floor, StorePlanData } from "../types";
+import type { CellFill, Fixture, FixtureCategory, FixtureType, Floor, FloorStyle, LayoutInput, StorePlanData } from "../types";
+import { collision, footprint } from "../components/plan3d/geometry";
+import { saveView, savedView, webglAvailable, type PlanView } from "../components/plan3d/support";
 import { tl, tm } from "../lib/i18n";
 
 const GROUPS: { key: FixtureCategory; label: string }[] = [
@@ -40,6 +47,16 @@ const CATEGORY_LABELS: Record<FixtureCategory, string> = {
   zone: tl("Pièce / zone"),
   batiment: tl("Bâtiment (mur, porte…)"),
 };
+// La 3D (three.js) n'est chargée qu'à l'ouverture du plan.
+const Store3D = lazy(() => import("../components/plan3d/Store3D"));
+const VIEW_KEY = "gm-plan-view";
+const FLOOR_STYLES: { key: FloorStyle; label: string }[] = [
+  { key: "tiles", label: tl("Carrelage") },
+  { key: "concrete", label: tl("Béton") },
+  { key: "wood", label: tl("Parquet") },
+  { key: "vinyl", label: tl("Lino") },
+];
+
 const meters = (n: number) => `${String(Math.round(n * 100) / 100).replace(".", ",")} m`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -62,7 +79,13 @@ export default function LocationsPage() {
   const [front, setFront] = useState<number | null>(null);
   const [undo, setUndo] = useState<UndoStep[]>([]);
   const [redo, setRedo] = useState<UndoStep[]>([]);
-  const [modal, setModal] = useState<null | "floor-new" | Floor | "type-new" | FixtureType | "generate">(null);
+  const [modal, setModal] = useState<null | "floor-new" | Floor | "type-new" | FixtureType | "generate" | "wizard">(null);
+  const [view, setViewState] = useState<PlanView>(() => savedView(VIEW_KEY, "3d"));
+  const setView = (v: PlanView) => {
+    setViewState(v);
+    saveView(VIEW_KEY, v);
+  };
+  const [fill, setFill] = useState<CellFill[]>([]);
   const [unplaced, setUnplaced] = useState(0);
   const centerRef = useRef<() => { x: number; y: number }>(() => ({ x: 2, y: 2 }));
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -83,9 +106,15 @@ export default function LocationsPage() {
   }, [load]);
 
   const floor = plan?.floors.find((f) => f.id === floorId) ?? null;
+  // Contenu des cases (produits dessinés dans les meubles en 3D).
+  useEffect(() => {
+    if (!floorId || view === "plan") return;
+    api.planFloorFill(floorId).then(setFill).catch(() => setFill([]));
+  }, [floorId, plan, view]);
   const fixtures = useMemo(() => plan?.fixtures.filter((f) => f.floor_id === floorId) ?? [], [plan, floorId]);
   const selected = fixtures.find((f) => f.id === selectedId) ?? null;
   const storage = plan?.fixtures.filter((f) => f.storage) ?? [];
+  const emptyFloor = fixtures.every((f) => f.category === "zone");
   const placed = storage.reduce((s, f) => s + f.product_count, 0);
   const slots = storage.reduce((s, f) => s + f.levels * f.sections, 0);
 
@@ -164,6 +193,50 @@ export default function LocationsPage() {
     }
   };
 
+  /** Trois copies côte à côte, séparées d'une allée de 1,30 m, du côté où il y a de la place. */
+  const repeat = async (f: Fixture) => {
+    if (!floor) return;
+    const a = (f.rotation * Math.PI) / 180;
+    const across = f.w >= f.h;
+    const step = (across ? f.h : f.w) + 1.3;
+    const dir = across ? { x: -Math.sin(a), y: Math.cos(a) } : { x: Math.cos(a), y: Math.sin(a) };
+    const tryDir = (sign: number) =>
+      [1, 2, 3].map((k) => ({ x: round2(f.x + sign * dir.x * step * k), y: round2(f.y + sign * dir.y * step * k) }));
+    const fits = (pts: { x: number; y: number }[]) =>
+      pts.every((p) => {
+        const r = footprint({ ...f, ...p });
+        return r.x >= -0.01 && r.y >= -0.01 && r.x + r.w <= floor.width + 0.01 && r.y + r.h <= floor.depth + 0.01 && !collision(f, r, fixtures);
+      });
+    const plus = tryDir(1);
+    const minus = tryDir(-1);
+    const pts = fits(plus) ? plus : fits(minus) ? minus : plus;
+    try {
+      const copies: Fixture[] = [];
+      for (const p of pts) {
+        copies.push(
+          await api.planSaveFixture(null, {
+            type_id: f.type_id,
+            floor_id: f.floor_id,
+            x: p.x,
+            y: p.y,
+            w: f.w,
+            h: f.h,
+            rotation: f.rotation,
+            levels: f.levels,
+            sections: f.sections,
+            color: f.custom_color,
+            height: f.custom_height ?? 0,
+          }),
+        );
+      }
+      setPlan((pl) => pl && { ...pl, fixtures: [...pl.fixtures, ...copies] });
+      toast.success(tl("Rangée créée : {0} meubles de plus.", [copies.length]));
+    } catch (e) {
+      toast.error(e);
+      load();
+    }
+  };
+
   const remove = async (f: Fixture) => {
     const msg = f.product_count
       ? tl("Supprimer {0} ? Les {1} produit(s) rangés dedans gardent leurs autres emplacements, sinon deviennent « non rangés ».", [f.name, f.product_count])
@@ -219,6 +292,11 @@ export default function LocationsPage() {
 
   /** Plan imprimable : dessin du niveau et légende des meubles. */
   const printPlan = () => {
+    if (view !== "plan") {
+      setView("plan");
+      window.setTimeout(() => printRef.current(), 400);
+      return;
+    }
     if (!floor || !svgRef.current) return;
     const svg = svgRef.current.outerHTML;
     const rows = fixtures
@@ -233,6 +311,9 @@ export default function LocationsPage() {
         <table><thead><tr><th>${tl("Code")}</th><th>${tl("Meuble")}</th><th>${tl("Type")}</th><th>${tl("Étages × cases")}</th><th>${tl("Produits")}</th></tr></thead><tbody>${rows}</tbody></table>
       </div>`);
   };
+
+  const printRef = useRef(printPlan);
+  printRef.current = printPlan;
 
   if (!plan || !floor) {
     return (
@@ -251,6 +332,7 @@ export default function LocationsPage() {
         subtitle={tl("Dessinez votre boutique à l'échelle, posez vos meubles, puis rangez-y les produits : il suffit de regarder le plan pour trouver un produit.")}
         actions={
           <>
+            <button className="btn" onClick={() => setModal("wizard")}><WandSparkles size={16} />  {tl("Créer ma boutique")}</button>
             <button className="btn" onClick={printPlan}><Printer size={16} />  {tl("Imprimer le plan")}</button>
             {edit ? (
               <button className="btn btn-primary" onClick={() => setEdit(false)}>{tl("Terminer la modification")}</button>
@@ -269,6 +351,13 @@ export default function LocationsPage() {
       </div>
 
       <div className="plan-floors">
+        {webglAvailable() && (
+          <div className="segmented plan-views" role="tablist">
+            <button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")} title={tl("Plan vu de dessus, précis et imprimable")}><MapIcon size={15} />  {tl("Dessus")}</button>
+            <button className={view === "3d" ? "active" : ""} onClick={() => setView("3d")} title={tl("Boutique en 3D : tourner autour, zoomer, déplacer les meubles")}><Box size={15} />  {tl("3D")}</button>
+            <button className={view === "walk" ? "active" : ""} onClick={() => setView("walk")} title={tl("Se promener dans les allées, à hauteur d'homme")}><Footprints size={15} />  {tl("Visite")}</button>
+          </div>
+        )}
         {plan.floors.map((f) => (
           <button key={f.id} className={`chip ${f.id === floorId ? "active" : ""}`} onClick={() => { setFloorId(f.id); setSelectedId(null); }}>
             {tm(f.name)}
@@ -295,9 +384,42 @@ export default function LocationsPage() {
             onNewType={() => setModal("type-new")}
             onEditType={(t) => setModal(t)}
             onGenerate={() => setModal("generate")}
+            onWizard={() => setModal("wizard")}
           />
         )}
         <div className="card plan-canvas-card">
+          {emptyFloor && (
+            <div className="plan-empty">
+              <WandSparkles size={26} />
+              <div>
+                <strong>{tl("Ce niveau est vide")}</strong>
+                <span className="muted small">{tl("Créez votre boutique en 3 questions (taille, entrée, type de commerce) : murs, caisse, frigos et allées sont posés pour vous.")}</span>
+              </div>
+              <button className="btn btn-primary" onClick={() => setModal("wizard")}>{tl("Créer ma boutique")}</button>
+            </div>
+          )}
+          {view !== "plan" ? (
+            <Suspense fallback={<div className="plan3d plan3d-loading" style={{ height: "min(68vh, 720px)" }}>{tl("Chargement de la 3D…")}</div>}>
+              <Store3D
+                floor={floor}
+                fixtures={fixtures}
+                fill={fill}
+                mode={view === "walk" ? "walk" : "orbit"}
+                editable={edit && view === "3d"}
+                selectedId={selectedId}
+                openFixtureId={front}
+                onSelect={(f) => setSelectedId(f?.id ?? null)}
+                onOpen={(f) => f.storage && setFront(f.id)}
+                onGeometry={onGeometry}
+                onDropType={(id, x, y) => {
+                  const t = plan.types.find((x) => x.id === id);
+                  if (t) addFixture(t, { x, y });
+                }}
+                onUnavailable={() => setView("plan")}
+                height="min(68vh, 720px)"
+              />
+            </Suspense>
+          ) : (
           <StoreMap
             floor={floor}
             fixtures={fixtures}
@@ -314,10 +436,17 @@ export default function LocationsPage() {
             svgRef={svgRef}
             height="min(68vh, 720px)"
           />
+          )}
           <p className="muted small plan-hint">
-            {edit
+            {view === "walk"
+              ? tl("Visite : flèches (ou Z Q S D) pour marcher et tourner, glisser pour regarder autour, double-clic sur un meuble pour l'ouvrir.")
+              : view === "3d"
+                ? edit
+                  ? tl("Glissez un meuble de la palette dans la boutique, déplacez-le à la souris ou au doigt : il s'aligne tout seul sur les murs et ses voisins. R : tourner.")
+                  : tl("Glisser : tourner autour ; molette ou deux doigts : zoomer ; clic droit : déplacer la vue. Double-clic sur un meuble : l'ouvrir et voir ses produits.")
+                : edit
               ? tl("Glissez un meuble de la palette sur le plan (ou cliquez dessus), déplacez-le, agrandissez-le par son coin, tournez-le avec R. Flèches : déplacer de 10 cm (Maj : 1 m).")
-              : tl("Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette : zoom ; glisser le fond : déplacer la vue.")}
+                  : tl("Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette : zoom ; glisser le fond : déplacer la vue.")}
           </p>
         </div>
         <aside className="card plan-side">
@@ -330,6 +459,7 @@ export default function LocationsPage() {
               onSaved={replaceFixture}
               onRotate={() => rotate(selected)}
               onDuplicate={() => duplicate(selected)}
+              onRepeat={() => repeat(selected)}
               onDelete={() => remove(selected)}
             />
           ) : (
@@ -362,7 +492,21 @@ export default function LocationsPage() {
         />
       )}
       {(modal === "type-new" || (modal && typeof modal === "object" && "category" in modal)) && (
-        <TypeForm type={modal === "type-new" ? null : (modal as FixtureType)} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />
+        <TypeForm type={modal === "type-new" ? null : (modal as FixtureType)} types={plan.types} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />
+      )}
+      {modal === "wizard" && (
+        <WizardModal
+          floor={floor}
+          empty={emptyFloor}
+          onClose={() => setModal(null)}
+          onDone={(id) => {
+            setModal(null);
+            setFloorId(id);
+            setSelectedId(null);
+            if (webglAvailable()) setView("3d");
+            load();
+          }}
+        />
       )}
       {modal === "generate" && <GenerateModal onClose={() => setModal(null)} onDone={() => { setModal(null); load(); }} />}
     </div>
@@ -370,6 +514,35 @@ export default function LocationsPage() {
 }
 
 /** Palette des meubles : glisser sur le plan (ou cliquer pour poser à une place libre). */
+/** Miniatures 3D des meubles (calculées une fois, en arrière-plan). */
+function useThumbnails(types: FixtureType[]): Record<number, string> {
+  const [map, setMap] = useState<Record<number, string>>({});
+  useEffect(() => {
+    if (!webglAvailable()) return;
+    let alive = true;
+    import("../components/plan3d/thumbs")
+      .then(({ thumbnail }) => {
+        let i = 0;
+        const next = () => {
+          if (!alive) return;
+          const batch: Record<number, string> = {};
+          for (let k = 0; k < 4 && i < types.length; k++, i++) {
+            const url = thumbnail(types[i]);
+            if (url) batch[types[i].id] = url;
+          }
+          setMap((m) => ({ ...m, ...batch }));
+          if (i < types.length) window.setTimeout(next, 20);
+        };
+        next();
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [types]);
+  return map;
+}
+
 function Palette({
   types,
   suggested,
@@ -377,6 +550,7 @@ function Palette({
   onNewType,
   onEditType,
   onGenerate,
+  onWizard,
 }: {
   types: FixtureType[];
   suggested: FixtureType[];
@@ -384,8 +558,10 @@ function Palette({
   onNewType: () => void;
   onEditType: (t: FixtureType) => void;
   onGenerate: () => void;
+  onWizard: () => void;
 }) {
   const custom = types.filter((t) => !t.builtin);
+  const thumbs = useThumbnails(types);
   const item = (t: FixtureType, keyPrefix = "") => (
     <div
       key={keyPrefix + t.id}
@@ -398,7 +574,11 @@ function Palette({
       onClick={() => onAdd(t)}
       title={tl("Glissez sur le plan, ou cliquez pour le poser à une place libre")}
     >
-      <span className={`palette-swatch cat-${t.category}`} style={{ background: t.color }} />
+      {thumbs[t.id] ? (
+        <img className="palette-thumb" src={thumbs[t.id]} alt="" draggable={false} />
+      ) : (
+        <span className={`palette-swatch cat-${t.category}`} style={{ background: t.color }} />
+      )}
       <span className="palette-name">
         {tm(t.name)}
         <small>{t.storage ? tl("{0} × {1} · {2} ét. × {3}", [meters(t.width), meters(t.depth), t.levels, t.sections]) : tl("{0} × {1}", [meters(t.width), meters(t.depth)])}</small>
@@ -421,6 +601,7 @@ function Palette({
   return (
     <aside className="card palette">
       <div className="palette-actions">
+        <button className="btn btn-sm btn-primary" onClick={onWizard}><WandSparkles size={14} />  {tl("Créer ma boutique")}</button>
         <button className="btn btn-sm" onClick={onNewType}><Plus size={14} />  {tl("Meuble personnalisé")}</button>
         <button className="btn btn-sm" onClick={onGenerate} title={tl("Plusieurs gondoles d'un coup (rayons A à F…)")}><LayoutGrid size={14} />  {tl("Série de rayons")}</button>
       </div>
@@ -454,6 +635,7 @@ function FixturePanel({
   onSaved,
   onRotate,
   onDuplicate,
+  onRepeat,
   onDelete,
 }: {
   fixture: Fixture;
@@ -462,6 +644,7 @@ function FixturePanel({
   onSaved: (f: Fixture) => void;
   onRotate: () => void;
   onDuplicate: () => void;
+  onRepeat: () => void;
   onDelete: () => void;
 }) {
   const { toast } = useApp();
@@ -474,9 +657,10 @@ function FixturePanel({
     sections: String(f.sections),
     color: f.custom_color ?? "",
     notes: f.notes ?? "",
+    height: f.custom_height ? String(f.custom_height).replace(".", ",") : "",
   });
   const [v, setV] = useState(init);
-  useEffect(() => setV(init()), [f.id, f.w, f.h, f.name, f.code, f.levels, f.sections, f.custom_color]);
+  useEffect(() => setV(init()), [f.id, f.w, f.h, f.name, f.code, f.levels, f.sections, f.custom_color, f.custom_height]);
   const num = (s: string) => Number(s.replace(",", "."));
   const set = (k: keyof ReturnType<typeof init>) => (e: { target: { value: string } }) => setV({ ...v, [k]: e.target.value });
 
@@ -491,6 +675,7 @@ function FixturePanel({
         sections: f.storage ? Number(v.sections) : undefined,
         color: v.color,
         notes: v.notes,
+        height: v.height.trim() ? num(v.height) : 0,
       });
       onSaved(saved);
       toast.success(tl("Meuble enregistré."));
@@ -530,6 +715,9 @@ function FixturePanel({
             </Field>
             <Field label={tl("Largeur (m)")}><input inputMode="decimal" value={v.w} onChange={set("w")} /></Field>
             <Field label={tl("Profondeur (m)")}><input inputMode="decimal" value={v.h} onChange={set("h")} /></Field>
+            <Field label={tl("Hauteur (m)")} hint={tl("Vide : hauteur du modèle ({0})", [meters(f.height)])}>
+              <input inputMode="decimal" value={v.height} onChange={set("height")} placeholder={String(f.height).replace(".", ",")} />
+            </Field>
             {f.storage && (
               <>
                 <Field label={tl("Étages")}><input inputMode="numeric" value={v.levels} onChange={set("levels")} /></Field>
@@ -542,6 +730,7 @@ function FixturePanel({
           <div className="fixture-panel-actions">
             <button className="btn btn-sm" onClick={onRotate} title={tl("Tourner de 90° (R)")}><RotateCw size={14} />  {tl("Tourner")}</button>
             <button className="btn btn-sm" onClick={onDuplicate} title={tl("Dupliquer (Ctrl+D)")}><Copy size={14} />  {tl("Dupliquer")}</button>
+            <button className="btn btn-sm" onClick={onRepeat} title={tl("Trois copies en rangée, avec une allée de 1,30 m")}><Repeat size={14} />  {tl("Répéter ×3")}</button>
             <button className="btn btn-sm btn-danger-outline" onClick={onDelete} title={tl("Supprimer (Suppr)")}><Trash2 size={14} />  {tl("Supprimer")}</button>
           </div>
           <p className="muted small">{tl("Position :")} {meters(f.x)} ; {meters(f.y)}  {tl("· rotation")} {f.rotation}°</p>
@@ -554,11 +743,23 @@ function FixturePanel({
 
 function FloorForm({ floor, canDelete, onClose, onSaved }: { floor: Floor | null; canDelete: boolean; onClose: () => void; onSaved: (id: number | null) => void }) {
   const { toast, askPin, confirm } = useApp();
-  const [f, setF] = useState({ name: floor?.name ?? tl("1er étage"), width: String(floor?.width ?? 20), depth: String(floor?.depth ?? 12) });
+  const [f, setF] = useState({
+    name: floor?.name ?? tl("1er étage"),
+    width: String(floor?.width ?? 20),
+    depth: String(floor?.depth ?? 12),
+    wall_height: String(floor?.wall_height ?? 3).replace(".", ","),
+    floor_style: (floor?.floor_style ?? "tiles") as FloorStyle,
+  });
   const num = (s: string) => Number(s.replace(",", "."));
   const submit = async () => {
     try {
-      const id = await api.planSaveFloor(floor?.id ?? null, { name: f.name, width: num(f.width), depth: num(f.depth) });
+      const id = await api.planSaveFloor(floor?.id ?? null, {
+        name: f.name,
+        width: num(f.width),
+        depth: num(f.depth),
+        wall_height: num(f.wall_height),
+        floor_style: f.floor_style,
+      });
       onSaved(id);
     } catch (e) {
       toast.error(e);
@@ -593,13 +794,21 @@ function FloorForm({ floor, canDelete, onClose, onSaved }: { floor: Floor | null
         <Field label={tl("Nom *")} span={2} hint={tl("Ex. Rez-de-chaussée, 1er étage, Entrepôt, Magasin 2")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label={tl("Largeur (m)")}><input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} /></Field>
         <Field label={tl("Profondeur (m)")}><input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} /></Field>
+        <Field label={tl("Hauteur des murs (m)")}><input inputMode="decimal" value={f.wall_height} onChange={(e) => setF({ ...f, wall_height: e.target.value })} /></Field>
+        <Field label={tl("Sol")}>
+          <select value={f.floor_style} onChange={(e) => setF({ ...f, floor_style: e.target.value as FloorStyle })}>
+            {FLOOR_STYLES.map((s) => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
+        </Field>
       </div>
     </Modal>
   );
 }
 
 /** Meuble personnalisé : l'utilisateur n'est pas limité à la palette de base. */
-function TypeForm({ type, onClose, onSaved }: { type: FixtureType | null; onClose: () => void; onSaved: () => void }) {
+function TypeForm({ type, types, onClose, onSaved }: { type: FixtureType | null; types: FixtureType[]; onClose: () => void; onSaved: () => void }) {
   const { toast, confirm } = useApp();
   const [f, setF] = useState({
     name: type?.name ?? "",
@@ -610,8 +819,12 @@ function TypeForm({ type, onClose, onSaved }: { type: FixtureType | null; onClos
     depth: String(type?.depth ?? 0.6).replace(".", ","),
     levels: String(type?.levels ?? 4),
     sections: String(type?.sections ?? 2),
+    model: type?.model ?? "",
+    height: String(type?.height ?? 1.8).replace(".", ","),
   });
   const num = (s: string) => Number(s.replace(",", "."));
+  // Formes 3D : celles des meubles de base de la même famille d'abord.
+  const shapes = types.filter((t) => t.builtin).sort((a, b) => Number(b.category === f.category) - Number(a.category === f.category));
   const storage = !["zone", "batiment"].includes(f.category);
   const submit = async () => {
     try {
@@ -624,6 +837,8 @@ function TypeForm({ type, onClose, onSaved }: { type: FixtureType | null; onClos
         depth: num(f.depth),
         levels: Number(f.levels) || 1,
         sections: Number(f.sections) || 1,
+        model: f.model || undefined,
+        height: f.height.trim() ? num(f.height) : undefined,
       });
       toast.success(tl("Meuble personnalisé enregistré : il est dans la palette."));
       onSaved();
@@ -676,6 +891,15 @@ function TypeForm({ type, onClose, onSaved }: { type: FixtureType | null; onClos
           </>
         )}
         <Field label={tl("Couleur sur le plan")}><input type="color" value={f.color} onChange={(e) => setF({ ...f, color: e.target.value })} /></Field>
+        <Field label={tl("Hauteur (m)")}><input inputMode="decimal" value={f.height} onChange={(e) => setF({ ...f, height: e.target.value })} /></Field>
+        <Field label={tl("Dessin en 3D")} span={2} hint={tl("Le meuble de base qui lui ressemble le plus (frigo vitré, étagère, vitrine…).")}>
+          <select value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })}>
+            <option value="">{tl("Selon la famille")}</option>
+            {shapes.map((t) => (
+              <option key={t.code} value={t.code}>{tm(t.name)}</option>
+            ))}
+          </select>
+        </Field>
       </div>
       {!storage && <p className="muted small">{tl("Les pièces et les éléments du bâtiment (murs, portes…) servent à se repérer : ils ne reçoivent pas de produits.")}</p>}
     </Modal>
@@ -730,6 +954,165 @@ function GenerateModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
         <Field label={tl("à")}><input inputMode="numeric" value={f.rangee_to} onChange={set("rangee_to")} /></Field>
       </div>
       <p className="muted small">{tl("Les rayons sont posés aux places libres du plan : déplacez-les ensuite où ils sont réellement.")}</p>
+    </Modal>
+  );
+}
+
+type EntrySide = LayoutInput["entry"];
+const ENTRIES: { key: EntrySide; label: string }[] = [
+  { key: "bottom", label: tl("En bas") },
+  { key: "top", label: tl("En haut") },
+  { key: "left", label: tl("À gauche") },
+  { key: "right", label: tl("À droite") },
+];
+
+/** Assistant « Créer ma boutique » : taille de la salle, côté de l'entrée, type de commerce. */
+function WizardModal({ floor, empty, onClose, onDone }: { floor: Floor; empty: boolean; onClose: () => void; onDone: (floorId: number) => void }) {
+  const { toast, confirm, settings } = useApp();
+  const profiles = useBusinessProfiles();
+  const [f, setF] = useState({
+    width: "12",
+    depth: "9",
+    entry: "bottom" as EntrySide,
+    storage: true,
+    business: settings.business_type ?? "",
+    target: (empty ? "replace" : "new") as "replace" | "new",
+    name: tl("Boutique"),
+  });
+  const [busy, setBusy] = useState(false);
+  const num = (s: string) => Number(s.replace(",", "."));
+  const W = num(f.width);
+  const D = num(f.depth);
+  const valid = W >= 3 && D >= 3 && W <= 200 && D <= 200;
+
+  // Aperçu à l'échelle : un clic sur un côté y place l'entrée.
+  const scale = 170 / Math.max(W || 1, D || 1, 1);
+  const pw = Math.max(24, (W || 1) * scale);
+  const ph = Math.max(24, (D || 1) * scale);
+  const ox = (220 - pw) / 2;
+  const oy = (220 - ph) / 2;
+  const side = (s: EntrySide): [number, number, number, number] =>
+    s === "bottom" ? [ox, oy + ph, ox + pw, oy + ph] : s === "top" ? [ox, oy, ox + pw, oy] : s === "left" ? [ox, oy, ox, oy + ph] : [ox + pw, oy, ox + pw, oy + ph];
+  const [x1, y1, x2, y2] = side(f.entry);
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const horizontal = y1 === y2;
+
+  const submit = async () => {
+    if (!valid || busy) return;
+    if (
+      f.target === "replace" &&
+      !empty &&
+      !(await confirm({
+        title: tl("Redessiner ce niveau"),
+        message: tl("Les meubles actuels de « {0} » seront remplacés par le nouveau plan.", [tm(floor.name)]),
+        confirmLabel: tl("Remplacer"),
+        danger: true,
+      }))
+    )
+      return;
+    setBusy(true);
+    try {
+      const id = await api.planGenerateLayout({
+        floor_id: f.target === "replace" ? floor.id : null,
+        name: f.target === "new" ? f.name : null,
+        width: W,
+        depth: D,
+        entry: f.entry,
+        storage_room: f.storage,
+        business_type: f.business || null,
+      });
+      toast.success(tl("Votre boutique est dessinée : ajustez les meubles si besoin, puis rangez-y les produits."));
+      onDone(id);
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={tl("Créer ma boutique")}
+      onClose={onClose}
+      width={760}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+          <button className="btn btn-primary" disabled={!valid || busy} onClick={submit}>
+            <WandSparkles size={16} />  {busy ? tl("Création…") : tl("Créer le plan")}
+          </button>
+        </>
+      }
+    >
+      <div className="wizard-grid">
+        <div className="form-grid">
+          <Field label={tl("1. Largeur de la salle (m)")}>
+            <input inputMode="decimal" value={f.width} onChange={(e) => setF({ ...f, width: e.target.value })} autoFocus />
+          </Field>
+          <Field label={tl("Profondeur (m)")}>
+            <input inputMode="decimal" value={f.depth} onChange={(e) => setF({ ...f, depth: e.target.value })} />
+          </Field>
+          <div className="span-2">
+            <span className="field-label">{tl("2. Côté de l'entrée")}</span>
+            <div className="segmented">
+              {ENTRIES.map((e) => (
+                <button type="button" key={e.key} className={f.entry === e.key ? "active" : ""} onClick={() => setF({ ...f, entry: e.key })}>
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Field label={tl("3. Type de commerce")} span={2} hint={tl("Choisit les meubles : gondoles, frigos, portants, racks, vitrines…")}>
+            <select value={f.business} onChange={(e) => setF({ ...f, business: e.target.value })}>
+              <option value="">{tl("Meubles courants")}</option>
+              {profiles?.profiles.map((p) => (
+                <option key={p.id} value={p.id}>{tm(p.label)}</option>
+              ))}
+            </select>
+          </Field>
+          <label className="check span-2">
+            <input type="checkbox" checked={f.storage} onChange={(e) => setF({ ...f, storage: e.target.checked })} />
+            {tl("Avec une réserve au fond (salle de 6 m × 6 m au moins)")}
+          </label>
+          <div className="span-2 wizard-target">
+            <label className="check">
+              <input type="radio" checked={f.target === "replace"} onChange={() => setF({ ...f, target: "replace" })} />
+              {tl("Dessiner sur « {0} »", [tm(floor.name)])}
+              {!empty && <span className="muted small">  {tl("(ses meubles actuels seront remplacés)")}</span>}
+            </label>
+            <label className="check">
+              <input type="radio" checked={f.target === "new"} onChange={() => setF({ ...f, target: "new" })} />
+              {tl("Nouveau niveau")}
+            </label>
+            {f.target === "new" && <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={tl("Nom du niveau")} />}
+          </div>
+        </div>
+        <div className="wizard-preview">
+          <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label={tl("Aperçu de la salle")}>
+            <rect x={ox} y={oy} width={pw} height={ph} className="wz-room" />
+            {ENTRIES.map((e) => {
+              const [a, b, c, d] = side(e.key);
+              return <line key={e.key} x1={a} y1={b} x2={c} y2={d} className={`wz-side${f.entry === e.key ? " active" : ""}`} onClick={() => setF({ ...f, entry: e.key })} />;
+            })}
+            <line
+              x1={horizontal ? mx - 14 : mx}
+              y1={horizontal ? my : my - 14}
+              x2={horizontal ? mx + 14 : mx}
+              y2={horizontal ? my : my + 14}
+              className="wz-door"
+            />
+            <text x={110} y={Math.max(12, oy - 6)} textAnchor="middle" className="wz-dim">{valid ? meters(W) : "—"}</text>
+            <text x={Math.max(12, ox - 6)} y={110} textAnchor="middle" className="wz-dim" transform={`rotate(-90 ${Math.max(12, ox - 6)} 110)`}>
+              {valid ? meters(D) : "—"}
+            </text>
+          </svg>
+          <span className="muted small">{tl("Cliquez sur un côté pour y placer l'entrée.")}</span>
+        </div>
+      </div>
+      <p className="muted small">
+        {tl("Murs, entrée, caisse, frigos, étagères, allées et réserve sont posés selon votre commerce. Vous pourrez tout déplacer ensuite.")}
+      </p>
     </Modal>
   );
 }
