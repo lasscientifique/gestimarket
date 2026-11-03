@@ -101,12 +101,16 @@ Il faut installer cloudflared une fois sur le PC serveur :
 winget install --id Cloudflare.cloudflared
 ```
 
-Côté Eden Dev, une fois : un domaine géré par Cloudflare et, dans les secrets des fonctions Supabase :
-- `CF_API_TOKEN` : droits « Cloudflare Tunnel : Edit » sur le compte et « DNS : Edit » sur le domaine ;
-- `CF_ACCOUNT_ID` et `CF_ZONE_ID` ;
-- `TUNNEL_DOMAIN`, par exemple `gestimarket.com`.
+Côté Eden Dev, une fois :
+1. **Le domaine** : `gestimarket.shop`, acheté chez Hostinger et ajouté à Cloudflare (plan Free). Chez Hostinger, ses serveurs DNS doivent être les deux que Cloudflare indique ; il passe ensuite « Active ». Le domaine est enregistré dans `gm_config.tunnel_domain`. Le secret `TUNNEL_DOMAIN`, s'il existe, a priorité.
+2. **Un seul secret** dans Supabase (Edge Functions → Secrets) : `CF_API_TOKEN`, un jeton Cloudflare avec trois droits :
+   - Account → Cloudflare Tunnel → Edit ;
+   - Zone → Zone → Read ;
+   - Zone → DNS → Edit, limités à `gestimarket.shop`.
 
-Tant que ces secrets manquent, la fonction répond que l'adresse automatique n'est pas encore ouverte. L'adresse publique saisie à la main reste possible.
+   Le compte et la zone sont retrouvés par le domaine. Les secrets `CF_ACCOUNT_ID` et `CF_ZONE_ID` restent possibles mais facultatifs.
+
+Tant que le jeton manque, la fonction répond que l'adresse automatique n'est pas encore ouverte. Si le domaine n'est pas encore « Active », elle le dit aussi. L'adresse publique saisie à la main reste possible.
 
 ## 6. Vérifications
 

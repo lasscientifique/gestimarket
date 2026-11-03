@@ -7,8 +7,9 @@
 //   → { status: "ok", url, hostname, token } : GestiMarket lance cloudflared avec ce jeton.
 // Le jeton n'est jamais enregistré chez Eden Dev ; le redemander redonne le même tunnel et la même adresse.
 //
-// Secrets (Edge Functions → Secrets) : CF_API_TOKEN (droits « Cloudflare Tunnel : Edit » sur le compte et
-// « DNS : Edit » sur le domaine), CF_ACCOUNT_ID, CF_ZONE_ID et TUNNEL_DOMAIN (ex. « gestimarket.com »).
+// Secret (Edge Functions → Secrets) : CF_API_TOKEN, jeton Cloudflare avec les droits « Cloudflare Tunnel : Edit »
+// (compte), « Zone : Read » et « DNS : Edit » (domaine). Domaine : secret TUNNEL_DOMAIN, sinon gm_config.tunnel_domain
+// (ex. « gestimarket.shop »). Compte et zone : secrets CF_ACCOUNT_ID et CF_ZONE_ID, sinon retrouvés par le domaine.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -16,9 +17,9 @@ const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 });
 
 const CF_TOKEN = Deno.env.get("CF_API_TOKEN") ?? "";
-const ACCOUNT = Deno.env.get("CF_ACCOUNT_ID") ?? "";
-const ZONE = Deno.env.get("CF_ZONE_ID") ?? "";
-const DOMAIN = (Deno.env.get("TUNNEL_DOMAIN") ?? "").trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+let ACCOUNT = Deno.env.get("CF_ACCOUNT_ID") ?? "";
+let ZONE = Deno.env.get("CF_ZONE_ID") ?? "";
+let DOMAIN = Deno.env.get("TUNNEL_DOMAIN") ?? "";
 const CF = "https://api.cloudflare.com/client/v4";
 
 function json(body: unknown, status = 200) {
@@ -37,6 +38,29 @@ async function cf(path: string, init: RequestInit = {}) {
     throw new Error(`Cloudflare ${r.status}${why ? ` : ${why}` : ""}`);
   }
   return j.result;
+}
+
+const NOT_OPEN = "L'adresse Internet automatique n'est pas encore ouverte chez Eden Dev : utilisez une adresse publique saisie à la main.";
+
+/** Domaine, compte et zone Cloudflare (gardés tant que la fonction reste chargée). Retourne un motif s'il manque quelque chose. */
+async function configure(): Promise<string | null> {
+  if (!DOMAIN) {
+    const { data } = await sb.from("gm_config").select("value").eq("key", "tunnel_domain").maybeSingle();
+    DOMAIN = String(data?.value ?? "");
+  }
+  DOMAIN = DOMAIN.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!CF_TOKEN || !DOMAIN) return NOT_OPEN;
+  if (!ZONE || !ACCOUNT) {
+    const zones = await cf(`/zones?name=${encodeURIComponent(DOMAIN)}`);
+    const zone = Array.isArray(zones) ? zones[0] : null;
+    if (!zone) return `Le domaine ${DOMAIN} n'est pas dans le compte Cloudflare d'Eden Dev (ou le jeton n'a pas le droit « Zone : Read »).`;
+    if (zone.status !== "active") {
+      return `Le domaine ${DOMAIN} n'est pas encore actif chez Cloudflare : ses serveurs DNS doivent être ceux de Cloudflare chez le vendeur du domaine.`;
+    }
+    ZONE ||= zone.id;
+    ACCOUNT ||= zone.account?.id ?? "";
+  }
+  return null;
 }
 
 /** Tunnel de la boutique : celui déjà enregistré s'il existe encore, sinon par son nom, sinon créé. */
@@ -79,13 +103,13 @@ async function pointDns(hostname: string, id: string, code: string) {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ status: "error", message: "Méthode POST attendue." }, 405);
-  if (!CF_TOKEN || !ACCOUNT || !ZONE || !DOMAIN) {
-    return json({ status: "error", message: "L'adresse Internet automatique n'est pas encore ouverte chez Eden Dev : utilisez une adresse publique saisie à la main." }, 503);
-  }
+  if (!CF_TOKEN) return json({ status: "error", message: NOT_OPEN }, 503);
   try {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const { data: u } = jwt ? await sb.auth.getUser(jwt) : { data: { user: null } };
     if (!u?.user) return json({ status: "error", message: "Connectez-vous à votre compte boutique." }, 401);
+    const notReady = await configure();
+    if (notReady) return json({ status: "error", message: notReady }, 503);
 
     let body: { store_code?: unknown; port?: unknown } = {};
     try {

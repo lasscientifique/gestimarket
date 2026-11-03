@@ -3,7 +3,7 @@
 -- 1. Abonnement de 12 mois avec 2 mois offerts (10 mois payés) : Orange Money, carte Visa, cartes de bon.
 -- 2. Application mobile (compte boutique connecté) : paiements, carte de bon et carte Visa depuis le téléphone.
 -- 3. Adresse Internet automatique de chaque boutique (https://gm-000123.<domaine>) : table gm_tunnels,
---    remplie par la fonction « gm-tunnel » (secrets CF_API_TOKEN, CF_ACCOUNT_ID, CF_ZONE_ID, TUNNEL_DOMAIN).
+--    remplie par la fonction « gm-tunnel » (secret CF_API_TOKEN ; domaine dans gm_config.tunnel_domain, ex. gestimarket.shop).
 -- 4. Poste serveur rattaché à la boutique Eden Dev de son PC (gm_my_server) : à exécuter après gestimarket_mobile.sql.
 
 -- Mois payés pour une durée : 12 mois = 10 payés, sinon la durée elle-même.
