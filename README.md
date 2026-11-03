@@ -4,10 +4,10 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 
 - Application de bureau : **Tauri 2** (Rust) + **React 19 / TypeScript / Vite**
 - Base de données : **SQLite** (intégrée, aucune installation)
-- Version actuelle : **0.14.0**
+- Version actuelle : **0.15.0**
 - Cible principale : Windows (installateur NSIS et version portable) ; fonctionne aussi sous Linux
 
-> État des tests : 51 tests automatiques Rust (licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, hauteurs et dessins 3D, assistant « Créer ma boutique » pour les 4 côtés d'entrée sans chevauchement, plan proposé pour chacun des 22 types de commerce, les 462 paires et des trios d'activités sans chevauchement ni débordement, hauteur sous plafond, étage, dessin du bâtiment, personnel par identifiant et PIN, équipe par défaut, validation par le responsable choisi, blocage par compte, suppression, téléphones autorisés et codes d'accès, mise à jour depuis la 0.13, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. La vue 3D a été vérifiée à l'écran sur une boutique d'exemple (vue d'ensemble, visite, déplacement refusé sur un meuble, chemin vers un produit, miniatures de la palette) ; sa fluidité sur un PC modeste n'a pas été mesurée. Test d'interface de bout en bout sous Xvfb avec Playwright : 49 vérifications sur 49 (réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan, plan en 3D affiché par WebGL logiciel, visite, plan proposé pour supérette + quincaillerie et gardé, équipe par défaut, plus de mot de passe, téléphone refusé puis autorisé par code d'accès sur l'écran de connexion, page Personnel). L'export PNG / PDF et l'import d'un dessin en PDF n'ont pas encore été essayés sur un vrai poste. Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Le widget FlutterFlow est vérifié par `dart analyze` mais n'a pas été essayé sur un vrai téléphone.
+> État des tests : 53 tests automatiques Rust (retours en espèces et en avoir, article abîmé non remis en stock, quantité restante, délai, avoir payé en plusieurs fois, expiré, recrédité à l'annulation, rapports X et Z numérotés et chaînés, modification refusée, prix de gros par quantité et client grossiste, promotions de catégorie et prix promo, licence signée par Supabase, horloge, échéances, postes, connexions, page de paiement par carte, plan de la boutique : poser, prendre, déplacer, redimensionner, supprimer, meubles personnalisés, reprise des anciens blocs, hauteurs et dessins 3D, assistant « Créer ma boutique » pour les 4 côtés d'entrée sans chevauchement, plan proposé pour chacun des 22 types de commerce, les 462 paires et des trios d'activités sans chevauchement ni débordement, hauteur sous plafond, étage, dessin du bâtiment, personnel par identifiant et PIN, équipe par défaut, validation par le responsable choisi, blocage par compte, suppression, téléphones autorisés et codes d'accès, mise à jour depuis la 0.13, opérateurs de paiement mobile configurables, catalogue anglais), vérification TypeScript et contrôle des traductions anglaises : interface et messages (GitHub Actions, Ubuntu). L'interface anglaise n'a pas encore été relue en entier sur un vrai poste. La vue 3D a été vérifiée à l'écran sur une boutique d'exemple (vue d'ensemble, visite, déplacement refusé sur un meuble, chemin vers un produit, miniatures de la palette) ; sa fluidité sur un PC modeste n'a pas été mesurée. Test d'interface de bout en bout sous Xvfb avec Playwright : 55 vérifications sur 55 (prix de gros et promotion du jour en caisse, changement du prix de gros confirmé par PIN, pages Promotions et Retours & avoirs, réseau local, téléphone par un faux tunnel Cloudflare, coupure et retour du tunnel, lecture seule et licence, paiement refusé depuis le réseau, plan de la boutique : palette, frigo posé, produit rangé, vue de face, produit localisé sur le plan, plan en 3D affiché par WebGL logiciel, visite, plan proposé pour supérette + quincaillerie et gardé, équipe par défaut, plus de mot de passe, téléphone refusé puis autorisé par code d'accès sur l'écran de connexion, page Personnel). L'export PNG / PDF et l'import d'un dessin en PDF n'ont pas encore été essayés sur un vrai poste. Paiements testés directement dans Supabase ; la page Cybersource n'a pas encore été essayée faute de clés. L'installateur Windows est compilé par GitHub Actions sur Windows (MSVC) et n'a pas encore été essayé sur un vrai PC Windows. Application mobile : les quatre widgets FlutterFlow sont vérifiés par `dart analyze` et le code Flutter généré par FlutterFlow compile sans erreur ; elle n'a pas encore été essayée sur un vrai téléphone. Supabase 0.15 (12 mois, carte de bon depuis le téléphone, poste serveur de la boutique) appliqué et essayé dans une transaction annulée ; l'adresse Internet automatique attend les secrets Cloudflare d'Eden Dev.
 
 ---
 
@@ -34,6 +34,8 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 - Navigation dans les catégories par fil d'Ariane, produits avec photo, emplacement et stock.
 - **Conditionnements** : vendre au carton, au sac ou au pack (1 carton = 12 bouteilles) avec code-barres et prix propres ; le stock est décompté en unités de base.
 - Remises, tickets en attente, client associé, vente à crédit (plafond par client), points de fidélité.
+- **Prix de gros** (article et conditionnement) à partir d'une quantité, ou dès la première unité pour un **client grossiste** ; **promotions datées** (remise en % sur un article ou une catégorie, prix promo sur un article). En caisse, le prix le plus bas l'emporte tout seul ; le ticket montre l'ancien prix et « Vous économisez ».
+- **Retours et avoirs** : depuis la vente, tout ou partie des articles (7 jours, réglable), remis en rayon ou abîmés, validés par le PIN d'un gestionnaire ou de l'administrateur ; remboursement en espèces, par le moyen de la vente, sur la dette du client ou en **avoir** (bon numéroté avec code-barres, payable en caisse en une ou plusieurs fois, 90 jours). Une vente qui a eu un retour ne s'annule plus.
 - **Paiements** : espèces (monnaie rendue, pavé numérique), **Orange Money / Sarali** et **opérateurs configurables** (Wave, MTN MoMo, M-Pesa…) : numéro marchand ou QR code, ID de transaction obligatoire et unique ; autre mobile money, carte, crédit ; paiement partiel multi-moyens.
 - Ticket imprimable, écran client.
 - **Suivi des collègues** : voir en direct le ticket des autres caisses et **reprendre un client** sans tout ressaisir.
@@ -63,7 +65,8 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 ### Pilotage
 - Tableau de bord administrateur (chiffre d'affaires, marge, alertes de stock et de péremption, créances).
 - **Tableau de bord du caissier** : statistiques de sa session (ventes, panier moyen, espèces attendues, répartition par moyen de paiement, ventes par heure, meilleurs articles).
-- Sessions de caisse : fond de caisse, entrées / sorties d'espèces, clôture avec calcul de l'écart ; clôture forcée par l'administrateur.
+- Sessions de caisse : fond de caisse, entrées / sorties d'espèces, retours remboursés, clôture avec calcul de l'écart ; clôture forcée par l'administrateur.
+- **Rapport X** (chiffres de la caisse en cours, sans la fermer) et **rapport Z** à chaque clôture : ventes brutes, remises, promotions, taxes par taux, encaissements par moyen, retours et articles abîmés, espèces attendues, comptées et écart. Numéroté (Z-0001…), figé, impossible à modifier ou supprimer (la base le refuse), chaîné par empreintes SHA-256 ; total par journée ; impression ticket ou A4.
 - Rapports de ventes, suivi des paiements mobiles, journal d'activité complet.
 
 ### International (langues, devises, taxes)
@@ -145,7 +148,7 @@ Un opérateur qui gère plusieurs commerces peut les ouvrir **en même temps sur
 
 ## Application mobile (FlutterFlow + Supabase)
 
-Au lieu de développer deux applications natives, l'application mobile (iOS / Android) est une simple **WebView FlutterFlow** qui ouvre GestiMarket à l'adresse du poste serveur.
+L'application mobile (iOS / Android, projet FlutterFlow « GestiMarket », paquet `com.edendev.gestimarket`) ouvre GestiMarket à l'adresse du poste serveur. Quatre pages : **démarrage** (logo), **connexion** (propriétaire : compte boutique ; personnel : code du commerce tapé ou scanné), **magasin** (WebView : réseau local d'abord, sinon Internet ; écran « Serveur éteint » avec reconnexion seule) et **abonnement** (formule, échéance, paiements ; carte de bon, Orange Money, carte Visa, même PC éteint). Détails : `supabase/APPLICATION_MOBILE.md`.
 
 ```
 Poste serveur ──(toutes les 30 s)──► Supabase : gm_publish_server(code, secret, actif, adresses)
@@ -153,7 +156,8 @@ Application FlutterFlow ─(démarrage)► Supabase : gm_get_server(code) → { 
 Application FlutterFlow ──► WebView(url)  ──► GestiMarket
 ```
 
-- Réglage : **Paramètres → Réseau & mobile** (URL du projet Supabase, clé publique `anon`, bouton « Publier maintenant »). Le code du commerce (`GM-XXXXXX`) et son QR code sont créés automatiquement.
+- Réglage : **Paramètres → Réseau & mobile** : cocher « Publier l'adresse du poste serveur » (URL et clé vides = service d'Eden Dev), « Publier maintenant ». Le code du commerce (`GM-XXXXXX`) et son QR code sont créés automatiquement ; le PC publie aussi sa boutique Eden Dev, pour que la propriétaire connectée retrouve son poste serveur sans code.
+- **Adresse Internet automatique** (formules PRO et BUSINESS) : « Créer l'adresse Internet » (e-mail et mot de passe du compte boutique, une fois) ; Eden Dev crée le tunnel Cloudflare et l'adresse `https://gm-000123.<domaine>` (fonction `gm-tunnel`), GestiMarket lance `cloudflared` (à installer une fois : `winget install --id Cloudflare.cloudflared`) et le relance s'il s'arrête.
 - À la fermeture du serveur, l'état « arrêté » est publié immédiatement.
 - Sécurité : la table n'est pas lisible directement ; seul le poste qui a créé le code peut le mettre à jour (secret haché). N'utiliser **jamais** la clé `service_role`.
 - Les adresses publiées sont celles du réseau local ; pour joindre le magasin depuis **un autre réseau** (4G, autre Wi-Fi), renseignez l'**adresse publique** (voir ci-dessous).
@@ -185,6 +189,8 @@ Chaque boutique a un **compte Eden Dev** (Supabase Auth : e-mail + mot de passe)
 | **PRO** | 3 | + postes clients (PC, téléphones, tablettes), accès Internet, écran client, logo | 18 000 FCFA / mois |
 | **BUSINESS** | selon contrat | toutes les fonctions | 50 000 FCFA / mois |
 
+Durées : 1, 3, 6 ou **12 mois (2 mois offerts : 10 payés)**, par carte de bon, Orange Money ou carte Visa, sur le PC ou dans l'application mobile.
+
 Parcours :
 
 1. **Première configuration** : création du compte et de la boutique (ou connexion à un compte existant), **14 jours d'essai PRO**. Internet n'est nécessaire que pour cette étape.
@@ -205,7 +211,7 @@ Règles appliquées par le poste serveur (Rust), même sans Internet :
 - **Postes simultanés** : chaque appareil connecté (ce PC compris) occupe une place ; une connexion de trop est refusée. Un appareil sans signal depuis 3 minutes libère sa place. L'administrateur voit et déconnecte les postes (*Poste & réseau → Postes connectés*).
 - **Fonctions** : mode serveur et appareils du réseau (PRO), accès par Internet (PRO), écran client (PRO), logo (PRO).
 
-Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_types_commerce.sql` (types de boutique = types de commerce de l'application), `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), `supabase/gestimarket_international.sql` (tous les pays avec leur devise ISO, prix des formules par devise `gm_plan_prices`, carte Visa dans la devise de la boutique), et les fonctions `supabase/functions/gm-license` et `supabase/functions/gm-pay` (*Verify JWT* désactivé pour les deux). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
+Côté Supabase : `supabase/gestimarket_licences.sql` (tables `gm_stores`, `gm_store_pcs`, `gm_plans`, `gm_subscriptions`, `gm_payments`, `gm_licenses`, `gm_license_events`, listes `gm_countries` et `gm_shop_types`, bucket `licences`), puis `supabase/gestimarket_types_commerce.sql` (types de boutique = types de commerce de l'application), `supabase/gestimarket_paiements.sql` (cartes de bon `gm_vouchers`, paiements par PC, carte Visa, changement de formule), `supabase/gestimarket_international.sql` (tous les pays avec leur devise ISO, prix des formules par devise `gm_plan_prices`, carte Visa dans la devise de la boutique), `supabase/gestimarket_mobile.sql` (annuaire des postes serveurs), `supabase/gestimarket_abonnement_mobile.sql` (0.15 : 12 mois avec 2 offerts, carte de bon, paiements et carte Visa depuis l'application, poste serveur de la boutique, adresses Internet `gm_tunnels`), et les fonctions `supabase/functions/gm-license`, `gm-pay` et `gm-tunnel` (*Verify JWT* désactivé). À régler une fois dans le tableau de bord : *Authentication → Sign In / Providers → Email → Confirm email* **désactivé** (sinon chaque inscription attend un e-mail de confirmation).
 
 Réglages d'Eden Dev (table `gm_config`) :
 
@@ -327,6 +333,7 @@ SQLite, migrations versionnées (`PRAGMA user_version`, clés étrangères véri
 | 007 | International : langue de chaque utilisateur (`users.lang`) |
 | 008 | Plan en 3D : forme 3D et hauteur des types de meubles, hauteur propre d'un meuble, hauteur des murs et sol de chaque niveau |
 | 009 | Personnel par identifiant et PIN (mots de passe effacés), accès Internet par personne, comptes supprimés gardés pour l'historique, téléphones autorisés (`trusted_devices`), codes d'accès (`access_codes`), dessin du bâtiment en fond d'un niveau |
+| 010 | Retours (`returns`, `return_items`), avoirs (`credit_notes`), prix de gros (articles, conditionnements, client grossiste), promotions (`promotions`), prix appliqué sur chaque ligne de vente, rapports Z (`z_reports`, modification et suppression bloquées par déclencheurs) |
 
 Conventions : montants en entiers (unités mineures de la devise), quantités en réels, prix de vente enregistrés TTC (même saisis HT), dates locales.
 
@@ -360,10 +367,12 @@ Chaque commande déclare le niveau requis (aucun, caissier, gestionnaire, admini
 - [x] Français / anglais et utilisation dans tous les pays (devises, taxes, paiements mobiles configurables, prix des formules par devise)
 - [x] Personnel par identifiant et code PIN (équipe par défaut, blocage, suppression, actions de chacun), téléphones autorisés pour l'accès Internet (code d'accès)
 - [x] Plan de départ proposé pour chaque type de commerce ou combinaison (rayons), dimensions et hauteur sous plafond, export PNG et PDF, dessin du bâtiment en fond
-- [ ] Retours et avoirs, prix de gros et promotions, rapport Z, dépenses, bons de commande, variantes, codes-barres de balance, imprimante thermique
+- [x] Retours et avoirs, prix de gros et client grossiste, promotions datées, rapports X et Z, abonnement de 12 mois (2 offerts)
+- [x] Application mobile FlutterFlow : démarrage, connexion propriétaire / personnel, magasin (écran « Serveur éteint »), abonnement ; adresse Internet automatique par boutique
+- [ ] Dépenses, bons de commande, variantes, codes-barres de balance, imprimante thermique ; retours déduits des rapports de ventes et du tableau de bord
 - [ ] Chiffrement de la base (SQLCipher) et sauvegardes chiffrées
-- [ ] Tableau de bord Eden Dev, paiement mobile automatique, tunnels créés automatiquement par boutique, mises à jour signées
-- [ ] Application mobile FlutterFlow (WebView) à construire et tester sur de vrais téléphones
+- [ ] Tableau de bord Eden Dev, paiement mobile automatique, mises à jour signées
+- [ ] Application mobile : essai sur de vrais téléphones, publication sur le Play Store et l'App Store
 - [ ] Test sur vrai PC Windows et vrais téléphones
 - [ ] Synchronisation de données entre magasins distants (Supabase) : hors périmètre actuel
 - [ ] Conversion libre entre unités (kg ↔ g…)
