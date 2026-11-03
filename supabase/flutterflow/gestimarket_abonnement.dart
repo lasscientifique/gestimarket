@@ -11,6 +11,7 @@
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -230,6 +231,7 @@ class _GestiMarketAbonnementState extends State<GestiMarketAbonnement> {
   Future<void> _payByCard() => _run(() async {
         final plan = _chosenPlan;
         if (plan == null) return;
+        if (kIsWeb) return _setError('Le paiement par carte se fait depuis l\'application sur téléphone.');
         final res = await _sb.functions.invoke('gm-pay', body: {'store_code': _store!['code'], 'plan': plan['code'], 'months': _monthsChoice});
         final data = Map<String, dynamic>.from((res.data as Map?) ?? const {});
         if (data['status'] != 'ok') return _setError('${data['message'] ?? 'Paiement par carte impossible.'}');

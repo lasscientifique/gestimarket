@@ -18,12 +18,14 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 const _brand = Color(0xFF0D9488);
@@ -41,7 +43,9 @@ class GestiMarketWebView extends StatefulWidget {
 enum _Route { local, internet }
 
 class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBindingObserver {
-  late final WebViewController _controller;
+  // Pas de WebView dans un navigateur (aperçu « Run » de FlutterFlow, version web) : GestiMarket s'ouvre
+  // alors dans un onglet. Sur téléphone, la WebView affiche GestiMarket dans l'application.
+  WebViewController? _controller;
 
   String? _base; // adresse actuellement ouverte (sans « / » final)
   _Route? _route;
@@ -60,7 +64,14 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _controller = WebViewController()
+    if (!kIsWeb) _controller = _newController();
+    _identify();
+    _resolve();
+    _watchdog = Timer.periodic(const Duration(seconds: 10), (_) => _watch());
+  }
+
+  WebViewController _newController() {
+    return WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (_) {
@@ -82,9 +93,6 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
         },
       ))
       ..addJavaScriptChannel('GestiMarketNative', onMessageReceived: _onMessage);
-    _identify();
-    _resolve();
-    _watchdog = Timer.periodic(const Duration(seconds: 10), (_) => _watch());
   }
 
   @override
@@ -102,9 +110,11 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
 
   // GestiMarket affiche « · application » pour ce téléphone dans la liste des appareils.
   Future<void> _identify() async {
+    final c = _controller;
+    if (c == null) return;
     try {
-      final ua = await _controller.getUserAgent() ?? '';
-      if (!ua.contains('GestiMarketApp')) await _controller.setUserAgent('$ua GestiMarketApp'.trim());
+      final ua = await c.getUserAgent() ?? '';
+      if (!ua.contains('GestiMarketApp')) await c.setUserAgent('$ua GestiMarketApp'.trim());
     } catch (_) {}
   }
 
@@ -162,6 +172,23 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
 
       String? base;
       _Route? route;
+      if (kIsWeb) {
+        if (public.isEmpty) {
+          _show('Aperçu dans le navigateur', Icons.phone_android,
+              detail: 'Cette boutique n\'a pas encore d\'adresse Internet : essayez l\'application sur un téléphone, sur le Wi-Fi du magasin.');
+          return;
+        }
+        if (!mounted) return;
+        setState(() {
+          _base = public;
+          _route = _Route.internet;
+          _message = null;
+          _serverOff = false;
+          _pageLoaded = true;
+          _loading = false;
+        });
+        return;
+      }
       // 1) Réseau local : réponse en moins de 1,5 s si le téléphone est sur le Wi-Fi du magasin.
       for (final u in locals) {
         if (await _ping(u, const Duration(milliseconds: 1500))) {
@@ -198,7 +225,7 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
         _loading = true;
         _pingFailures = 0;
       });
-      await _controller.loadRequest(Uri.parse(base));
+      await _controller?.loadRequest(Uri.parse(base));
     } catch (_) {
       _show('Connexion impossible', Icons.wifi_off, detail: 'Vérifiez Internet sur ce téléphone. Nouvelle tentative…');
     } finally {
@@ -234,6 +261,10 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
   // Surveillance : page affichée → on vérifie que le serveur répond ; sinon on retente la résolution.
   Future<void> _watch() async {
     if (!mounted || _resolving) return;
+    if (kIsWeb) {
+      if (_message != null) _resolve(force: true);
+      return;
+    }
     if (_pageLoaded && _base != null) {
       if (await _ping(_base!, const Duration(seconds: 4))) {
         _pingFailures = 0;
@@ -306,7 +337,7 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
       MaterialPageRoute(builder: (_) => _ScanPage(title: (msg['title'] as String?) ?? 'Scanner un code')),
     );
     if (code != null && code.isNotEmpty) {
-      await _controller.runJavaScript('window.gestimarketScan && window.gestimarketScan(${jsonEncode(code)});');
+      await _controller?.runJavaScript('window.gestimarketScan && window.gestimarketScan(${jsonEncode(code)});');
     }
   }
 
@@ -370,6 +401,61 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
     );
   }
 
+  // Navigateur : la boutique s'ouvre dans un nouvel onglet.
+  Widget _webPanel() {
+    final url = _base;
+    return Container(
+      color: const Color(0xFFF3F5F8),
+      padding: const EdgeInsets.all(28),
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 84,
+            height: 84,
+            decoration: const BoxDecoration(color: Color(0xFFE0F2F1), shape: BoxShape.circle),
+            child: const Icon(Icons.storefront, size: 42, color: _brand),
+          ),
+          const SizedBox(height: 18),
+          Text(_shopName.isEmpty ? 'GestiMarket' : _shopName,
+              textAlign: TextAlign.center, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          Text(
+            url == null ? 'Recherche du poste serveur…' : 'Le poste serveur répond. Dans un navigateur, GestiMarket s\'ouvre dans un nouvel onglet ; '
+                'sur téléphone, il s\'affiche directement dans l\'application.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 15),
+          ),
+          if (url != null) ...[
+            const SizedBox(height: 6),
+            SelectableText(url, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: 280,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: _brand, minimumSize: const Size.fromHeight(48)),
+                  onPressed: () => launchUrl(Uri.parse(url), webOnlyWindowName: '_blank'),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Ouvrir GestiMarket'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                  onPressed: () => context.pushNamed('AbonnementPage'),
+                  icon: const Icon(Icons.workspace_premium_outlined),
+                  label: const Text('Mon abonnement'),
+                ),
+                const SizedBox(height: 4),
+                TextButton.icon(onPressed: _otherShop, icon: const Icon(Icons.swap_horiz), label: const Text('Changer de boutique')),
+              ]),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -379,15 +465,16 @@ class _GestiMarketWebViewState extends State<GestiMarketWebView> with WidgetsBin
         canPop: false,
         // Bouton « retour » d'Android : page précédente de GestiMarket.
         onPopInvokedWithResult: (didPop, _) async {
-          if (!didPop && await _controller.canGoBack()) _controller.goBack();
+          final c = _controller;
+          if (!didPop && c != null && await c.canGoBack()) c.goBack();
         },
         child: SafeArea(
           child: Stack(children: [
-            WebViewWidget(controller: _controller),
+            if (_controller != null) WebViewWidget(controller: _controller!) else if (_message == null) _webPanel(),
             if (_loading && _message == null) const LinearProgressIndicator(minHeight: 3),
             if (_message != null) Positioned.fill(child: _panel()),
             // Pastille de route (réseau local / Internet), en bas à gauche : ouvre le menu.
-            if (_message == null && _route != null)
+            if (_message == null && _route != null && _controller != null)
               Positioned(
                 left: 8,
                 bottom: 8,
