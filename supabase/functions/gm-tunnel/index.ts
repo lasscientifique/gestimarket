@@ -16,7 +16,7 @@ const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
   auth: { persistSession: false },
 });
 
-const CF_TOKEN = Deno.env.get("CF_API_TOKEN") ?? "";
+let CF_TOKEN = "";
 let ACCOUNT = Deno.env.get("CF_ACCOUNT_ID") ?? "";
 let ZONE = Deno.env.get("CF_ZONE_ID") ?? "";
 let DOMAIN = Deno.env.get("TUNNEL_DOMAIN") ?? "";
@@ -41,6 +41,21 @@ async function cf(path: string, init: RequestInit = {}) {
 }
 
 const NOT_OPEN = "L'adresse Internet automatique n'est pas encore ouverte chez Eden Dev : utilisez une adresse publique saisie à la main.";
+
+/** Jeton Cloudflare, relu à chaque appel : un secret posé après le démarrage de la fonction est pris tout de suite. */
+function readToken(): string {
+  CF_TOKEN = (Deno.env.get("CF_API_TOKEN") ?? "").trim();
+  if (!CF_TOKEN) {
+    try {
+      // Noms seulement (jamais les valeurs), pour repérer un secret mal nommé dans les journaux.
+      const names = Object.keys(Deno.env.toObject()).filter((k) => /CF|CLOUD|TOKEN|TUNNEL/i.test(k) && !k.startsWith("SUPABASE"));
+      console.warn(`CF_API_TOKEN absent ; secrets voisins : ${names.join(", ") || "aucun"}`);
+    } catch {
+      // lecture de l'environnement refusée
+    }
+  }
+  return CF_TOKEN;
+}
 
 /** Domaine, compte et zone Cloudflare (gardés tant que la fonction reste chargée). Retourne un motif s'il manque quelque chose. */
 async function configure(): Promise<string | null> {
@@ -103,7 +118,7 @@ async function pointDns(hostname: string, id: string, code: string) {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ status: "error", message: "Méthode POST attendue." }, 405);
-  if (!CF_TOKEN) return json({ status: "error", message: NOT_OPEN }, 503);
+  if (!readToken()) return json({ status: "error", message: NOT_OPEN }, 503);
   try {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const { data: u } = jwt ? await sb.auth.getUser(jwt) : { data: { user: null } };
