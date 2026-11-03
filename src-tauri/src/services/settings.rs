@@ -60,6 +60,9 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("pin_discount_level", "cashier"),
     // Stock
     ("expiry_alert_days", "30"),
+    // Retours : délai après la vente (jours) et durée de validité d'un avoir (jours)
+    ("return_days", "7"),
+    ("credit_note_days", "90"),
     // Sauvegarde automatique
     ("auto_backup_dir", ""),
     ("auto_backup_keep", "14"),
@@ -70,6 +73,8 @@ const INTERNAL: &[&str] = &[
     "barcode_seq",
     "last_auto_backup",
     "supabase_secret",
+    // Jeton du tunnel Cloudflare de la boutique (adresse Internet automatique, voir tunnel.rs).
+    "tunnel_token",
     // Licence et compte boutique (voir license.rs) : lus par « license_status », jamais par l'écran des paramètres.
     "license_file",
     "license_clock",

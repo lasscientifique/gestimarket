@@ -55,6 +55,15 @@ import type {
   TrustedDevice,
   AccessCode,
   LayoutPreview,
+  TunnelStatus,
+  QuoteLine,
+  CreditNote,
+  SaleReturn,
+  ReturnInput,
+  Promotion,
+  PromotionInput,
+  ZData,
+  ZReport,
 } from "./types";
 import { getDeviceToken, setDeviceToken } from "./lib/device";
 
@@ -253,6 +262,21 @@ export const api = {
   } = {}) => call<Sale[]>("list_sales", { filter }),
   getSale: (id: number) => call<Sale>("get_sale", { id }),
   cancelSale: (id: number, reason: string, pin: string) => call<Sale>("cancel_sale", { id, reason, pin }),
+  saleQuote: (items: { product_id: number; quantity: number; packaging_id: number | null }[], customer_id: number | null) =>
+    call<QuoteLine[]>("sale_quote", { items, customer_id }),
+  // Retours et avoirs (validés par le PIN d'un gestionnaire ou de l'administrateur)
+  createReturn: (input: ReturnInput, pin: string) => call<SaleReturn>("create_return", { input, pin }),
+  listReturns: (filter?: { from?: string; to?: string; sale_id?: number; session_id?: number }) => call<SaleReturn[]>("list_returns", { filter }),
+  getReturn: (id: number) => call<SaleReturn>("get_return", { id }),
+  getCreditNote: (code: string) => call<CreditNote>("get_credit_note", { code }),
+  listCreditNotes: (filter?: { search?: string; status?: string }) => call<CreditNote[]>("list_credit_notes", { filter }),
+  // Promotions
+  listPromotions: () => call<Promotion[]>("list_promotions"),
+  savePromotion: (input: PromotionInput) => call<Promotion>("save_promotion", { input }),
+  deletePromotion: (id: number) => call<{ ok: boolean }>("delete_promotion", { id }),
+  // Rapports X (caisse en cours) et Z (clôtures)
+  cashXReport: (session_id?: number) => call<ZData>("cash_x_report", { session_id: session_id ?? null }),
+  listZReports: (filter?: { from?: string; to?: string }) => call<ZReport[]>("list_z_reports", { filter }),
   listElectronicPayments: (filter: { from?: string; to?: string; method?: string; search?: string } = {}) =>
     call<ElectronicPayment[]>("list_electronic_payments", { filter }),
 
@@ -283,6 +307,9 @@ export const api = {
   liveCartTake: (poste_id: string, pin: string) => call<LiveCart>("live_cart_take", { poste_id, pin }),
   cloudStatus: () => call<CloudStatus>("cloud_status"),
   cloudPublishNow: () => call<CloudStatus>("cloud_publish_now"),
+  tunnelStatus: () => call<TunnelStatus>("tunnel_status"),
+  tunnelSetup: (email: string, password: string) => call<TunnelStatus>("tunnel_setup", { email, password }),
+  tunnelRemove: () => call<TunnelStatus>("tunnel_remove"),
   cashierStats: () => call<CashierStats>("cashier_stats"),
   closeCashSession: (input: { counted_amount: number; note: string | null }, pin: string) =>
     call<CashSession>("close_cash_session", { input, pin }),

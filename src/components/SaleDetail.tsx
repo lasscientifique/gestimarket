@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Printer, Ban } from "lucide-react";
+import { Printer, Ban, Undo2 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { dateTime, money, paymentLabel, qty } from "../lib/format";
@@ -7,6 +7,7 @@ import { printReceipt } from "../lib/receipt";
 import type { Sale } from "../types";
 import { Badge, Field, Modal } from "./ui";
 import { HelpTip } from "./Help";
+import { ReturnModal } from "./ReturnModal";
 import { tl } from "../lib/i18n";
 
 export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onClose: () => void; onChanged?: (s: Sale) => void }) {
@@ -14,6 +15,8 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const [current, setCurrent] = useState(sale);
+  const [returning, setReturning] = useState(false);
+  const canReturn = current.status === "completed" && current.items.some((i) => i.quantity - i.returned_quantity > 1e-9);
 
   const doCancel = async () => {
     try {
@@ -40,9 +43,13 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
       width={680}
       footer={
         <>
-          {current.status === "completed" && !cancelling && (
+          {current.status === "completed" && !cancelling && current.returned_total === 0 && (
             <button className="btn btn-danger-outline" style={{ marginRight: "auto" }} onClick={() => setCancelling(true)}>
               <Ban size={16} />  {tl("Annuler la vente")}</button>
+          )}
+          {canReturn && !cancelling && (
+            <button className="btn" style={current.returned_total > 0 ? { marginRight: "auto" } : undefined} onClick={() => setReturning(true)}>
+              <Undo2 size={16} />  {tl("Retour d'articles")}</button>
           )}
           {current.status === "completed" && !cancelling && (
             <HelpTip k="cancel_sale" side="top" />
@@ -82,7 +89,12 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
         <tbody>
           {current.items.map((i) => (
             <tr key={i.id}>
-              <td>{i.product_name}</td>
+              <td>
+                {i.product_name}
+                {i.price_kind === "promo" && <> <Badge tone="success">{tl("Promo")}</Badge></>}
+                {i.price_kind === "wholesale" && <> <Badge tone="info">{tl("Gros")}</Badge></>}
+                {i.returned_quantity > 0 && <div className="small muted">{tl("retourné : {0}", [qty(i.returned_quantity)])}</div>}
+              </td>
               <td className="num">{qty(i.quantity)} {i.unit}</td>
               <td className="num">{money(i.unit_price)}</td>
               <td className="num">{i.discount ? money(i.discount) : "—"}</td>
@@ -94,6 +106,7 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
           {current.discount > 0 && <tr><td colSpan={4}>{tl("Remise sur ticket")}</td><td className="num">-{money(current.discount)}</td></tr>}
           <tr><td colSpan={4}><strong>{tl("Total TTC")}</strong></td><td className="num"><strong>{money(current.total)}</strong></td></tr>
           {current.tax_total > 0 && <tr className="muted"><td colSpan={4}>{tl("dont TVA")}</td><td className="num">{money(current.tax_total)}</td></tr>}
+          {current.returned_total > 0 && <tr><td colSpan={4}>{tl("Rendu par des retours")}</td><td className="num">-{money(current.returned_total)}</td></tr>}
           {settings && false && <tr className="muted"><td colSpan={4}>{tl("Marge brute")}</td><td className="num">{money(current.total - current.cost_total)}</td></tr>}
         </tfoot>
       </table>
@@ -102,6 +115,19 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
         <div className="alert alert-danger">
           {tl("Annulée le")} {dateTime(current.cancelled_at)}  {tl("— motif :")} {current.cancel_reason}
         </div>
+      )}
+
+      {returning && (
+        <ReturnModal
+          sale={current}
+          onClose={() => setReturning(false)}
+          onDone={async () => {
+            setReturning(false);
+            const s = await api.getSale(current.id);
+            setCurrent(s);
+            onChanged?.(s);
+          }}
+        />
       )}
 
       {cancelling && (

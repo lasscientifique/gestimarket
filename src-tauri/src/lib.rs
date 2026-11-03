@@ -10,6 +10,7 @@ mod network;
 mod rpc;
 mod services;
 mod state;
+mod tunnel;
 
 use std::time::Duration;
 
@@ -98,6 +99,8 @@ pub fn run() {
                 network::start_server(app.handle().clone(), config.port);
                 // Application mobile : adresse du serveur publiée sur Supabase (si activé).
                 cloud::start(app.handle().clone(), config.port);
+                // Adresse Internet automatique : cloudflared lancé avec le jeton du tunnel de la boutique.
+                tunnel::start(app.handle().clone());
             }
 
             // Licence : horloge mémorisée chaque minute ; synchronisation avec Eden Dev toutes les 30 min
@@ -154,6 +157,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 // Le poste serveur s'arrête : l'application mobile l'affiche aussitôt.
                 cloud::publish_offline(app);
+                tunnel::stop();
             }
         });
 }

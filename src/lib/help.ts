@@ -61,7 +61,34 @@ export const PAGE_HELP: Record<string, PageHelp> = {
       tl("Pendant la journée : enregistrez chaque sortie (dépense, versement banque) ou entrée (appoint de monnaie)."),
       tl("Clôturer : comptez les billets et pièces ; le logiciel calcule l'excédent ou le manquant."),
     ],
-    tips: [tl("Les paiements Orange Money et carte n'entrent pas dans le tiroir : ils sont détaillés à part.")],
+    tips: [
+      tl("Les paiements Orange Money et carte n'entrent pas dans le tiroir : ils sont détaillés à part."),
+      tl("Rapport X : les chiffres de la caisse en cours, sans la fermer. Rapport Z : imprimé et figé à chaque clôture, numéroté, impossible à modifier."),
+    ],
+  },
+  returns: {
+    title: tl("Retours & avoirs"),
+    purpose: tl("Reprendre tout ou partie d'une vente : l'article revient en rayon ou part en perte s'il est abîmé, et le client est remboursé en espèces, par le moyen de paiement de la vente, ou en avoir."),
+    steps: [
+      tl("La caissière ouvre la vente (Historique des ventes) et choisit « Retour d'articles »."),
+      tl("Elle indique les quantités rendues, l'état de chaque article et le motif."),
+      tl("Un gestionnaire ou l'administrateur valide avec son code PIN ; le ticket de retour (et le bon d'avoir) s'impriment."),
+    ],
+    tips: [
+      tl("Retour possible pendant 7 jours après la vente, avoir valable 90 jours : réglable dans Paramètres → Ventes & ticket."),
+      tl("L'avoir se scanne en caisse comme moyen de paiement, en une ou plusieurs fois ; il n'est pas remboursé en espèces."),
+      tl("Une vente à crédit est reprise sur la dette du client. Une vente qui a eu un retour ne peut plus être annulée."),
+    ],
+  },
+  promotions: {
+    title: tl("Promotions"),
+    purpose: tl("Baisser un prix pour une période : remise en pourcentage sur un article ou une catégorie entière, ou prix promo sur un article."),
+    steps: [
+      tl("Nommez la promotion et choisissez l'article ou la catégorie."),
+      tl("Indiquez la remise (%) ou le prix promo, puis le premier et le dernier jour."),
+      tl("En caisse, le prix baisse tout seul ; le ticket montre l'ancien prix et l'économie."),
+    ],
+    tips: [tl("Le prix le plus bas l'emporte : prix normal, prix de gros ou promotion."), tl("Une promotion désactivée reste dans la liste pour la reprendre plus tard.")],
   },
   customers: {
     title: tl("Clients"),
@@ -258,4 +285,5 @@ export const TIPS: Record<string, string> = {
   bulk_location: tl("Range tous les produits cochés dans la case choisie (emplacement principal)."),
   plan: tl("Vue de dessus de la boutique, à l'échelle (un carreau = 1 mètre) ; le chiffre sur un meuble indique le nombre de produits rangés."),
   cancel_sale: tl("Annule la vente : les articles reviennent en stock et la dette éventuelle du client est retirée. Motif obligatoire, action tracée."),
+  wholesale: tl("Prix pour les revendeurs : il s'applique en caisse à partir de la quantité indiquée (ex. 10 sacs), ou dès la première unité pour un client marqué « grossiste »."),
 };

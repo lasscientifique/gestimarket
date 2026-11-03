@@ -243,6 +243,9 @@ pub struct Product {
     pub category_path: Option<String>,
     /// Conditionnements (carton, sac…) avec leur propre code-barres et prix.
     pub packagings: Vec<Packaging>,
+    /// Prix de gros (0 : aucun) et quantité à partir de laquelle il s'applique (0 : client grossiste seulement).
+    pub wholesale_price: i64,
+    pub wholesale_min_qty: f64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -255,13 +258,19 @@ pub struct Packaging {
     pub quantity: f64,
     pub barcode: Option<String>,
     pub sale_price: i64,
+    /// Prix de gros du conditionnement (0 : aucun), à partir de `wholesale_min_qty` conditionnements.
+    #[serde(default)]
+    pub wholesale_price: i64,
+    #[serde(default)]
+    pub wholesale_min_qty: f64,
 }
 
 const PRODUCT_SELECT: &str = "SELECT p.id, p.barcode, p.name, p.description, p.category_id, c.name,
         COALESCE(pc.color, c.color), pc.id, pc.name, p.supplier_id, s.name, p.unit, p.purchase_price, p.sale_price, p.tax_rate, p.stock,
         p.min_stock, p.track_stock, p.active, p.image_id, p.location_id, l.bloc, l.etage, l.rangee, l.label,
         p.expiry_date, p.created_at, p.updated_at, p.brand, p.sku,
-        l.fixture_id, fx.name, (SELECT COUNT(*) FROM product_locations pl WHERE pl.product_id = p.id)
+        l.fixture_id, fx.name, (SELECT COUNT(*) FROM product_locations pl WHERE pl.product_id = p.id),
+        p.wholesale_price, p.wholesale_min_qty
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
@@ -306,6 +315,8 @@ fn product_from_row(r: &Row) -> rusqlite::Result<Product> {
         sku: r.get(29)?,
         category_path: None,
         packagings: Vec::new(),
+        wholesale_price: r.get(33)?,
+        wholesale_min_qty: r.get(34)?,
     })
 }
 
@@ -347,6 +358,8 @@ pub struct ProductInput {
     pub sku: Option<String>,
     /// Liste complète des conditionnements (remplace l'existante si fournie).
     pub packagings: Option<Vec<Packaging>>,
+    pub wholesale_price: Option<i64>,
+    pub wholesale_min_qty: Option<f64>,
     /// Uniquement à la création.
     pub initial_stock: Option<f64>,
 }
@@ -414,9 +427,22 @@ fn enrich(conn: &Connection, list: &mut [Product]) -> AppResult<()> {
     }
     let paths: HashMap<i64, String> = list_categories(conn)?.into_iter().map(|c| (c.id, c.path)).collect();
     let mut packs: HashMap<i64, Vec<Packaging>> = HashMap::new();
-    let mut stmt = conn.prepare("SELECT product_id, id, name, quantity, barcode, sale_price FROM product_packagings ORDER BY quantity")?;
+    let mut stmt = conn.prepare(
+        "SELECT product_id, id, name, quantity, barcode, sale_price, wholesale_price, wholesale_min_qty FROM product_packagings ORDER BY quantity",
+    )?;
     let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, i64>(0)?, Packaging { id: r.get(1)?, name: r.get(2)?, quantity: r.get(3)?, barcode: r.get(4)?, sale_price: r.get(5)? }))
+        Ok((
+            r.get::<_, i64>(0)?,
+            Packaging {
+                id: r.get(1)?,
+                name: r.get(2)?,
+                quantity: r.get(3)?,
+                barcode: r.get(4)?,
+                sale_price: r.get(5)?,
+                wholesale_price: r.get(6)?,
+                wholesale_min_qty: r.get(7)?,
+            },
+        ))
     })?;
     for row in rows {
         let (pid, pack) = row?;
@@ -531,6 +557,7 @@ fn save_packagings(conn: &Connection, product_id: i64, packs: &[Packaging]) -> A
         if p.sale_price < 0 {
             return invalid("Le prix d'un conditionnement ne peut pas être négatif.");
         }
+        check_wholesale(&name, p.sale_price, p.wholesale_price, p.wholesale_min_qty)?;
         let barcode = match db::clean(&p.barcode) {
             Some(b) => b,
             None => generate_barcode(conn)?,
@@ -543,17 +570,30 @@ fn save_packagings(conn: &Connection, product_id: i64, packs: &[Packaging]) -> A
         match p.id.filter(|id| existing.contains(id)) {
             Some(id) => {
                 conn.execute(
-                    "UPDATE product_packagings SET name = ?1, quantity = ?2, barcode = ?3, sale_price = ?4 WHERE id = ?5",
-                    params![name, db::round_qty(p.quantity), barcode, p.sale_price, id],
+                    "UPDATE product_packagings SET name = ?1, quantity = ?2, barcode = ?3, sale_price = ?4,
+                            wholesale_price = ?5, wholesale_min_qty = ?6 WHERE id = ?7",
+                    params![name, db::round_qty(p.quantity), barcode, p.sale_price, p.wholesale_price, db::round_qty(p.wholesale_min_qty), id],
                 )?;
             }
             None => {
                 conn.execute(
-                    "INSERT INTO product_packagings (product_id, name, quantity, barcode, sale_price) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![product_id, name, db::round_qty(p.quantity), barcode, p.sale_price],
+                    "INSERT INTO product_packagings (product_id, name, quantity, barcode, sale_price, wholesale_price, wholesale_min_qty)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![product_id, name, db::round_qty(p.quantity), barcode, p.sale_price, p.wholesale_price, db::round_qty(p.wholesale_min_qty)],
                 )?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Prix de gros : inférieur au prix normal ; quantité minimale positive (0 : client grossiste seulement).
+fn check_wholesale(name: &str, sale_price: i64, wholesale_price: i64, min_qty: f64) -> AppResult<()> {
+    if wholesale_price < 0 || min_qty < 0.0 || !min_qty.is_finite() {
+        return invalid(format!("« {name} » : prix de gros ou quantité minimale invalide."));
+    }
+    if wholesale_price > 0 && wholesale_price >= sale_price {
+        return invalid(format!("« {name} » : le prix de gros doit être inférieur au prix de vente normal."));
     }
     Ok(())
 }
@@ -587,6 +627,7 @@ fn validate_product(input: &ProductInput) -> AppResult<()> {
     if input.initial_stock.unwrap_or(0.0) < 0.0 {
         return invalid("Le stock initial ne peut pas être négatif.");
     }
+    check_wholesale(input.name.trim(), input.sale_price, input.wholesale_price.unwrap_or(0), input.wholesale_min_qty.unwrap_or(0.0))?;
     Ok(())
 }
 
@@ -674,8 +715,14 @@ pub fn save_product(conn: &mut Connection, user: &SessionUser, id: Option<i64>, 
         }
     };
     tx.execute(
-        "UPDATE products SET brand = ?1, sku = ?2 WHERE id = ?3",
-        params![db::clean(&input.brand), db::clean(&input.sku), product_id],
+        "UPDATE products SET brand = ?1, sku = ?2, wholesale_price = ?3, wholesale_min_qty = ?4 WHERE id = ?5",
+        params![
+            db::clean(&input.brand),
+            db::clean(&input.sku),
+            input.wholesale_price.unwrap_or(0),
+            db::round_qty(input.wholesale_min_qty.unwrap_or(0.0)),
+            product_id
+        ],
     )?;
     if let Some(packs) = &input.packagings {
         save_packagings(&tx, product_id, packs)?;

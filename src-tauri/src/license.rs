@@ -454,6 +454,7 @@ const ALWAYS: &[&str] = &[
     "close_cash_session", "force_close_cash_session",
     "save_user", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",
+    "tunnel_status", "tunnel_setup", "tunnel_remove",
     "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup",
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
     "account_create_store", "account_link", "account_payments", "account_redeem_voucher", "account_declare_orange_money",
@@ -466,6 +467,7 @@ const READ: &[&str] = &[
     "list_locations", "list_stock_movements", "stock_summary", "list_suppliers", "list_customers", "customer_statement",
     "list_sales", "get_sale", "list_electronic_payments", "list_purchases", "get_purchase", "current_cash_session",
     "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places", "plan_floor_fill", "plan_preview_layout",
+    "sale_quote", "list_returns", "get_return", "get_credit_note", "list_credit_notes", "list_promotions", "cash_x_report", "list_z_reports",
 ];
 
 pub fn command_allowed_read_only(cmd: &str) -> bool {

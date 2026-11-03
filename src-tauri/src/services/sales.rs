@@ -58,6 +58,12 @@ fn mobile_operators(conn: &Connection) -> AppResult<Vec<MobileOperator>> {
 /// Contrôle le mode de paiement (fixe ou opérateur actif « mm:<id> ») et l'ID de transaction
 /// lorsque l'opérateur l'exige.
 pub fn check_payment(conn: &Connection, method: &str, reference: Option<&str>) -> AppResult<()> {
+    if method == "credit_note" {
+        if reference.is_none() {
+            return invalid("Saisissez ou scannez le code de l'avoir.");
+        }
+        return Ok(());
+    }
     if method == "orange_money" {
         if reference.is_none() && settings::get_bool(conn, "om_require_reference")? {
             return invalid("Saisissez ou scannez l'ID de transaction Orange Money.");
@@ -125,6 +131,12 @@ pub struct SaleItem {
     /// Quantité en unités de base (différente de `quantity` pour une vente par conditionnement).
     pub base_quantity: f64,
     pub packaging_id: Option<i64>,
+    /// Prix appliqué : « retail » (normal), « wholesale » (gros) ou « promo ».
+    pub price_kind: String,
+    /// Prix normal quand un prix de gros ou une promotion s'applique (économie sur le ticket).
+    pub regular_price: Option<i64>,
+    /// Quantité déjà retournée (unités de vente).
+    pub returned_quantity: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -161,6 +173,8 @@ pub struct Sale {
     pub cancelled_at: Option<String>,
     pub cancel_reason: Option<String>,
     pub items_count: f64,
+    /// Montant déjà rendu par des retours.
+    pub returned_total: i64,
     pub items: Vec<SaleItem>,
     pub payments: Vec<SalePayment>,
 }
@@ -168,7 +182,8 @@ pub struct Sale {
 const SALE_SELECT: &str = "SELECT s.id, s.number, s.customer_id, c.name, s.user_id, u.full_name, s.session_id,
         s.subtotal, s.discount, s.tax_total, s.total, s.cost_total, s.amount_paid, s.change_due,
         s.credit_amount, s.payment_method, s.status, s.note, s.created_at, s.cancelled_at, s.cancel_reason,
-        (SELECT COALESCE(SUM(quantity), 0) FROM sale_items si WHERE si.sale_id = s.id)
+        (SELECT COALESCE(SUM(quantity), 0) FROM sale_items si WHERE si.sale_id = s.id),
+        (SELECT COALESCE(SUM(total), 0) FROM returns rt WHERE rt.sale_id = s.id)
     FROM sales s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN customers c ON c.id = s.customer_id";
@@ -197,6 +212,7 @@ fn sale_from_row(r: &Row) -> rusqlite::Result<Sale> {
         cancelled_at: r.get(19)?,
         cancel_reason: r.get(20)?,
         items_count: r.get(21)?,
+        returned_total: r.get(22)?,
         items: Vec::new(),
         payments: Vec::new(),
     })
@@ -205,9 +221,10 @@ fn sale_from_row(r: &Row) -> rusqlite::Result<Sale> {
 pub fn get_sale(conn: &Connection, id: i64) -> AppResult<Sale> {
     let mut sale = conn.query_row(&format!("{SALE_SELECT} WHERE s.id = ?1"), [id], sale_from_row)?;
     let mut stmt = conn.prepare(
-        "SELECT id, product_id, product_name, unit, quantity, unit_price, discount, tax_rate, total,
-                COALESCE(base_quantity, quantity), packaging_id
-         FROM sale_items WHERE sale_id = ?1 ORDER BY id",
+        "SELECT si.id, si.product_id, si.product_name, si.unit, si.quantity, si.unit_price, si.discount, si.tax_rate, si.total,
+                COALESCE(si.base_quantity, si.quantity), si.packaging_id, si.price_kind, si.regular_price,
+                (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri WHERE ri.sale_item_id = si.id)
+         FROM sale_items si WHERE si.sale_id = ?1 ORDER BY si.id",
     )?;
     sale.items = stmt
         .query_map([id], |r| {
@@ -223,6 +240,9 @@ pub fn get_sale(conn: &Connection, id: i64) -> AppResult<Sale> {
                 total: r.get(8)?,
                 base_quantity: r.get(9)?,
                 packaging_id: r.get(10)?,
+                price_kind: r.get(11)?,
+                regular_price: r.get(12)?,
+                returned_quantity: r.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -282,6 +302,232 @@ pub fn clean_phone(p: &Option<String>) -> AppResult<Option<String>> {
     }
 }
 
+// ───────────────────────────── Prix de gros et promotions ─────────────────────────────
+
+/// Prix d'une ligne : normal, de gros (quantité atteinte ou client grossiste) ou promotion du jour,
+/// le plus bas des trois. `unit_price` est le prix d'une unité de vente (le carton s'il est vendu au carton).
+#[derive(Debug, Clone, Serialize)]
+pub struct LinePrice {
+    pub unit_price: i64,
+    pub regular_price: i64,
+    pub kind: &'static str,
+    pub promotion_id: Option<i64>,
+    pub promotion_name: Option<String>,
+    #[serde(skip)]
+    pub packaging_name: Option<String>,
+    /// Unités de base dans une unité de vente (1, ou le contenu du carton).
+    #[serde(skip)]
+    pub pack_quantity: f64,
+}
+
+pub fn is_wholesale_customer(conn: &Connection, customer_id: Option<i64>) -> AppResult<bool> {
+    let Some(id) = customer_id else {
+        return Ok(false);
+    };
+    let flag: Option<i64> = conn.query_row("SELECT wholesale FROM customers WHERE id = ?1", [id], |r| r.get(0)).optional()?;
+    Ok(flag == Some(1))
+}
+
+pub fn price_line(
+    conn: &Connection,
+    product_id: i64,
+    packaging_id: Option<i64>,
+    qty: f64,
+    wholesale_customer: bool,
+    today: &str,
+) -> AppResult<LinePrice> {
+    let (price, w_price, w_min, category_id): (i64, i64, f64, Option<i64>) = conn.query_row(
+        "SELECT sale_price, wholesale_price, wholesale_min_qty, category_id FROM products WHERE id = ?1",
+        [product_id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )?;
+    let (regular, w_price, w_min, pack_name, pack_qty) = match packaging_id {
+        Some(pack_id) => {
+            let (name, quantity, sale_price, wp, wm): (String, f64, i64, i64, f64) = conn.query_row(
+                "SELECT name, quantity, sale_price, wholesale_price, wholesale_min_qty FROM product_packagings
+                 WHERE id = ?1 AND product_id = ?2",
+                params![pack_id, product_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )?;
+            (sale_price, wp, wm, Some(name), quantity)
+        }
+        None => (price, w_price, w_min, None, 1.0),
+    };
+    let mut best = LinePrice {
+        unit_price: regular,
+        regular_price: regular,
+        kind: "retail",
+        promotion_id: None,
+        promotion_name: None,
+        packaging_name: pack_name,
+        pack_quantity: pack_qty,
+    };
+    if w_price > 0 && w_price < best.unit_price && (wholesale_customer || (w_min > 0.0 && qty + 1e-9 >= w_min)) {
+        best.unit_price = w_price;
+        best.kind = "wholesale";
+    }
+    // Promotions du jour sur l'article, sa catégorie ou une catégorie parente.
+    let mut stmt = conn.prepare(
+        "WITH RECURSIVE chain(id) AS (
+             SELECT ?2 WHERE ?2 IS NOT NULL
+             UNION ALL
+             SELECT c.parent_id FROM categories c JOIN chain ON c.id = chain.id WHERE c.parent_id IS NOT NULL
+         )
+         SELECT id, name, kind, value FROM promotions
+         WHERE active = 1 AND starts_on <= ?3 AND ends_on >= ?3
+           AND (product_id = ?1 OR category_id IN (SELECT id FROM chain))
+         ORDER BY id",
+    )?;
+    let promos = stmt
+        .query_map(params![product_id, category_id, today], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (id, name, kind, value) in promos {
+        let promo = if kind == "percent" {
+            (regular as f64 * (100 - value.clamp(0, 100)) as f64 / 100.0).round() as i64
+        } else {
+            (value as f64 * pack_qty).round() as i64
+        };
+        if promo < best.unit_price {
+            best.unit_price = promo;
+            best.kind = "promo";
+            best.promotion_id = Some(id);
+            best.promotion_name = Some(name);
+        }
+    }
+    Ok(best)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QuoteItem {
+    pub product_id: i64,
+    pub quantity: f64,
+    pub packaging_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct QuoteLine {
+    pub product_id: i64,
+    pub packaging_id: Option<i64>,
+    #[serde(flatten)]
+    pub price: LinePrice,
+}
+
+/// Prix que la caisse affiche avant l'encaissement (mêmes règles que l'enregistrement de la vente).
+pub fn quote(conn: &Connection, items: &[QuoteItem], customer_id: Option<i64>) -> AppResult<Vec<QuoteLine>> {
+    let wholesale_customer = is_wholesale_customer(conn, customer_id)?;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    items
+        .iter()
+        .map(|i| {
+            Ok(QuoteLine {
+                product_id: i.product_id,
+                packaging_id: i.packaging_id,
+                price: price_line(conn, i.product_id, i.packaging_id, db::round_qty(i.quantity.max(0.0)), wholesale_customer, &today)?,
+            })
+        })
+        .collect()
+}
+
+// ───────────────────────────── Avoirs ─────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CreditNote {
+    pub id: i64,
+    pub number: String,
+    pub code: String,
+    pub customer_id: Option<i64>,
+    pub customer_name: Option<String>,
+    pub amount: i64,
+    pub balance: i64,
+    pub status: String,
+    pub expires_on: String,
+    pub created_at: String,
+    pub return_number: Option<String>,
+}
+
+const CREDIT_NOTE_SELECT: &str = "SELECT cn.id, cn.number, cn.code, cn.customer_id, c.name, cn.amount, cn.balance, cn.status,
+        cn.expires_on, cn.created_at, r.number
+    FROM credit_notes cn
+    LEFT JOIN customers c ON c.id = cn.customer_id
+    LEFT JOIN returns r ON r.id = cn.return_id";
+
+fn credit_note_from_row(r: &Row) -> rusqlite::Result<CreditNote> {
+    Ok(CreditNote {
+        id: r.get(0)?,
+        number: r.get(1)?,
+        code: r.get(2)?,
+        customer_id: r.get(3)?,
+        customer_name: r.get(4)?,
+        amount: r.get(5)?,
+        balance: r.get(6)?,
+        status: r.get(7)?,
+        expires_on: r.get(8)?,
+        created_at: r.get(9)?,
+        return_number: r.get(10)?,
+    })
+}
+
+/// Avoir retrouvé par son code complet (imprimé sur le bon), jamais par son seul numéro.
+pub fn credit_note_by_code(conn: &Connection, code: &str) -> AppResult<CreditNote> {
+    let code = code.trim().to_uppercase().replace(' ', "");
+    let found = conn
+        .query_row(&format!("{CREDIT_NOTE_SELECT} WHERE cn.code = ?1"), [&code], credit_note_from_row)
+        .optional()?;
+    match found {
+        Some(n) => Ok(n),
+        None => invalid("Avoir introuvable : vérifiez le code imprimé sur le bon."),
+    }
+}
+
+pub fn get_credit_note(conn: &Connection, id: i64) -> AppResult<CreditNote> {
+    Ok(conn.query_row(&format!("{CREDIT_NOTE_SELECT} WHERE cn.id = ?1"), [id], credit_note_from_row)?)
+}
+
+/// Un avoir paie au plus son reste, jusqu'à sa date de validité incluse.
+pub fn usable_credit_note(note: &CreditNote, amount: i64) -> AppResult<()> {
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    if note.status == "cancelled" {
+        return invalid(format!("L'avoir {} a été annulé.", note.number));
+    }
+    if note.balance <= 0 || note.status == "used" {
+        return invalid(format!("L'avoir {} a déjà été entièrement utilisé.", note.number));
+    }
+    if note.expires_on.as_str() < today.as_str() {
+        return invalid(format!("L'avoir {} a expiré le {}.", note.number, note.expires_on));
+    }
+    if amount > note.balance {
+        return invalid(format!("Il ne reste que {} sur l'avoir {}.", note.balance, note.number));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct CreditNoteFilter {
+    pub search: Option<String>,
+    pub status: Option<String>,
+    pub customer_id: Option<i64>,
+}
+
+pub fn list_credit_notes(conn: &Connection, f: &CreditNoteFilter) -> AppResult<Vec<CreditNote>> {
+    let mut q = Query::new(CREDIT_NOTE_SELECT);
+    if let Some(s) = db::clean(&f.search) {
+        let like = format!("%{s}%");
+        q.and("(cn.number LIKE ? OR cn.code LIKE ? OR c.name LIKE ?)", vec![db::text(&like), db::text(&like), db::text(&like)]);
+    }
+    if let Some(st) = db::clean(&f.status) {
+        q.and("cn.status = ?", vec![db::text(st)]);
+    }
+    if let Some(c) = f.customer_id {
+        q.and("cn.customer_id = ?", vec![db::int(c)]);
+    }
+    q.tail("ORDER BY cn.id DESC LIMIT ?", vec![db::int(1000)]);
+    let mut stmt = conn.prepare(&q.sql)?;
+    let rows = stmt.query_map(q.params(), credit_note_from_row)?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
 struct Line {
     product_id: i64,
     name: String,
@@ -297,6 +543,9 @@ struct Line {
     track_stock: bool,
     base_quantity: f64,
     packaging_id: Option<i64>,
+    price_kind: &'static str,
+    regular_price: Option<i64>,
+    promotion_id: Option<i64>,
 }
 
 /// Enregistre une vente : contrôle des stocks, calcul des totaux, paiements (éventuellement multiples),
@@ -317,33 +566,31 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
     }
 
     // 1. Lignes : prix toujours relus en base (le frontend ne fixe pas les prix).
+    let wholesale_customer = is_wholesale_customer(&tx, input.customer_id)?;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let mut lines: Vec<Line> = Vec::with_capacity(input.items.len());
     for item in &input.items {
         let qty = db::round_qty(item.quantity);
         if qty <= 0.0 || !qty.is_finite() {
             return invalid("Les quantités doivent être supérieures à zéro.");
         }
-        let (name, unit, price, cost, tax_rate, stock_qty, track, active): (String, String, i64, i64, f64, f64, bool, bool) =
-            tx.query_row(
-                "SELECT name, unit, sale_price, purchase_price, tax_rate, stock, track_stock, active FROM products WHERE id = ?1",
-                [item.product_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
-            )?;
+        let (name, unit, cost, tax_rate, stock_qty, track, active): (String, String, i64, f64, f64, bool, bool) = tx.query_row(
+            "SELECT name, unit, purchase_price, tax_rate, stock, track_stock, active FROM products WHERE id = ?1",
+            [item.product_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        )?;
         if !active {
             return invalid(format!("Le produit « {name} » est archivé."));
         }
+        // Prix normal, de gros ou promotion du jour (le plus bas), relu en base.
         // Conditionnement : prix du carton / sac, stock décompté en unités de base.
-        let (line_name, line_unit, unit_price, base_qty) = match item.packaging_id {
-            Some(pack_id) => {
-                let (pname, pqty, pprice): (String, f64, i64) = tx.query_row(
-                    "SELECT name, quantity, sale_price FROM product_packagings WHERE id = ?1 AND product_id = ?2",
-                    params![pack_id, item.product_id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )?;
-                (format!("{name} — {pname}"), pname, pprice, db::round_qty(qty * pqty))
-            }
-            None => (name.clone(), unit.clone(), price, qty),
+        let priced = price_line(&tx, item.product_id, item.packaging_id, qty, wholesale_customer, &today)?;
+        let (line_name, line_unit) = match &priced.packaging_name {
+            Some(pname) => (format!("{name} — {pname}"), pname.clone()),
+            None => (name.clone(), unit.clone()),
         };
+        let unit_price = priced.unit_price;
+        let base_qty = db::round_qty(qty * priced.pack_quantity);
         let already: f64 = lines.iter().filter(|l| l.product_id == item.product_id).map(|l| l.base_quantity).sum();
         if track && !allow_negative && already + base_qty > stock_qty + 1e-9 {
             return invalid(format!("Stock insuffisant pour « {name} » (disponible : {stock_qty} {unit})."));
@@ -368,6 +615,9 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
             track_stock: track,
             base_quantity: base_qty,
             packaging_id: item.packaging_id,
+            price_kind: priced.kind,
+            regular_price: (priced.kind != "retail").then_some(priced.regular_price),
+            promotion_id: priced.promotion_id,
         });
     }
 
@@ -385,6 +635,17 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
         let reference = db::clean(&p.reference);
         let phone = clean_phone(&p.phone)?;
         check_payment(&tx, &p.method, reference.as_deref())?;
+        if p.method == "credit_note" {
+            let note = credit_note_by_code(&tx, reference.as_deref().unwrap_or_default())?;
+            let used: i64 = payments
+                .iter()
+                .filter(|x| x.method == "credit_note" && x.reference.as_deref() == Some(note.code.as_str()))
+                .map(|x| x.amount)
+                .sum();
+            usable_credit_note(&note, used + p.amount)?;
+            payments.push(PaymentInput { method: p.method.clone(), amount: p.amount, reference: Some(note.code), phone: None });
+            continue;
+        }
         if let Some(r) = &reference {
             if payments.iter().any(|x| x.reference.as_deref() == Some(r.as_str())) {
                 return invalid("Le même ID de transaction est saisi deux fois.");
@@ -476,15 +737,23 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
              VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6)",
             params![sale_id, p.method, p.amount, p.reference, p.phone, now],
         )?;
+        if p.method == "credit_note" {
+            tx.execute(
+                "UPDATE credit_notes SET balance = balance - ?1,
+                        status = CASE WHEN balance - ?1 <= 0 THEN 'used' ELSE status END
+                 WHERE code = ?2",
+                params![p.amount, p.reference],
+            )?;
+        }
     }
 
     for l in &lines {
         tx.execute(
             "INSERT INTO sale_items (sale_id, product_id, product_name, unit, quantity, unit_price, unit_cost, discount, tax_rate, total,
-                                     base_quantity, packaging_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                     base_quantity, packaging_id, price_kind, regular_price, promotion_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![sale_id, l.product_id, l.name, l.unit, l.quantity, l.unit_price, l.unit_cost, l.discount, l.tax_rate, l.total,
-                    l.base_quantity, l.packaging_id],
+                    l.base_quantity, l.packaging_id, l.price_kind, l.regular_price, l.promotion_id],
         )?;
         if l.track_stock {
             stock::apply_change(&tx, l.product_id, -l.base_quantity, "sale", Some(l.unit_cost), Some(&number), None, user.id)?;
@@ -513,7 +782,16 @@ pub fn cancel_sale(conn: &mut Connection, user: &SessionUser, id: i64, reason: &
     if sale.status != "completed" {
         return invalid("Cette vente est déjà annulée.");
     }
+    if sale.returned_total > 0 || sale.items.iter().any(|i| i.returned_quantity > 0.0) {
+        return invalid("Des articles de cette vente ont déjà été retournés : elle ne peut plus être annulée.");
+    }
     let tx = conn.transaction()?;
+    for p in sale.payments.iter().filter(|p| p.method == "credit_note") {
+        tx.execute(
+            "UPDATE credit_notes SET balance = balance + ?1, status = CASE WHEN status = 'used' THEN 'active' ELSE status END WHERE code = ?2",
+            params![p.amount, p.reference],
+        )?;
+    }
     for item in &sale.items {
         let track: bool = tx.query_row("SELECT track_stock FROM products WHERE id = ?1", [item.product_id], |r| r.get(0))?;
         if track {
@@ -628,7 +906,7 @@ pub fn list_electronic(conn: &Connection, f: &ElectronicFilter) -> AppResult<Vec
             SELECT sp.created_at AS d, 'sale' AS src, s.id, s.number, sp.method, sp.amount, sp.reference, sp.phone, c.name, u.full_name
               FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id
               JOIN users u ON u.id = s.user_id LEFT JOIN customers c ON c.id = s.customer_id
-             WHERE s.status = 'completed' AND sp.method <> 'cash'
+             WHERE s.status = 'completed' AND sp.method NOT IN ('cash', 'credit_note')
             UNION ALL
             SELECT cp.created_at, 'customer_payment', NULL, 'Règlement client', cp.method, cp.amount, cp.reference, cp.phone, c.name, u.full_name
               FROM customer_payments cp JOIN customers c ON c.id = cp.customer_id LEFT JOIN users u ON u.id = cp.user_id

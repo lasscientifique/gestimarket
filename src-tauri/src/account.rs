@@ -187,6 +187,21 @@ pub fn verify_owner(email: &str, password: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Adresse Internet automatique : Eden Dev crée (ou redonne) le tunnel Cloudflare de la boutique de ce PC,
+/// vers le port du poste serveur. Retourne l'adresse publique et le jeton à donner à cloudflared.
+pub fn request_tunnel(email: &str, password: &str, port: u16) -> Result<(String, String), String> {
+    let store_code = license::account().store_code;
+    if store_code.is_empty() {
+        return Err("Ce PC n'est relié à aucun compte boutique (menu Abonnement & licence).".into());
+    }
+    let token = password_login(&email.trim().to_lowercase(), password)?;
+    let v = call(request("/functions/v1/gm-tunnel", Some(&token)), json!({ "store_code": store_code, "port": port }))?;
+    match (v["status"].as_str(), v["url"].as_str(), v["token"].as_str()) {
+        (Some("ok"), Some(url), Some(t)) if url.starts_with("https://") && !t.is_empty() => Ok((url.to_string(), t.to_string())),
+        _ => Err(v["message"].as_str().unwrap_or("Réponse inattendue d'Eden Dev.").to_string()),
+    }
+}
+
 /// Nouvelle boutique sur le compte connecté (5 au maximum), rattachée à ce PC.
 pub fn create_store(state: &AppState, input: StoreInput) -> Result<Value, String> {
     input.validate()?;

@@ -3,7 +3,7 @@
 
 export type Role = "admin" | "manager" | "cashier";
 /** « mm:<id> » : opérateur de mobile money configuré par la boutique (Wave, MTN MoMo…). */
-export type PaymentMethod = "cash" | "orange_money" | "mobile_money" | "card" | "other" | `mm:${string}`;
+export type PaymentMethod = "cash" | "orange_money" | "mobile_money" | "card" | "other" | "credit_note" | `mm:${string}`;
 /** Mode de paiement résumé d'une vente : un moyen, « mixed » (plusieurs) ou « credit » (rien payé). */
 export type SaleMethod = PaymentMethod | "credit" | "mixed";
 
@@ -98,6 +98,9 @@ export interface Packaging {
   quantity: number;
   barcode: string | null;
   sale_price: number;
+  /** Prix de gros du conditionnement (0 : aucun), à partir de `wholesale_min_qty` conditionnements. */
+  wholesale_price?: number;
+  wholesale_min_qty?: number;
 }
 
 export interface ScanResult {
@@ -347,6 +350,9 @@ export interface Product {
   sku: string | null;
   category_path: string | null;
   packagings: Packaging[];
+  /** Prix de gros (0 : aucun) et quantité minimale (0 : client grossiste seulement). */
+  wholesale_price: number;
+  wholesale_min_qty: number;
   created_at: string;
   updated_at: string;
 }
@@ -371,6 +377,8 @@ export interface ProductInput {
   sku: string | null;
   packagings?: Packaging[];
   initial_stock?: number;
+  wholesale_price?: number;
+  wholesale_min_qty?: number;
 }
 
 export interface ImportRow {
@@ -449,6 +457,8 @@ export interface Customer {
   created_at: string;
   purchases_total: number;
   last_purchase_at: string | null;
+  /** Client grossiste : toujours au prix de gros. */
+  wholesale: boolean;
 }
 
 export interface StatementLine {
@@ -474,6 +484,127 @@ export interface SaleItem {
   discount: number;
   tax_rate: number;
   total: number;
+  /** Prix appliqué : normal, gros ou promotion. */
+  price_kind: PriceKind;
+  /** Prix normal quand un prix de gros ou une promotion s'applique. */
+  regular_price: number | null;
+  /** Quantité déjà retournée. */
+  returned_quantity: number;
+}
+
+export type PriceKind = "retail" | "wholesale" | "promo";
+
+/** Prix d'une ligne du panier calculé par le serveur (gros, promotion du jour). */
+export interface QuoteLine {
+  product_id: number;
+  packaging_id: number | null;
+  unit_price: number;
+  regular_price: number;
+  kind: PriceKind;
+  promotion_id: number | null;
+  promotion_name: string | null;
+}
+
+export interface CreditNote {
+  id: number;
+  number: string;
+  code: string;
+  customer_id: number | null;
+  customer_name: string | null;
+  amount: number;
+  balance: number;
+  status: "active" | "used" | "cancelled";
+  expires_on: string;
+  created_at: string;
+  return_number: string | null;
+}
+
+export interface SaleReturn {
+  id: number;
+  number: string;
+  sale_id: number;
+  sale_number: string;
+  customer_name: string | null;
+  user_name: string;
+  approved_by_name: string | null;
+  session_id: number | null;
+  total: number;
+  tax_total: number;
+  refund_method: string;
+  refund_reference: string | null;
+  reason: string;
+  created_at: string;
+  credit_note: CreditNote | null;
+  items: { product_name: string; quantity: number; total: number; restock: boolean }[];
+}
+
+export interface ReturnInput {
+  sale_id: number;
+  items: { sale_item_id: number; quantity: number; restock: boolean }[];
+  refund_method: string;
+  refund_reference: string | null;
+  reason: string;
+}
+
+export interface Promotion {
+  id: number;
+  name: string;
+  kind: "percent" | "price";
+  value: number;
+  product_id: number | null;
+  product_name: string | null;
+  regular_price: number | null;
+  category_id: number | null;
+  category_name: string | null;
+  starts_on: string;
+  ends_on: string;
+  active: boolean;
+  state: "current" | "upcoming" | "ended" | "off";
+}
+
+export interface PromotionInput {
+  id: number | null;
+  name: string;
+  kind: "percent" | "price";
+  value: number;
+  product_id: number | null;
+  category_id: number | null;
+  starts_on: string;
+  ends_on: string;
+  active: boolean;
+}
+
+/** Contenu d'un rapport X (caisse en cours) ou Z (figé à la clôture). */
+export interface ZData {
+  number?: number;
+  shop_name: string;
+  session_id: number;
+  cashier: string;
+  opened_at: string;
+  closed_at: string | null;
+  sales: {
+    count: number; gross: number; line_discounts: number; ticket_discounts: number; total: number; tax_total: number;
+    promo_savings: number; wholesale_total: number; credit: number; cancelled_count: number; cancelled_total: number;
+  };
+  payments: { method: string; count: number; amount: number }[];
+  taxes: { rate: number; base: number; tax: number }[];
+  returns: { count: number; total: number; tax_total: number; damaged: number; by_method: { method: string; count: number; amount: number }[] };
+  net_total: number;
+  customer_payments: { cash: number; electronic: number };
+  cash: {
+    opening: number; sales: number; customer_payments: number; cash_in: number; cash_out: number; refunds: number;
+    expected: number; counted: number | null; difference: number | null;
+  };
+}
+
+export interface ZReport {
+  number: number;
+  session_id: number;
+  user_name: string | null;
+  created_at: string;
+  data: ZData;
+  /** Empreinte conforme (contenu et chaînage avec le rapport précédent). */
+  intact: boolean;
 }
 
 export interface SalePayment {
@@ -528,6 +659,8 @@ export interface Sale {
   cancelled_at: string | null;
   cancel_reason: string | null;
   items_count: number;
+  /** Montant déjà rendu par des retours. */
+  returned_total: number;
   items: SaleItem[];
   payments: SalePayment[];
 }
@@ -587,7 +720,13 @@ export interface CashSession {
   customer_payments_electronic: number;
   cash_in: number;
   cash_out: number;
+  credit_note_sales: number;
+  returns_count: number;
+  returns_total: number;
+  refunds_cash: number;
   expected_now: number;
+  /** Numéro du rapport Z (caisse clôturée). */
+  z_number: number | null;
 }
 
 export interface CashMovement {
@@ -753,6 +892,16 @@ export interface CloudStatus {
   public_ok: boolean | null;
   public_ms: number | null;
   public_error: string | null;
+}
+
+/** Adresse Internet automatique de la boutique (tunnel Cloudflare d'Eden Dev). */
+export interface TunnelStatus {
+  configured: boolean;
+  running: boolean;
+  /** Chemin de cloudflared sur ce PC (null : pas installé). */
+  cloudflared: string | null;
+  url: string;
+  error: string | null;
 }
 
 /** Boutique de ce PC (5 au maximum, chacune dans sa fenêtre). */

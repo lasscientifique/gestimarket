@@ -173,6 +173,7 @@ export function SessionSummary({ session }: { session: CashSession }) {
     [tl("Règlements clients (espèces)"), session.customer_payments_cash],
     [tl("Entrées d'espèces"), session.cash_in],
     [tl("Sorties d'espèces"), -session.cash_out],
+    ...(session.refunds_cash ? [[tl("Retours remboursés en espèces"), -session.refunds_cash] as [string, number]] : []),
     [tl("Espèces attendues"), session.expected_now, true],
   ];
   return (
@@ -194,7 +195,11 @@ export function SessionSummary({ session }: { session: CashSession }) {
         <div className="kv"><span>{tl("Carte")}</span><span>{money(session.card_sales)}</span></div>
         <div className="kv"><span>{tl("Autre")}</span><span>{money(session.other_sales)}</span></div>
         <div className="kv"><span>{tl("À crédit")}</span><span>{money(session.credit_sales)}</span></div>
+        {session.credit_note_sales > 0 && <div className="kv"><span>{tl("Payé par avoir")}</span><span>{money(session.credit_note_sales)}</span></div>}
         <div className="kv kv-strong"><span>{tl("Total ventes")}</span><span>{money(session.sales_total)}</span></div>
+        {session.returns_count > 0 && (
+          <div className="kv"><span>{tl("Retours ({0})", [session.returns_count])}</span><span>-{money(session.returns_total)}</span></div>
+        )}
         {session.customer_payments_electronic > 0 && (
           <div className="kv muted"><span>{tl("Règlements clients (électroniques)")}</span><span>{money(session.customer_payments_electronic)}</span></div>
         )}

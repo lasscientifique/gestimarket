@@ -121,12 +121,15 @@ pub struct Customer {
     pub created_at: String,
     pub purchases_total: i64,
     pub last_purchase_at: Option<String>,
+    /// Client grossiste : toujours au prix de gros (quand l'article en a un).
+    pub wholesale: bool,
 }
 
 const CUSTOMER_SELECT: &str = "SELECT c.id, c.name, c.phone, c.email, c.address, c.notes, c.credit_limit, c.balance,
         c.loyalty_points, c.active, c.created_at,
         (SELECT COALESCE(SUM(total), 0) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed'),
-        (SELECT MAX(created_at) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed')
+        (SELECT MAX(created_at) FROM sales s WHERE s.customer_id = c.id AND s.status = 'completed'),
+        c.wholesale
     FROM customers c";
 
 fn customer_from_row(r: &Row) -> rusqlite::Result<Customer> {
@@ -144,6 +147,7 @@ fn customer_from_row(r: &Row) -> rusqlite::Result<Customer> {
         created_at: r.get(10)?,
         purchases_total: r.get(11)?,
         last_purchase_at: r.get(12)?,
+        wholesale: r.get(13)?,
     })
 }
 
@@ -155,6 +159,7 @@ pub struct CustomerInput {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub credit_limit: Option<i64>,
+    pub wholesale: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -200,6 +205,14 @@ pub fn save_customer(conn: &Connection, user: &SessionUser, id: Option<i64>, inp
     } else {
         0
     };
+    // Client grossiste : décidé par un gestionnaire ou l'administrateur.
+    let wholesale = if user.role != "cashier" {
+        input.wholesale.unwrap_or(false)
+    } else if let Some(id) = id {
+        conn.query_row("SELECT wholesale FROM customers WHERE id = ?1", [id], |r| r.get(0))?
+    } else {
+        false
+    };
     let id = match id {
         Some(id) => {
             conn.execute(
@@ -216,6 +229,7 @@ pub fn save_customer(conn: &Connection, user: &SessionUser, id: Option<i64>, inp
             conn.last_insert_rowid()
         }
     };
+    conn.execute("UPDATE customers SET wholesale = ?1 WHERE id = ?2", params![wholesale, id])?;
     audit::log(conn, user, "Enregistrement de client", "customer", Some(id), name)?;
     get_customer(conn, id)
 }

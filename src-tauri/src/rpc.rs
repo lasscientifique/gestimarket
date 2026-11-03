@@ -11,8 +11,8 @@ use serde_json::{json, Value};
 
 use crate::error::{invalid, AppError, AppResult};
 use crate::services::{
-    audit, auth, backup, cash, catalog, devices, locations, media, partners, plan, purchases, reports, sales, settings, stock,
-    templates, users,
+    audit, auth, backup, cash, catalog, devices, locations, media, partners, plan, promotions, purchases, reports, returns, sales,
+    settings, stock, templates, users, zreport,
 };
 use crate::state::{Access, AppState, Origin};
 
@@ -487,7 +487,11 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             // Changer un prix d'un produit existant est une action critique.
             if let Some(id) = id {
                 let p = catalog::get_product(c, id)?;
-                if p.sale_price != input.sale_price || p.purchase_price != input.purchase_price || p.active && input.active == Some(false) {
+                if p.sale_price != input.sale_price
+                    || p.purchase_price != input.purchase_price
+                    || p.wholesale_price != input.wholesale_price.unwrap_or(0)
+                    || p.active && input.active == Some(false)
+                {
                     confirm_pin(state, c, u, &a, 2, &format!("Modification de prix / statut : {}", p.name))?;
                 }
             }
@@ -603,6 +607,38 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "list_electronic_payments" => run(Admin, &|c, _| {
             out(sales::list_electronic(c, &arg::<Option<sales::ElectronicFilter>>(&a, "filter")?.unwrap_or_default())?)
         }),
+        // Prix affichés en caisse : normal, gros ou promotion (mêmes règles qu'à l'encaissement).
+        "sale_quote" => run(Any, &|c, _| {
+            let items: Vec<sales::QuoteItem> = arg(&a, "items")?;
+            out(sales::quote(c, &items, arg(&a, "customer_id")?)?)
+        }),
+
+        // ───── Retours et avoirs ─────
+        // La caissière (caisse ouverte) rend ; un gestionnaire ou l'administrateur valide par son PIN.
+        "create_return" => run(Any, &|c, u| {
+            let approver = confirm_pin(state, c, u, &a, 2, "Retour d'articles")?;
+            out(returns::create_return(c, u, &approver, arg(&a, "input")?)?)
+        }),
+        "list_returns" => run(Any, &|c, u| {
+            let mut f = arg::<Option<returns::ReturnFilter>>(&a, "filter")?.unwrap_or_default();
+            if !u.is_admin() {
+                f.user_id = Some(u.id);
+            }
+            out(returns::list_returns(c, &f)?)
+        }),
+        "get_return" => run(Any, &|c, _| out(returns::get_return(c, arg(&a, "id")?)?)),
+        "get_credit_note" => run(Any, &|c, _| out(sales::credit_note_by_code(c, &arg::<String>(&a, "code")?)?)),
+        "list_credit_notes" => run(Manager, &|c, _| {
+            out(sales::list_credit_notes(c, &arg::<Option<sales::CreditNoteFilter>>(&a, "filter")?.unwrap_or_default())?)
+        }),
+
+        // ───── Promotions ─────
+        "list_promotions" => run(Any, &|c, _| out(promotions::list(c)?)),
+        "save_promotion" => run(Manager, &|c, u| out(promotions::save(c, u, arg(&a, "input")?)?)),
+        "delete_promotion" => run(Manager, &|c, u| {
+            promotions::delete(c, u, arg(&a, "id")?)?;
+            out(json!({ "ok": true }))
+        }),
 
         // ───── Achats ─────
         "create_purchase" => run(Manager, &|c, u| out(purchases::create_purchase(c, u, arg(&a, "input")?)?)),
@@ -635,6 +671,24 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(cash::force_close(c, u, arg(&a, "id")?, arg(&a, "input")?)?)
         }),
         "cashier_stats" => run(Any, &|c, u| out(cash::cashier_stats(c, u)?)),
+        // Rapport X : chiffres de la caisse en cours, sans la clôturer (l'administrateur voit toutes les caisses).
+        "cash_x_report" => run(Any, &|c, u| {
+            let id = match arg::<Option<i64>>(&a, "session_id")? {
+                Some(id) if u.is_admin() => id,
+                _ => match cash::open_session_id(c, u.id)? {
+                    Some(id) => id,
+                    None => return invalid("Aucune session de caisse ouverte."),
+                },
+            };
+            out(zreport::build(c, id)?)
+        }),
+        "list_z_reports" => run(Any, &|c, u| {
+            let mut f = arg::<Option<zreport::ZFilter>>(&a, "filter")?.unwrap_or_default();
+            if !u.is_admin() {
+                f.user_id = Some(u.id);
+            }
+            out(zreport::list(c, &f)?)
+        }),
         "list_cash_sessions" => run(Any, &|c, u| {
             let mut f = arg::<Option<cash::SessionFilter>>(&a, "filter")?.unwrap_or_default();
             if !u.is_admin() {
@@ -682,6 +736,37 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             state.require(origin, Admin)?;
             crate::cloud::publish_once(state, true).map_err(AppError::Validation)?;
             out(crate::cloud::status())
+        }
+        // Adresse Internet automatique (tunnel Cloudflare créé par Eden Dev pour la boutique).
+        "tunnel_status" => {
+            state.require(origin, Admin)?;
+            out(crate::tunnel::status(&state.conn()))
+        }
+        "tunnel_setup" => {
+            account_access(state, origin)?;
+            let port = crate::cloud::port();
+            if port == 0 {
+                return invalid("Seul le poste serveur reçoit l'adresse Internet de la boutique.");
+            }
+            state.login_guard(&ip)?;
+            let asked = crate::account::request_tunnel(&arg::<String>(&a, "email")?, &arg::<String>(&a, "password")?, port);
+            state.login_result(&ip, !matches!(&asked, Err(e) if e.contains("mot de passe")));
+            let (url, token) = asked.map_err(AppError::Validation)?;
+            let conn = state.conn();
+            crate::tunnel::save(&conn, &url, &token).map_err(AppError::Validation)?;
+            audit::log_system(&conn, "Adresse Internet automatique activée", "settings", None, &url)?;
+            drop(conn);
+            let _ = crate::cloud::publish_once(state, true);
+            out(crate::tunnel::status(&state.conn()))
+        }
+        "tunnel_remove" => {
+            account_access(state, origin)?;
+            let conn = state.conn();
+            crate::tunnel::remove(&conn).map_err(AppError::Validation)?;
+            audit::log_system(&conn, "Adresse Internet automatique retirée de ce PC", "settings", None, "")?;
+            drop(conn);
+            let _ = crate::cloud::publish_once(state, true);
+            out(crate::tunnel::status(&state.conn()))
         }
 
         // ───── Tickets en cours : suivre un collègue et reprendre son client ─────

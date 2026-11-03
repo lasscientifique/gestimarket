@@ -350,6 +350,27 @@ try {
     await pc.waitForTimeout(3000);
     await shot(pc, "14-assistant-boutique-3d.png");
   }
+
+  // ── 0.15 : prix de gros à partir d'une quantité, promotion du jour, rapports Z
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const noPin = await rpc("save_product", { id: coca.id, input: { name: coca.name, barcode: coca.barcode, purchase_price: 300, sale_price: 500, wholesale_price: 450, wholesale_min_qty: 24 } }, admin)
+    .then(() => "accepté", (e) => e.message);
+  check("prix de gros : changement confirmé par le PIN", /PIN/i.test(noPin), noPin);
+  await rpc("save_product", { id: coca.id, pin: PIN, input: { name: coca.name, barcode: coca.barcode, purchase_price: 300, sale_price: 500, wholesale_price: 450, wholesale_min_qty: 24 } }, admin);
+  const quote = (quantity) => rpc("sale_quote", { items: [{ product_id: coca.id, quantity, packaging_id: null }], customer_id: null }, admin).then((r) => r[0]);
+  const [q6, q24] = [await quote(6), await quote(24)];
+  check("prix de gros à partir de 24 canettes", q6.kind === "retail" && q6.unit_price === 500 && q24.kind === "wholesale" && q24.unit_price === 450, JSON.stringify([q6, q24]));
+  await rpc("save_promotion", { input: { id: null, name: "Fête de quartier", kind: "percent", value: 20, product_id: coca.id, category_id: null, starts_on: today, ends_on: today, active: true } }, admin);
+  const promo = await quote(1);
+  check("promotion du jour : -20 % appliqué en caisse", promo.kind === "promo" && promo.unit_price === 400 && promo.regular_price === 500, JSON.stringify(promo));
+  const zs = await rpc("list_z_reports", { filter: null }, admin);
+  check("rapports Z : liste lisible (aucune clôture pour l'instant)", Array.isArray(zs) && zs.length === 0, JSON.stringify(zs).slice(0, 80));
+  await pc.goto(`${SRV}/#/promotions`);
+  await seen(pc, "page Promotions", "Fête de quartier");
+  await shot(pc, "18-promotions.png");
+  await pc.goto(`${SRV}/#/returns`);
+  await seen(pc, "page Retours & avoirs", "Retours & avoirs");
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

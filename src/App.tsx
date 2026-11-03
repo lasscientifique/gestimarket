@@ -27,6 +27,8 @@ import SettingsPage from "./pages/Settings";
 import FinderPage from "./pages/Finder";
 import LocationsPage from "./pages/Locations";
 import PaymentsPage from "./pages/Payments";
+import PromotionsPage from "./pages/Promotions";
+import ReturnsPage from "./pages/Returns";
 import CustomerDisplayPage from "./pages/CustomerDisplay";
 import LicencePage from "./pages/Licence";
 import { useLocation } from "react-router-dom";
@@ -87,6 +89,8 @@ function MainApp() {
         <Route path="/payments" element={<Guard roles={ADMIN}><PaymentsPage /></Guard>} />
         <Route path="/sales" element={<Guard roles={ALL}><SalesPage /></Guard>} />
         <Route path="/cash" element={<Guard roles={ALL}><CashSessionsPage /></Guard>} />
+        <Route path="/returns" element={<Guard roles={ALL}><ReturnsPage /></Guard>} />
+        <Route path="/promotions" element={<Guard roles={["admin", "manager"]}><PromotionsPage /></Guard>} />
         <Route path="/customers" element={<Guard roles={ALL}><CustomersPage /></Guard>} />
         <Route path="/products" element={<Guard roles={MANAGERS}><ProductsPage /></Guard>} />
         <Route path="/categories" element={<Guard roles={MANAGERS}><CategoriesPage /></Guard>} />

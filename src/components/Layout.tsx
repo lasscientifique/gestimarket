@@ -30,6 +30,8 @@ import {
   Network,
   BadgeCheck,
   X,
+  Undo2,
+  BadgePercent,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { LicenceBanner } from "./LicenceBanner";
@@ -70,6 +72,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { to: "/finder", label: tl("Localiser un produit"), short: tl("Localiser"), icon: <ScanSearch size={18} />, roles: A },
       { to: "/sales", label: tl("Historique des ventes"), short: tl("Ventes"), icon: <Receipt size={18} />, roles: A },
       { to: "/cash", label: tl("Sessions de caisse"), icon: <Wallet size={18} />, roles: A },
+      { to: "/returns", label: tl("Retours & avoirs"), short: tl("Retours"), icon: <Undo2 size={18} />, roles: A },
       { to: "/customers", label: tl("Clients"), icon: <Users size={18} />, roles: A },
     ],
   },
@@ -78,6 +81,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: "/products", label: tl("Produits"), icon: <Package size={18} />, roles: M },
       { to: "/categories", label: tl("Catégories"), icon: <FolderTree size={18} />, roles: M },
+      { to: "/promotions", label: tl("Promotions"), icon: <BadgePercent size={18} />, roles: M },
       { to: "/locations", label: tl("Plan de la boutique"), short: tl("Plan"), icon: <LayoutGrid size={18} />, roles: M },
       { to: "/stock", label: tl("Stock & inventaire"), short: tl("Stock"), icon: <Boxes size={18} />, roles: M },
       { to: "/purchases", label: tl("Achats / réceptions"), icon: <Truck size={18} />, roles: M },

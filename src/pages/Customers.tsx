@@ -59,7 +59,7 @@ export default function CustomersPage() {
             <tbody>
               {list.map((c) => (
                 <tr key={c.id} onDoubleClick={() => setStatement(c)}>
-                  <td><strong>{c.name}</strong>{c.address && <div className="muted small">{c.address}</div>}</td>
+                  <td><strong>{c.name}</strong>{c.wholesale && <> <Badge tone="info">{tl("Grossiste")}</Badge></>}{c.address && <div className="muted small">{c.address}</div>}</td>
                   <td>{c.phone ? <><Phone size={12} /> {c.phone}</> : <span className="muted">—</span>}</td>
                   <td className="num">{money(c.purchases_total)}</td>
                   <td>{dateOnly(c.last_purchase_at)}</td>
@@ -86,7 +86,7 @@ export default function CustomersPage() {
 }
 
 function CustomerForm({ customer, onClose, onSaved }: { customer: Customer | null; onClose: () => void; onSaved: () => void }) {
-  const { toast, isAdmin: isManager } = useApp();
+  const { toast, isAdmin: isManager, user } = useApp();
   const [f, setF] = useState({
     name: customer?.name ?? "",
     phone: customer?.phone ?? "",
@@ -94,6 +94,7 @@ function CustomerForm({ customer, onClose, onSaved }: { customer: Customer | nul
     address: customer?.address ?? "",
     notes: customer?.notes ?? "",
     credit_limit: customer ? minorToInput(customer.credit_limit) : "0",
+    wholesale: customer?.wholesale ?? false,
   });
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const submit = async () => {
@@ -120,6 +121,11 @@ function CustomerForm({ customer, onClose, onSaved }: { customer: Customer | nul
           <input inputMode="decimal" value={f.credit_limit} onChange={set("credit_limit")} disabled={!isManager} />
         </Field>
         <Field label={tl("Notes")}><input value={f.notes} onChange={set("notes")} /></Field>
+        <label className="check span-2">
+          <input type="checkbox" checked={f.wholesale} disabled={user?.role === "cashier"} onChange={(e) => setF({ ...f, wholesale: e.target.checked })} />
+          {tl("Client grossiste : toujours au prix de gros (articles qui en ont un)")}
+          {user?.role === "cashier" && <span className="muted small">  {tl("(décidé par un gestionnaire)")}</span>}
+        </label>
       </div>
     </Modal>
   );

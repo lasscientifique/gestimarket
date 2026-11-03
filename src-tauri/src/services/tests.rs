@@ -67,6 +67,8 @@ fn product(conn: &mut Connection, user: &SessionUser, name: &str, cost: i64, pri
             brand: None,
             sku: None,
             packagings: None,
+            wholesale_price: None,
+            wholesale_min_qty: None,
         },
     )
     .unwrap()
@@ -182,7 +184,7 @@ fn credit_sale_respects_limit_and_payments_reduce_debt() {
         &conn,
         &admin,
         None,
-        partners::CustomerInput { name: "Awa".into(), phone: None, email: None, address: None, notes: None, credit_limit: Some(5000) },
+        partners::CustomerInput { name: "Awa".into(), phone: None, email: None, address: None, notes: None, credit_limit: Some(5000), wholesale: None },
     )
     .unwrap();
 
@@ -512,6 +514,8 @@ fn images_are_stored_and_cleaned_up() {
         brand: None,
         sku: None,
         packagings: None,
+        wholesale_price: None,
+        wholesale_min_qty: None,
     };
     let prod = catalog::save_product(&mut conn, &admin, Some(p), edit(Some(a))).unwrap();
     assert_eq!(prod.image_id, Some(a));
@@ -542,7 +546,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 9);
+    assert_eq!(count("PRAGMA user_version"), 10);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -560,7 +564,7 @@ fn searches_with_several_criteria() {
     product(&mut conn, &admin, "Savon liquide", 500, 800, 5.0);
     let r = catalog::list_products(&conn, &catalog::ProductFilter { search: Some("savon".into()), ..Default::default() }).unwrap();
     assert_eq!(r.len(), 1);
-    partners::save_customer(&conn, &admin, None, partners::CustomerInput { name: "Moussa".into(), phone: Some("76 12".into()), email: None, address: None, notes: None, credit_limit: None }).unwrap();
+    partners::save_customer(&conn, &admin, None, partners::CustomerInput { name: "Moussa".into(), phone: Some("76 12".into()), email: None, address: None, notes: None, credit_limit: None, wholesale: None }).unwrap();
     assert_eq!(partners::list_customers(&conn, &partners::CustomerFilter { search: Some("76".into()), with_debt: None }).unwrap().len(), 1);
     assert_eq!(audit::list(&conn, &audit::AuditFilter { search: Some("Création de produit".into()), ..Default::default() }).unwrap().len(), 1);
     assert!(partners::list_suppliers(&conn, Some("x".into())).unwrap().is_empty());
@@ -587,7 +591,7 @@ fn subcategories_and_letter_blocs() {
     let mut input = catalog::ProductInput {
         barcode: None, name: prod.name.clone(), description: None, category_id: Some(jus), supplier_id: None,
         unit: None, purchase_price: 500, sale_price: 800, tax_rate: None, min_stock: None, track_stock: Some(true),
-        active: Some(true), image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None,
+        active: Some(true), image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None, wholesale_price: None, wholesale_min_qty: None,
     };
     prod = catalog::save_product(&mut conn, &admin, Some(p), input).unwrap();
     assert_eq!(prod.parent_category_name.as_deref(), Some("Boissons"));
@@ -604,7 +608,7 @@ fn subcategories_and_letter_blocs() {
     input = catalog::ProductInput {
         barcode: None, name: "x".into(), description: None, category_id: Some(eaux), supplier_id: None, unit: None,
         purchase_price: 1, sale_price: 1, tax_rate: None, min_stock: None, track_stock: None, active: None,
-        image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None,
+        image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None, wholesale_price: None, wholesale_min_qty: None,
     };
     assert!(catalog::save_product(&mut conn, &admin, None, input).is_err(), "la sous-catégorie n'existe plus");
 
@@ -725,7 +729,9 @@ fn barcode_is_mandatory_and_packagings_sell_in_base_units() {
         unit: Some("bouteille".into()), purchase_price: 250, sale_price: 400, tax_rate: None, min_stock: None,
         track_stock: Some(true), active: Some(true), image_id: None, location_id: None, expiry_date: None,
         initial_stock: None, brand: Some("Kirène".into()), sku: Some("EAU-15".into()),
-        packagings: Some(vec![catalog::Packaging { id: None, name: "Carton de 12".into(), quantity: 12.0, barcode: Some("CART-EAU".into()), sale_price: 4500 }]),
+        packagings: Some(vec![catalog::Packaging { id: None, name: "Carton de 12".into(), quantity: 12.0, barcode: Some("CART-EAU".into()), sale_price: 4500, wholesale_price: 0, wholesale_min_qty: 0.0 }]),
+        wholesale_price: None,
+        wholesale_min_qty: None,
     };
     let saved = catalog::save_product(&mut conn, &admin, Some(eau), input).unwrap();
     assert_eq!(saved.packagings.len(), 1);
@@ -734,7 +740,7 @@ fn barcode_is_mandatory_and_packagings_sell_in_base_units() {
     let dup = catalog::ProductInput {
         barcode: Some("CART-EAU".into()), name: "Autre".into(), description: None, category_id: None, supplier_id: None,
         unit: None, purchase_price: 1, sale_price: 1, tax_rate: None, min_stock: None, track_stock: None, active: None,
-        image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None,
+        image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None, wholesale_price: None, wholesale_min_qty: None,
     };
     assert!(catalog::save_product(&mut conn, &admin, None, dup).is_err());
     // Scan
@@ -1049,7 +1055,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 9);
+    assert_eq!(count("PRAGMA user_version"), 10);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
@@ -1328,7 +1334,7 @@ fn migration_to_pin_only_staff() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 9);
+    assert_eq!(count("PRAGMA user_version"), 10);
     // Plus de mot de passe, sauf pour l'administrateur qui n'a pas encore de PIN.
     assert_eq!(count("SELECT COUNT(*) FROM users WHERE password_hash <> ''"), 1);
     assert_eq!(count("SELECT internet_access FROM users WHERE id = 1"), 1);
@@ -1400,4 +1406,183 @@ fn several_activities_and_layout_preview() {
     let left: i64 = state.conn().query_row("SELECT COUNT(*) FROM media", [], |r| r.get(0)).unwrap();
     assert_eq!(left, 0);
     let _ = admin;
+}
+
+// ───────────────────────────── 0.15 : prix de gros, promotions, retours, avoirs, rapports Z ─────────────────────────────
+
+fn customer(conn: &Connection, user: &SessionUser, name: &str, wholesale: bool) -> partners::Customer {
+    partners::save_customer(
+        conn,
+        user,
+        None,
+        partners::CustomerInput {
+            name: name.into(),
+            phone: None,
+            email: None,
+            address: None,
+            notes: None,
+            credit_limit: None,
+            wholesale: Some(wholesale),
+        },
+    )
+    .unwrap()
+}
+
+fn promotion(name: &str, kind: &str, value: i64, product_id: Option<i64>, category_id: Option<i64>, from: &str, to: &str) -> promotions::PromotionInput {
+    promotions::PromotionInput {
+        id: None,
+        name: name.into(),
+        kind: kind.into(),
+        value,
+        product_id,
+        category_id,
+        starts_on: from.into(),
+        ends_on: to.into(),
+        active: None,
+    }
+}
+
+#[test]
+fn wholesale_prices_promotions_and_quotes() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let riz = product(&mut conn, &admin, "Riz 25kg", 9000, 12_000, 100.0);
+    conn.execute("UPDATE products SET wholesale_price = 11000, wholesale_min_qty = 5 WHERE id = ?1", [riz]).unwrap();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let quote = |conn: &Connection, qty: f64, customer: Option<i64>| {
+        sales::quote(conn, &[sales::QuoteItem { product_id: riz, quantity: qty, packaging_id: None }], customer).unwrap().remove(0).price
+    };
+
+    // Prix de gros à partir de 5 sacs ; tout de suite pour un client grossiste.
+    assert_eq!((quote(&conn, 4.0, None).unit_price, quote(&conn, 4.0, None).kind), (12_000, "retail"));
+    assert_eq!((quote(&conn, 5.0, None).unit_price, quote(&conn, 5.0, None).kind), (11_000, "wholesale"));
+    let grossiste = customer(&conn, &admin, "Grossiste Diallo", true);
+    assert!(grossiste.wholesale);
+    assert_eq!(quote(&conn, 1.0, Some(grossiste.id)).kind, "wholesale");
+    // Une caissière ne peut pas faire d'un client un grossiste.
+    assert!(!customer(&conn, &caisse, "Client", true).wholesale);
+    // Prix de gros supérieur au prix normal : refusé.
+    let p = catalog::get_product(&conn, riz).unwrap();
+    let bad = catalog::ProductInput {
+        barcode: p.barcode.clone(), name: p.name.clone(), description: None, category_id: None, supplier_id: None, unit: None,
+        purchase_price: 9000, sale_price: 12_000, tax_rate: None, min_stock: None, track_stock: Some(true), active: Some(true),
+        image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None,
+        wholesale_price: Some(13_000), wholesale_min_qty: Some(5.0),
+    };
+    assert!(catalog::save_product(&mut conn, &admin, Some(riz), bad).is_err());
+
+    // Promotion de catégorie -20 % (catégorie parente) : 9 600, plus bas que le prix de gros.
+    let cereales = templates::find_or_create(&conn, "Céréales", None, "#a16207", 0).unwrap().0;
+    let riz_cat = templates::find_or_create(&conn, "Riz", Some(cereales), "#a16207", 0).unwrap().0;
+    conn.execute("UPDATE products SET category_id = ?1 WHERE id = ?2", [riz_cat, riz]).unwrap();
+    let promo = promotions::save(&conn, &admin, promotion("Fin d'année", "percent", 20, None, Some(cereales), &today, &today)).unwrap();
+    assert_eq!(promo.state, "current");
+    let p = quote(&conn, 5.0, None);
+    assert_eq!((p.unit_price, p.kind, p.regular_price), (9600, "promo", 12_000));
+    assert_eq!(p.promotion_name.as_deref(), Some("Fin d'année"));
+    // Prix promo : sur un article seulement, et inférieur au prix normal.
+    assert!(promotions::save(&conn, &admin, promotion("X", "price", 12_000, Some(riz), None, &today, &today)).is_err());
+    assert!(promotions::save(&conn, &admin, promotion("X", "price", 9000, None, Some(cereales), &today, &today)).is_err());
+    assert!(promotions::save(&conn, &admin, promotion("X", "percent", 95, Some(riz), None, &today, &today)).is_err());
+    // Promotion à venir : sans effet aujourd'hui.
+    let later = promotions::save(&conn, &admin, promotion("Plus tard", "price", 5000, Some(riz), None, "2999-01-01", "2999-01-31")).unwrap();
+    assert_eq!(later.state, "upcoming");
+    assert_eq!(quote(&conn, 1.0, None).unit_price, 9600);
+
+    // La vente enregistre le prix appliqué et le prix normal.
+    cash::open(&conn, &caisse, 0).unwrap();
+    let sale = sales::create_sale(&mut conn, &caisse, sale_input(vec![(riz, 2.0)], "cash", 20_000, None)).unwrap();
+    assert_eq!(sale.total, 19_200);
+    assert_eq!((sale.items[0].price_kind.as_str(), sale.items[0].regular_price), ("promo", Some(12_000)));
+    // Promotion supprimée : prix normal.
+    promotions::delete(&conn, &admin, promo.id).unwrap();
+    assert_eq!(quote(&conn, 2.0, None).kind, "retail");
+}
+
+#[test]
+fn returns_credit_notes_and_z_reports() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let manager_id = users::create(&conn, &admin, users::UserInput {
+        username: Some("gerant".into()), full_name: "Gérant".into(), role: "manager".into(), active: Some(true), pin: Some("7391".into()), internet_access: None,
+    }).unwrap();
+    let gerant = SessionUser { id: manager_id, username: "gerant".into(), full_name: "Gérant".into(), role: "manager".into(), has_pin: true, lang: None };
+    let riz = product(&mut conn, &admin, "Riz 5kg", 3000, 3500, 10.0);
+    let huile = product(&mut conn, &admin, "Huile 1L", 900, 1200, 5.0);
+    let session = cash::open(&conn, &caisse, 10_000).unwrap();
+    let sale = sales::create_sale(&mut conn, &caisse, sale_input(vec![(riz, 2.0), (huile, 2.0)], "cash", 10_000, None)).unwrap();
+    assert_eq!(sale.total, 9400);
+    let item = |name: &str| sale.items.iter().find(|i| i.product_name.starts_with(name)).unwrap().id;
+    let ret = |items: Vec<(i64, f64, bool)>, method: &str| returns::ReturnInput {
+        sale_id: sale.id,
+        items: items.into_iter().map(|(sale_item_id, quantity, restock)| returns::ReturnItemInput { sale_item_id, quantity, restock }).collect(),
+        refund_method: method.into(),
+        refund_reference: None,
+        reason: "Client mécontent".into(),
+    };
+
+    // Seule une caissière rend (caisse ouverte).
+    assert!(returns::create_return(&mut conn, &gerant, &gerant, ret(vec![(item("Riz"), 1.0, true)], "cash")).is_err());
+    // Espèces : 1 riz remis en rayon, 1 huile abîmée (pas remise en stock).
+    let r = returns::create_return(&mut conn, &caisse, &gerant, ret(vec![(item("Riz"), 1.0, true), (item("Huile"), 1.0, false)], "cash")).unwrap();
+    assert_eq!(r.total, 4700);
+    assert!(r.number.starts_with('R'));
+    assert_eq!(r.approved_by_name.as_deref(), Some("Gérant"));
+    assert_eq!(stock_of(&conn, riz), 9.0);
+    assert_eq!(stock_of(&conn, huile), 3.0);
+    let s = cash::current_session(&conn, &caisse).unwrap().unwrap();
+    assert_eq!((s.returns_count, s.refunds_cash, s.expected_now), (1, 4700, 10_000 + 9400 - 4700));
+    // Pas plus que ce qui reste ; une vente avec retour ne s'annule plus.
+    assert!(returns::create_return(&mut conn, &caisse, &gerant, ret(vec![(item("Riz"), 2.0, true)], "cash")).is_err());
+    assert!(sales::cancel_sale(&mut conn, &admin, sale.id, "test").is_err());
+    let again = sales::get_sale(&conn, sale.id).unwrap();
+    assert_eq!(again.returned_total, 4700);
+    assert_eq!(again.items.iter().map(|i| i.returned_quantity).sum::<f64>(), 2.0);
+
+    // Avoir : créé par un retour, utilisé en partie, recrédité si la vente est annulée.
+    let r2 = returns::create_return(&mut conn, &caisse, &gerant, ret(vec![(item("Riz"), 1.0, true)], "credit_note")).unwrap();
+    let note = r2.credit_note.expect("avoir créé");
+    assert_eq!((note.amount, note.balance, note.status.as_str()), (3500, 3500, "active"));
+    assert!(note.code.starts_with(&note.number) && note.code.len() == note.number.len() + 5);
+    assert!(sales::credit_note_by_code(&conn, &note.number).is_err(), "le numéro seul ne suffit pas");
+    let pay = |method: &str, amount: i64, reference: &str| sales::PaymentInput { method: method.into(), amount, reference: Some(reference.into()), phone: None };
+    let mut input = sale_input(vec![(huile, 1.0)], "cash", 0, None);
+    input.payments = vec![pay("credit_note", 1200, &note.code.to_lowercase())];
+    let s2 = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    assert_eq!(s2.payments[0].method, "credit_note");
+    assert_eq!(sales::credit_note_by_code(&conn, &note.code).unwrap().balance, 2300);
+    let mut input = sale_input(vec![(riz, 1.0)], "cash", 0, None);
+    input.payments = vec![pay("credit_note", 3500, &note.code)];
+    assert!(sales::create_sale(&mut conn, &caisse, input).is_err(), "plus que le reste de l'avoir");
+    sales::cancel_sale(&mut conn, &admin, s2.id, "erreur").unwrap();
+    assert_eq!(sales::credit_note_by_code(&conn, &note.code).unwrap().balance, 3500);
+    conn.execute("UPDATE credit_notes SET expires_on = '2000-01-01' WHERE id = ?1", [note.id]).unwrap();
+    let mut input = sale_input(vec![(huile, 1.0)], "cash", 0, None);
+    input.payments = vec![pay("credit_note", 1200, &note.code)];
+    assert!(sales::create_sale(&mut conn, &caisse, input).unwrap_err().to_string().contains("expiré"));
+
+    // Délai de retour dépassé (7 jours par défaut).
+    conn.execute("UPDATE sales SET created_at = '2000-01-01 10:00:00' WHERE id = ?1", [sale.id]).unwrap();
+    let late = returns::create_return(&mut conn, &caisse, &gerant, ret(vec![(item("Huile"), 1.0, true)], "cash")).unwrap_err();
+    assert!(late.to_string().contains("jours"));
+
+    // Rapport X, puis Z à la clôture : numéroté, chaîné, non modifiable.
+    let x = zreport::build(&conn, session.id).unwrap();
+    assert_eq!(x["returns"]["count"], 2);
+    assert_eq!(x["returns"]["damaged"], 1200);
+    assert_eq!(x["sales"]["cancelled_count"], 1);
+    let expected = x["cash"]["expected"].as_i64().unwrap();
+    let closed = cash::close(&conn, &caisse, cash::CloseInput { counted_amount: expected, note: None }).unwrap();
+    assert_eq!(closed.z_number, Some(1));
+    cash::open(&conn, &caisse, 5000).unwrap();
+    sales::create_sale(&mut conn, &caisse, sale_input(vec![(huile, 1.0)], "cash", 1200, None)).unwrap();
+    let closed = cash::close(&conn, &caisse, cash::CloseInput { counted_amount: 6200, note: None }).unwrap();
+    assert_eq!(closed.z_number, Some(2));
+    let list = zreport::list(&conn, &zreport::ZFilter::default()).unwrap();
+    assert_eq!(list.iter().map(|z| z.number).collect::<Vec<_>>(), vec![2, 1]);
+    assert!(list.iter().all(|z| z.intact));
+    assert_eq!(list[1].data["net_total"], 9400 - 8200);
+    assert_eq!(list[0].data["cash"]["difference"], 0);
+    assert!(conn.execute("UPDATE z_reports SET data = '{}' WHERE number = 1", []).is_err());
+    assert!(conn.execute("DELETE FROM z_reports", []).is_err());
 }

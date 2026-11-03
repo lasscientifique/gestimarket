@@ -126,16 +126,26 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
     if !enabled {
         return Err("Publication Supabase désactivée.".into());
     }
+    // Sans projet saisi : celui d'Eden Dev, lu par l'application mobile GestiMarket.
+    let (base, key) = if base.trim().is_empty() && key.trim().is_empty() {
+        (crate::license::SUPABASE_URL.to_string(), crate::license::SUPABASE_KEY.to_string())
+    } else {
+        (base, key)
+    };
     let base = base.trim().trim_end_matches('/').to_string();
     let local_test = base.starts_with("http://127.0.0.1") || base.starts_with("http://localhost");
     if !(base.starts_with("https://") || local_test) || key.trim().is_empty() {
         return Err("Renseignez l'URL du projet Supabase (https://….supabase.co) et la clé publique (anon / publishable).".into());
     }
+    // Boutique Eden Dev de ce PC : la propriétaire connectée dans l'application mobile retrouve ce serveur.
+    let mut published = payload(&shop_name, port, &crate::network::local_ips(), &public_url, state.live.online_count());
+    published["store_code"] = json!(crate::license::account().store_code);
+    published["pc_id"] = json!(crate::license::pc_id());
     let body = json!({
         "p_shop_code": code,
         "p_secret": secret,
         "p_active": active,
-        "p_payload": payload(&shop_name, port, &crate::network::local_ips(), &public_url, state.live.online_count()),
+        "p_payload": published,
     });
     set_status(|s| {
         s.last_try_at = Some(now());
@@ -188,6 +198,11 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
             Err(msg)
         }
     }
+}
+
+/// Port du poste serveur (0 : ce poste n'est pas le serveur).
+pub fn port() -> u16 {
+    *PORT.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Boucle de publication du poste serveur (toutes les 30 secondes).

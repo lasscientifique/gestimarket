@@ -137,6 +137,10 @@ function VoucherForm({ onChange }: { onChange: () => void }) {
 }
 
 /** Formule et durée ; indique quand la nouvelle période commencera. */
+/** Durées proposées : 12 mois = 10 mois payés (2 mois offerts). */
+const DURATIONS = [1, 3, 6, 12];
+const billedMonths = (m: number) => (m === 12 ? 10 : m);
+
 function PlanPicker({
   options,
   lic,
@@ -183,8 +187,9 @@ function PlanPicker({
         ))}
       </div>
       <div className="segmented">
-        {[1, 3, 6].map((m) => (
-          <button type="button" key={m} className={months === m ? "active" : ""} onClick={() => setMonths(m)}>{tl("{0} mois", [m])}</button>
+        {DURATIONS.map((m) => (
+          <button type="button" key={m} className={months === m ? "active" : ""} onClick={() => setMonths(m)}>
+            {m === 12 ? tl("12 mois (2 offerts)") : tl("{0} mois", [m])}</button>
         ))}
       </div>
       <div className="pay-amount">
@@ -204,7 +209,7 @@ function usePlanChoice(options: AccountOptions, lic: LicenseStatus, wanted = "XO
   const [months, setMonths] = useState(1);
   const chosen = plans.find((p) => p.code === plan);
   const unit = chosen ? planPrice(chosen, wanted) : { amount: 0, currency: "XOF" };
-  return { plan, setPlan, months, setMonths, amount: unit.amount * months, currency: unit.currency };
+  return { plan, setPlan, months, setMonths, amount: unit.amount * billedMonths(months), currency: unit.currency };
 }
 
 function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {

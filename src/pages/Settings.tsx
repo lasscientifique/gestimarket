@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { MobileOperatorsEditor } from "../components/MobileOperators";
 import { countryOptions, currencyOptions, currencyPositionOf, currencySymbolOf } from "../lib/countries";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -17,7 +17,7 @@ import { Badge } from "../components/ui";
 import { activitiesOf, BusinessTypeGrid, featuresOf, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
 import { Building2 } from "lucide-react";
 import { currencySymbol, dateTime, isoDate, minorToInput, toMinor } from "../lib/format";
-import type { CloudStatus, Settings } from "../types";
+import type { CloudStatus, Settings, TunnelStatus } from "../types";
 import { LANGS, tl, tm } from "../lib/i18n";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
@@ -280,6 +280,18 @@ export default function SettingsPage() {
           <input inputMode="numeric" value={f.expiry_alert_days ?? "30"} onChange={set("expiry_alert_days")} style={{ maxWidth: 160 }} />
         </Field>
       </div>
+
+      <div className="card">
+        <h3 className="card-title"><Receipt size={18} />  {tl("Retours et avoirs")}</h3>
+        <div className="form-grid">
+          <Field label={tl("Retour possible pendant (jours après la vente)")}>
+            <input inputMode="numeric" value={f.return_days ?? "7"} onChange={set("return_days")} style={{ maxWidth: 160 }} />
+          </Field>
+          <Field label={tl("Un avoir est valable (jours)")}>
+            <input inputMode="numeric" value={f.credit_note_days ?? "90"} onChange={set("credit_note_days")} style={{ maxWidth: 160 }} />
+          </Field>
+        </div>
+      </div>
         </>
       )}
 
@@ -294,6 +306,7 @@ export default function SettingsPage() {
               <Link to="/poste">{tl("Poste & réseau")}</Link>  {tl("(menu de gauche, accessible à tous).")}</p>
           </div>
           <MobileAppSettings f={f} setF={setF} />
+          <InternetAddressSettings />
         </>
       )}
 
@@ -550,12 +563,12 @@ function MobileAppSettings({ f, setF }: { f: Settings; setF: (s: Settings) => vo
     <div className="card">
       <h3 className="card-title"><Smartphone size={18} />  {tl("Application mobile (Supabase)")} <HelpTip k="mobile_app" /></h3>
       <p className="muted">
-        {tl("Le poste serveur publie toutes les 30 secondes son état (actif / arrêté) et ses adresses sur votre projet Supabase. L'application mobile (FlutterFlow, widget WebView) lit l'adresse avec le")} <strong>{tl("code du commerce")}</strong>  {tl("et ouvre GestiMarket directement. Exécutez une fois le script")} <span className="mono">{tl("supabase/gestimarket_mobile.sql")}</span>  {tl("dans Supabase (SQL Editor).")}</p>
+        {tl("Le poste serveur publie toutes les 30 secondes son état (actif / arrêté) et ses adresses. L'application mobile GestiMarket ouvre la boutique avec le compte boutique de la propriétaire, ou avec le")} <strong>{tl("code du commerce")}</strong>  {tl("pour le personnel. Laissez l'URL et la clé vides pour utiliser le service d'Eden Dev.")}</p>
       <label className="check" style={{ margin: "8px 0 12px" }}>
         <input type="checkbox" checked={f.supabase_enabled === "1"} onChange={(e) => setF({ ...f, supabase_enabled: e.target.checked ? "1" : "0" })} />
         {tl("Publier l'adresse du poste serveur sur Supabase")}</label>
       <div className="form-grid">
-        <Field label={tl("URL du projet Supabase")} hint={tl("Supabase → Project Settings → API (ex. https://abcd.supabase.co)")}>
+        <Field label={tl("URL du projet Supabase")} hint={tl("Vide : service d'Eden Dev (application GestiMarket). Sinon : votre projet (ex. https://abcd.supabase.co).")}>
           <input value={f.supabase_url ?? ""} onChange={set("supabase_url")} placeholder="https://xxxxxxxx.supabase.co" />
         </Field>
         <Field label={tl("Clé publique (anon / publishable)")} hint={tl("Jamais la clé « service_role » : elle donnerait tous les droits.")}>
@@ -564,7 +577,7 @@ function MobileAppSettings({ f, setF }: { f: Settings; setF: (s: Settings) => vo
         <Field label={tl("Code du commerce")} hint={tl("Créé automatiquement à la première publication. À saisir ou scanner une fois dans l'application.")}>
           <input className="mono" value={f.shop_code ?? ""} onChange={(e) => setF({ ...f, shop_code: e.target.value.toUpperCase() })} placeholder={tl("GM-XXXXXX (automatique)")} />
         </Field>
-        <Field label={tl("Adresse publique (facultatif)")} hint={tl("Seulement si le serveur est joignable depuis Internet (redirection de port, tunnel).")}>
+        <Field label={tl("Adresse publique (facultatif)")} hint={tl("Remplie par l'adresse Internet automatique ci-dessous ; sinon votre propre tunnel ou redirection de port.")}>
           <input value={f.public_url ?? ""} onChange={set("public_url")} placeholder="https://magasin.exemple.com" />
         </Field>
       </div>
@@ -587,6 +600,96 @@ function MobileAppSettings({ f, setF }: { f: Settings; setF: (s: Settings) => vo
           <p className="muted small">{tl("Enregistrez d'abord les modifications (bouton en haut), puis « Publier maintenant » pour tester.")}</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Commande d'installation de cloudflared (une fois, sur le PC serveur). */
+const WINGET_CLOUDFLARED = "winget install --id Cloudflare.cloudflared";
+
+/** Adresse Internet automatique : tunnel Cloudflare créé par Eden Dev pour la boutique (PRO, BUSINESS). */
+function InternetAddressSettings() {
+  const { toast } = useApp();
+  const [st, setSt] = useState<TunnelStatus | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => api.tunnelStatus().then(setSt).catch(() => undefined);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const setup = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const s = await api.tunnelSetup(email, password);
+      setSt(s);
+      setAsking(false);
+      setPassword("");
+      toast.success(tl("Adresse Internet de la boutique : {0}", [s.url]));
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!confirm(tl("Retirer l'adresse Internet de ce PC ? Les téléphones ne joindront plus la boutique depuis Internet (l'adresse reste réservée à la boutique)."))) return;
+    try {
+      setSt(await api.tunnelRemove());
+    } catch (err) {
+      toast.error(err);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3 className="card-title"><Network size={18} />  {tl("Adresse Internet de la boutique")}</h3>
+      <p className="muted">{tl("Eden Dev donne à la boutique une adresse fixe en HTTPS (ex. https://gm-000123.gestimarket.com) qui mène à ce poste serveur, sans redirection de port ni réglage de la box. Les téléphones autorisés retrouvent GestiMarket depuis n'importe où. Formules PRO et BUSINESS.")}</p>
+      {st?.configured ? (
+        <>
+          <div className="kv"><span>{tl("Adresse")}</span><strong className="mono">{st.url}</strong></div>
+          <div className="kv">
+            <span>{tl("Tunnel")}</span>
+            <span>{st.running ? <Badge tone="success">{tl("en marche")}</Badge> : <Badge tone="danger">{tl("arrêté")}</Badge>}</span>
+          </div>
+        </>
+      ) : (
+        <p className="small">{tl("Pas encore d'adresse Internet sur ce PC.")}</p>
+      )}
+      {st && !st.cloudflared && (
+        <div className="alert alert-warning small">
+          {tl("cloudflared n'est pas installé sur ce PC. Ouvrez une invite de commandes, tapez la commande ci-dessous, puis redémarrez GestiMarket :")}
+          <div className="mono" style={{ marginTop: 6 }}>{WINGET_CLOUDFLARED}</div>
+        </div>
+      )}
+      {st?.error && <div className="alert alert-danger small">{st.error}</div>}
+      {isRemote() ? (
+        <p className="muted small">{tl("À régler sur le PC serveur de la boutique.")}</p>
+      ) : asking ? (
+        <form onSubmit={setup} className="form-grid" style={{ marginTop: 10 }}>
+          <Field label={tl("E-mail du compte boutique")}>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+          </Field>
+          <Field label={tl("Mot de passe du compte boutique")}>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </Field>
+          <div className="row-end" style={{ gridColumn: "1 / -1" }}>
+            <button type="button" className="btn" onClick={() => setAsking(false)}>{tl("Annuler")}</button>
+            <button className="btn btn-primary" disabled={busy}>{busy ? tl("Création…") : tl("Créer l'adresse")}</button>
+          </div>
+        </form>
+      ) : (
+        <div className="row-end" style={{ marginTop: 10 }}>
+          {st?.configured && <button className="btn" onClick={remove}>{tl("Retirer de ce PC")}</button>}
+          <button className="btn btn-primary" onClick={() => setAsking(true)}>
+            {st?.configured ? tl("Redemander l'adresse") : tl("Créer l'adresse Internet")}</button>
+        </div>
+      )}
     </div>
   );
 }

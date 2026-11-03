@@ -122,6 +122,8 @@ const PAYMENT_SOURCE: Record<string, string> = {
   credit: "Crédit client",
   other: "Autre",
   mixed: "Paiement mixte",
+  credit_note: "Avoir",
+  debt: "Déduit de la dette du client",
 };
 /** Libellés choisis par la boutique (opérateurs de mobile money…) : affichés tels quels. */
 let customPayments: Record<string, string> = {};

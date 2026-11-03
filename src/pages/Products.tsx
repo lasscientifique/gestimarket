@@ -309,9 +309,19 @@ function ProductForm({
     track_stock: product?.track_stock ?? !restaurant,
     active: product?.active ?? true,
     initial_stock: "",
+    wholesale_price: product?.wholesale_price ? minorToInput(product.wholesale_price) : "",
+    wholesale_min_qty: product?.wholesale_min_qty ? String(product.wholesale_min_qty).replace(".", ",") : "",
   });
-  const [packs, setPacks] = useState<(Omit<Packaging, "sale_price" | "quantity"> & { price: string; qty: string })[]>(
-    (product?.packagings ?? []).map((k) => ({ ...k, price: minorToInput(k.sale_price), qty: String(k.quantity).replace(".", ",") })),
+  const [packs, setPacks] = useState<
+    (Omit<Packaging, "sale_price" | "quantity" | "wholesale_price" | "wholesale_min_qty"> & { price: string; qty: string; wprice: string; wqty: string })[]
+  >(
+    (product?.packagings ?? []).map((k) => ({
+      ...k,
+      price: minorToInput(k.sale_price),
+      qty: String(k.quantity).replace(".", ","),
+      wprice: k.wholesale_price ? minorToInput(k.wholesale_price) : "",
+      wqty: k.wholesale_min_qty ? String(k.wholesale_min_qty).replace(".", ",") : "",
+    })),
   );
   const [busy, setBusy] = useState(false);
   const [scan, setScan] = useState<null | "product" | number>(null);
@@ -347,7 +357,7 @@ function ProductForm({
     try {
       // Changer un prix ou désactiver un produit existant demande une confirmation par PIN.
       let pin: string | undefined;
-      if (product && (cost !== product.purchase_price || price !== product.sale_price || (product.active && !f.active))) {
+      if (product && (cost !== product.purchase_price || price !== product.sale_price || toMinor(f.wholesale_price || "0") !== product.wholesale_price || (product.active && !f.active))) {
         const p = await askPin({
           title: tl("Modification de prix"),
           level: "manager",
@@ -375,9 +385,19 @@ function ProductForm({
         track_stock: f.track_stock,
         active: f.active,
         initial_stock: product ? undefined : parseNumber(f.initial_stock) || 0,
+        wholesale_price: toMinor(f.wholesale_price || "0"),
+        wholesale_min_qty: parseNumber(f.wholesale_min_qty) || 0,
         packagings: packs
           .filter((k) => k.name.trim())
-          .map((k) => ({ id: k.id, name: k.name.trim(), quantity: parseNumber(k.qty) || 0, barcode: k.barcode?.trim() || null, sale_price: toMinor(k.price || "0") })),
+          .map((k) => ({
+            id: k.id,
+            name: k.name.trim(),
+            quantity: parseNumber(k.qty) || 0,
+            barcode: k.barcode?.trim() || null,
+            sale_price: toMinor(k.price || "0"),
+            wholesale_price: toMinor(k.wprice || "0"),
+            wholesale_min_qty: parseNumber(k.wqty) || 0,
+          })),
       }, pin);
       toast.success(product ? tl("Produit modifié.") : tl("Produit créé."));
       onSaved();
@@ -486,6 +506,14 @@ function ProductForm({
               <input inputMode="decimal" value={f.tax_rate} onChange={(e) => setRate(e.target.value)} />
             )}
           </Field>
+          <Field label={<>{tl("Prix de gros TTC ({0})", [currencySymbol()])} <HelpTip k="wholesale" /></>} hint={tl("Vide : pas de prix de gros")}>
+            <input inputMode="decimal" value={f.wholesale_price} onChange={(e) => set("wholesale_price", e.target.value)} placeholder={tl("Ex. prix pour les revendeurs")} />
+          </Field>
+          {f.wholesale_price && (
+            <Field label={tl("Prix de gros à partir de ({0})", [f.unit])} hint={tl("Vide : seulement pour les clients grossistes")}>
+              <input inputMode="decimal" value={f.wholesale_min_qty} onChange={(e) => set("wholesale_min_qty", e.target.value)} placeholder="10" />
+            </Field>
+          )}
           <Field label={tl("Seuil d'alerte de stock")}>
             <input inputMode="decimal" value={f.min_stock} onChange={(e) => set("min_stock", e.target.value)} />
           </Field>
@@ -506,7 +534,7 @@ function ProductForm({
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => setPacks((l) => [...l, { id: null, name: "", qty: "", price: "", barcode: "" }])}
+                  onClick={() => setPacks((l) => [...l, { id: null, name: "", qty: "", price: "", barcode: "", wprice: "", wqty: "" }])}
                 >
                   <Plus size={13} />  {tl("Ajouter")}</button>
               </div>
@@ -520,6 +548,7 @@ function ProductForm({
                       <th className="num">{tl("Contient (")}{f.unit})</th>
                       <th>{tl("Code-barres")}</th>
                       <th className="num">{tl("Prix (")}{currencySymbol()})</th>
+                      <th className="num">{tl("Gros (prix · à partir de)")}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -542,6 +571,10 @@ function ProductForm({
                           <td className="num">
                             <input inputMode="decimal" className="num" style={{ width: 100 }} value={k.price} onChange={(e) => setPack(i, "price", e.target.value)} placeholder={unitTotal ? minorToInput(unitTotal) : ""} />
                             {pp > 0 && unitTotal > pp && <div className="muted small">−{money(unitTotal - pp)}  {tl("vs détail")}</div>}
+                          </td>
+                          <td className="num">
+                            <input inputMode="decimal" className="num" style={{ width: 90 }} value={k.wprice} onChange={(e) => setPack(i, "wprice", e.target.value)} placeholder={tl("prix")} />
+                            <input inputMode="decimal" className="num" style={{ width: 60, marginLeft: 4 }} value={k.wqty} onChange={(e) => setPack(i, "wqty", e.target.value)} placeholder={tl("qté")} title={tl("Nombre de conditionnements à partir duquel le prix de gros s'applique (vide : clients grossistes)")} />
                           </td>
                           <td><button type="button" className="icon-btn danger" onClick={() => setPacks((l) => l.filter((_, j) => j !== i))}><Trash2 size={14} /></button></td>
                         </tr>

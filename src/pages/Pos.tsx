@@ -30,6 +30,7 @@ import {
   Users,
   Eye,
   HandHelping,
+  Ticket,
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
@@ -46,7 +47,7 @@ import { locationText, currencyDecimals, currencySymbol, minorToInput, money, pa
 import { printReceipt } from "../lib/receipt";
 import { IDLE_DISPLAY, publishDisplay, type DisplayLine } from "../lib/display";
 import { isTauri, posteName } from "../lib/transport";
-import type { CashSession, Category, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, Sale } from "../types";
+import type { CashSession, Category, CreditNote, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, QuoteLine, Sale } from "../types";
 import { locale, tl } from "../lib/i18n";
 
 interface CartLine {
@@ -55,10 +56,16 @@ interface CartLine {
   packaging: Packaging | null;
   quantity: number;
   discount: number;
+  /** Prix calculé par le serveur : gros (quantité, client grossiste) ou promotion du jour. */
+  quoted?: QuoteLine | null;
 }
 
+/** Exemple de code d'avoir (champ de saisie en caisse). */
+const CREDIT_NOTE_EXAMPLE = "AV20261103-0001-K7QM";
+
 /** Prix, libellé et nombre d'unités de base d'une ligne (produit à l'unité ou conditionnement). */
-const linePrice = (l: { product: Product; packaging: Packaging | null }) => l.packaging?.sale_price ?? l.product.sale_price;
+const linePrice = (l: { product: Product; packaging: Packaging | null; quoted?: QuoteLine | null }) =>
+  l.quoted?.unit_price ?? l.packaging?.sale_price ?? l.product.sale_price;
 const lineUnit = (l: { product: Product; packaging: Packaging | null }) => l.packaging?.name ?? l.product.unit;
 const lineFactor = (l: { packaging: Packaging | null }) => l.packaging?.quantity ?? 1;
 const lineName = (l: { product: Product; packaging: Packaging | null }) => (l.packaging ? `${l.product.name} — ${l.packaging.name}` : l.product.name);
@@ -189,6 +196,27 @@ export default function PosPage() {
     }),
     [cart, customer, discount, subtotal, total, itemsCount],
   );
+  const quoteKey = JSON.stringify([customer?.id ?? null, cart.map((l) => [l.product.id, l.packaging?.id ?? null, l.quantity])]);
+  useEffect(() => {
+    if (!cart.length) return;
+    const items = cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, quantity: l.quantity }));
+    const t = setTimeout(() => {
+      api
+        .saleQuote(items, customer?.id ?? null)
+        .then((quotes) =>
+          setCart((c) =>
+            c.map((l, i) => {
+              const q = quotes[i];
+              return q && q.product_id === l.product.id && (q.packaging_id ?? null) === (l.packaging?.id ?? null) ? { ...l, quoted: q } : l;
+            }),
+          ),
+        )
+        .catch(() => undefined);
+    }, 200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey]);
+
   const liveRef = useRef({ content: liveContent, status: "cart" });
   liveRef.current = { content: liveContent, status: modal === "pay" ? "payment" : "cart" };
   const pushLive = useCallback(async () => {
@@ -596,6 +624,9 @@ export default function PosPage() {
                 <span className="line-name">{l.product.name}</span>
                 <span className="line-sub">
                   {l.packaging && <Badge tone="info"><Package size={11} /> {l.packaging.name}</Badge>}
+                  {l.quoted?.kind === "promo" && <Badge tone="success">{l.quoted.promotion_name ?? tl("Promo")}</Badge>}
+                  {l.quoted?.kind === "wholesale" && <Badge tone="info">{tl("Gros")}</Badge>}
+                  {l.quoted && l.quoted.kind !== "retail" && <s className="muted">{money(l.quoted.regular_price, false)}</s>}
                   {money(linePrice(l))} / {lineUnit(l)}
                   {l.discount > 0 && <Badge tone="warning">-{money(l.discount)}</Badge>}
                 </span>
@@ -900,6 +931,7 @@ function PaymentModal({
     { id: "mobile_money", label: tl("Autre mobile money"), icon: <Smartphone size={22} /> },
     { id: "card", label: tl("Carte"), icon: <CreditCard size={22} /> },
     { id: "other", label: tl("Autre"), icon: <CircleEllipsis size={22} /> },
+    { id: "credit_note", label: tl("Avoir"), icon: <Ticket size={22} /> },
     { id: "credit", label: tl("Crédit client"), icon: <HandCoins size={22} /> },
   ];
 
@@ -915,6 +947,9 @@ function PaymentModal({
   // Le premier appui sur le pavé numérique remplace le montant proposé par défaut.
   const touched = useRef(false);
   const refRef = useRef<HTMLInputElement>(null);
+  const [note_, setNote_] = useState<CreditNote | null>(null);
+  const [noteError, setNoteError] = useState("");
+  const [noteScan, setNoteScan] = useState(false);
 
   const sumAdded = (pred: (p: PaymentInput) => boolean) => added.filter(pred).reduce((s, p) => s + p.amount, 0);
   const addedNonCash = sumAdded((p) => p.method !== "cash");
@@ -935,7 +970,7 @@ function PaymentModal({
   // Orange Money et opérateurs configurés : QR marchand + ID de transaction.
   const operator = operatorOf(method, operators);
   const qrPanel = method === "orange_money" || !!operator;
-  const refRequired = (m: string) => (m === "orange_money" ? omRequireRef : !!operatorOf(m, operators)?.require_ref);
+  const refRequired = (m: string) => (m === "credit_note" ? true : m === "orange_money" ? omRequireRef : !!operatorOf(m, operators)?.require_ref);
   const missingRef = all.find((p) => refRequired(p.method) && !p.reference);
 
   // L'écran client suit le paiement en direct (montant reçu, reste, monnaie, QR Orange Money).
@@ -955,10 +990,14 @@ function PaymentModal({
     nonCash > total
       ? tl("Les paiements électroniques dépassent le total : la monnaie ne se rend qu'en espèces.")
       : missingRef
-        ? missingRef.method === "orange_money"
+        ? missingRef.method === "credit_note"
+          ? tl("Scannez ou saisissez le code de l'avoir, puis « Vérifier ».")
+          : missingRef.method === "orange_money"
           ? tl("Saisissez ou scannez l'ID de transaction Orange Money (reçu par SMS).")
           : tl("Saisissez ou scannez l'ID de transaction {0} (reçu par SMS).", [paymentLabel(missingRef.method)])
-        : remaining > 0 && !canCredit
+        : method === "credit_note" && current && note_ && current.amount > note_.balance
+          ? tl("Il ne reste que {0} sur cet avoir.", [money(note_.balance)])
+          : remaining > 0 && !canCredit
           ? tl("Il manque {0}. Pour vendre à crédit, associez un client disposant d'un plafond de crédit.", [money(remaining)])
           : null;
 
@@ -967,6 +1006,8 @@ function PaymentModal({
     setMethod(m);
     setReference("");
     setPhone("");
+    setNote_(null);
+    setNoteError("");
     setAmount(m === "credit" ? "" : minorToInput(dueNow));
     setTimeout(() => (m === "orange_money" || m.startsWith("mm:") ? refRef.current?.focus() : amountRef.current?.select()), 0);
   };
@@ -984,6 +1025,23 @@ function PaymentModal({
     setMethod("cash");
     setAmount(minorToInput(rest));
     setTimeout(() => amountRef.current?.select(), 0);
+  };
+
+  /** Avoir : le code (scanné ou saisi) est vérifié ; le montant proposé est son reste, au plus le dû. */
+  const checkNote = async (code = reference) => {
+    setNoteError("");
+    setNote_(null);
+    if (!code.trim()) return;
+    try {
+      const n = await api.getCreditNote(code.trim());
+      if (n.status !== "active" || n.balance <= 0) throw new Error(tl("Cet avoir a déjà été entièrement utilisé."));
+      if (n.expires_on < new Date().toISOString().slice(0, 10)) throw new Error(tl("Cet avoir a expiré le {0}.", [n.expires_on]));
+      setNote_(n);
+      setReference(n.code);
+      setAmount(minorToInput(Math.min(n.balance, dueNow)));
+    } catch (e) {
+      setNoteError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const submit = async () => {
@@ -1056,7 +1114,37 @@ function PaymentModal({
         </div>
       )}
 
-      {qrPanel ? (
+      {method === "credit_note" ? (
+        <div className="form-grid">
+          <Field label={tl("Code de l'avoir *")} hint={tl("Scannez le code-barres du bon avec la douchette, ou recopiez-le.")}>
+            <div className="input-group">
+              <input
+                ref={refRef}
+                className="mono input-lg"
+                value={reference}
+                autoFocus
+                onChange={(e) => {
+                  setReference(e.target.value.trim().toUpperCase());
+                  setNote_(null);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && (note_ ? submit() : checkNote())}
+                placeholder={CREDIT_NOTE_EXAMPLE}
+              />
+              <button type="button" className="btn" onClick={() => checkNote()}>{tl("Vérifier")}</button>
+              <button type="button" className="btn" title={tl("Scanner le bon avec la caméra")} onClick={() => setNoteScan(true)}>
+                <Camera size={18} />
+              </button>
+            </div>
+            {noteScan && <CameraScanner title={tl("Scanner l'avoir")} onCode={(c) => checkNote(c)} onClose={() => setNoteScan(false)} />}
+          </Field>
+          {note_ && (
+            <Field label={tl("Montant payé avec l'avoir ({0})", [currencySymbol()])} hint={tl("Reste sur l'avoir : {0} · valable jusqu'au {1}", [money(note_.balance), note_.expires_on])}>
+              <input ref={amountRef} className="input-lg" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </Field>
+          )}
+          {noteError && <div className="alert alert-danger" style={{ gridColumn: "1 / -1" }}>{noteError}</div>}
+        </div>
+      ) : qrPanel ? (
         <div className="om-pay" style={operatorTheme(operator?.color)}>
           <PaymentQr method={method} size={180} />
           <div className="om-fields">

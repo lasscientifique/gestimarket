@@ -32,8 +32,16 @@ pub struct CashSession {
     pub customer_payments_electronic: i64,
     pub cash_in: i64,
     pub cash_out: i64,
+    /// Ventes payées avec un avoir.
+    pub credit_note_sales: i64,
+    /// Retours de la session : nombre, montant rendu, dont espèces sorties du tiroir.
+    pub returns_count: i64,
+    pub returns_total: i64,
+    pub refunds_cash: i64,
     /// Espèces théoriquement présentes dans le tiroir à l'instant présent.
     pub expected_now: i64,
+    /// Numéro du rapport Z (session clôturée).
+    pub z_number: Option<i64>,
 }
 
 const SESSION_SELECT: &str = "SELECT cs.id, cs.user_id, u.full_name, cs.opened_at, cs.closed_at, cs.opening_amount,
@@ -65,7 +73,12 @@ fn session_from_row(r: &Row) -> rusqlite::Result<CashSession> {
         customer_payments_electronic: 0,
         cash_in: 0,
         cash_out: 0,
+        credit_note_sales: 0,
+        returns_count: 0,
+        returns_total: 0,
+        refunds_cash: 0,
         expected_now: 0,
+        z_number: None,
     })
 }
 
@@ -101,7 +114,20 @@ fn fill_summary(conn: &Connection, s: &mut CashSession) -> AppResult<()> {
         [s.id],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    s.expected_now = s.opening_amount + s.cash_sales + s.customer_payments_cash + s.cash_in - s.cash_out;
+    s.credit_note_sales = conn.query_row(
+        "SELECT COALESCE(SUM(sp.amount), 0) FROM sale_payments sp JOIN sales sa ON sa.id = sp.sale_id
+         WHERE sa.session_id = ?1 AND sa.status = 'completed' AND sp.method = 'credit_note'",
+        [s.id],
+        |r| r.get(0),
+    )?;
+    (s.returns_count, s.returns_total, s.refunds_cash) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(SUM(CASE WHEN refund_method = 'cash' THEN total END), 0)
+         FROM returns WHERE session_id = ?1",
+        [s.id],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    s.z_number = conn.query_row("SELECT number FROM z_reports WHERE session_id = ?1", [s.id], |r| r.get(0)).optional()?;
+    s.expected_now = s.opening_amount + s.cash_sales + s.customer_payments_cash + s.cash_in - s.cash_out - s.refunds_cash;
     Ok(())
 }
 
@@ -250,11 +276,14 @@ fn close_session(conn: &Connection, user: &SessionUser, session_id: i64, input: 
     }
     let s = get_session(conn, session_id)?;
     let difference = input.counted_amount - s.expected_now;
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
         "UPDATE cash_sessions SET status = 'closed', closed_at = ?1, expected_amount = ?2, counted_amount = ?3,
             difference = ?4, note = ?5 WHERE id = ?6",
         params![db::now(), s.expected_now, input.counted_amount, difference, db::clean(&input.note), session_id],
     )?;
+    crate::services::zreport::save(&tx, session_id, user.id)?;
+    tx.commit()?;
     audit::log(
         conn,
         user,

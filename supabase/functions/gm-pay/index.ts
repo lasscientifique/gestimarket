@@ -3,6 +3,8 @@
 //
 // 1. GestiMarket : POST JSON { "pc_id", "plan", "months" }
 //    → gm_card_start (abonnement et paiement « pending » de la boutique de ce PC)
+//    Application mobile : POST JSON { "store_code", "plan", "months" } avec « Authorization: Bearer <session
+//    du compte boutique> » → gm_card_start_owner (boutique de la propriétaire connectée).
 //    → champs signés (HMAC-SHA256 avec la clé secrète du profil Secure Acceptance)
 //    → { status: "ok", payment_id, amount, currency, plan_label, months, endpoint, fields }.
 //    GestiMarket ouvre la page de paiement de Cybersource dans le navigateur (formulaire envoyé seul).
@@ -62,16 +64,27 @@ async function start(req: Request): Promise<Response> {
   if (!PROFILE_ID || !ACCESS_KEY || !SECRET_KEY) {
     return json({ status: "error", message: "Le paiement par carte Visa n'est pas encore configuré chez Eden Dev : utilisez une carte de bon ou Orange Money." }, 503);
   }
-  let body: { pc_id?: unknown; plan?: unknown; months?: unknown } = {};
+  let body: { pc_id?: unknown; store_code?: unknown; plan?: unknown; months?: unknown } = {};
   try {
     body = await req.json();
   } catch {
     // refusé ci-dessous
   }
-  const pc = String(body.pc_id ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
-  if (!/^[0-9A-Z]{12}$/.test(pc)) return json({ status: "error", message: "Identifiant de PC invalide." }, 400);
-
-  const { data: s, error } = await sb.rpc("gm_card_start", { p_pc_id: pc, p_plan: String(body.plan ?? ""), p_months: Number(body.months) });
+  const plan = String(body.plan ?? "");
+  const months = Number(body.months);
+  let started;
+  if (body.store_code != null) {
+    // Téléphone de la propriétaire : la session du compte boutique désigne la boutique.
+    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: u } = jwt ? await sb.auth.getUser(jwt) : { data: { user: null } };
+    if (!u?.user) return json({ status: "error", message: "Connectez-vous à votre compte boutique." }, 401);
+    started = await sb.rpc("gm_card_start_owner", { p_uid: u.user.id, p_store_code: String(body.store_code), p_plan: plan, p_months: months });
+  } else {
+    const pc = String(body.pc_id ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+    if (!/^[0-9A-Z]{12}$/.test(pc)) return json({ status: "error", message: "Identifiant de PC invalide." }, 400);
+    started = await sb.rpc("gm_card_start", { p_pc_id: pc, p_plan: plan, p_months: months });
+  }
+  const { data: s, error } = started;
   if (error) return json({ status: "error", message: error.message }, 400);
 
   const owner = clean(s.store?.owner_name, 60).split(" ").filter(Boolean);

@@ -1,4 +1,5 @@
-import type { Sale, Settings } from "../types";
+import type { CreditNote, Sale, SaleReturn, Settings, ZData } from "../types";
+import { barcodeSvg } from "../components/LabelsModal";
 import { dateTime, money, paymentLabelShop, qty } from "./format";
 import { ts } from "./i18n";
 import { mediaUrl } from "./media";
@@ -14,10 +15,14 @@ export function receiptHtml(sale: Sale, settings: Settings): string {
       <div class="r-item">
         <div class="r-name">${esc(i.product_name)}</div>
         <div class="r-row"><span>${qty(i.quantity)} ${esc(i.unit)} × ${money(i.unit_price, false)}</span><span>${money(i.total, false)}</span></div>
+        ${i.regular_price && i.price_kind !== "retail"
+          ? `<div class="r-row r-small"><span>${i.price_kind === "promo" ? ts("Promo") : ts("Prix de gros")} (${ts("au lieu de")} ${money(i.regular_price, false)})</span><span></span></div>`
+          : ""}
         ${i.discount > 0 ? `<div class="r-row r-small"><span>${ts("Remise")}</span><span>-${money(i.discount, false)}</span></div>` : ""}
       </div>`,
     )
     .join("");
+  const saved = sale.items.reduce((s, i) => s + (i.regular_price && i.price_kind !== "retail" ? Math.round((i.regular_price - i.unit_price) * i.quantity) : 0), 0);
 
   const row = (label: string, value: string, strong = false) =>
     `<div class="r-row ${strong ? "r-strong" : ""}"><span>${label}</span><span>${value}</span></div>`;
@@ -57,6 +62,7 @@ export function receiptHtml(sale: Sale, settings: Settings): string {
       .join("")}
     ${sale.change_due > 0 ? row(ts("Monnaie rendue"), money(sale.change_due), true) : ""}
     ${sale.credit_amount > 0 ? row(ts("Reste à crédit"), money(sale.credit_amount), true) : ""}
+    ${saved > 0 ? `<div class="r-sep"></div>${row(ts("Vous économisez"), money(saved), true)}` : ""}
     <div class="r-sep"></div>
     <div class="r-center">${esc(settings.receipt_footer)}</div>
     <div class="r-center r-small">${ts("Articles :")} ${qty(sale.items.reduce((s, i) => s + i.quantity, 0))}</div>
@@ -94,4 +100,121 @@ export function printHtml(html: string, widthMm?: number) {
 
 export function printReceipt(sale: Sale, settings: Settings) {
   printHtml(receiptHtml(sale, settings), Number(settings.receipt_width || 80));
+}
+
+const row = (label: string, value: string, strong = false) =>
+  `<div class="r-row ${strong ? "r-strong" : ""}"><span>${label}</span><span>${value}</span></div>`;
+
+const shopHeader = (settings: Settings) => `
+    <div class="r-center">
+      <div class="r-title">${esc(settings.shop_name)}</div>
+      ${settings.shop_address ? `<div>${esc(settings.shop_address)}</div>` : ""}
+      ${settings.shop_phone ? `<div>${ts("Tél :")} ${esc(settings.shop_phone)}</div>` : ""}
+    </div>
+    <div class="r-sep"></div>`;
+
+/** Bon d'avoir : code complet en clair et en code-barres (scanné en caisse pour payer). */
+export function creditNoteHtml(note: CreditNote, settings: Settings): string {
+  return `
+  <div class="receipt">
+    ${shopHeader(settings)}
+    <div class="r-center r-title">${ts("AVOIR")}</div>
+    ${row(ts("Numéro"), esc(note.number))}
+    ${note.customer_name ? row(ts("Client"), esc(note.customer_name)) : ""}
+    ${row(ts("Montant"), money(note.amount), true)}
+    ${note.balance !== note.amount ? row(ts("Reste"), money(note.balance), true) : ""}
+    ${row(ts("Valable jusqu'au"), esc(note.expires_on.split("-").reverse().join("/")))}
+    <div class="r-sep"></div>
+    <div class="r-center">${barcodeSvg(note.code, 42)}</div>
+    <div class="r-center r-small">${ts("À présenter en caisse : utilisable en une ou plusieurs fois, non remboursable en espèces.")}</div>
+  </div>`;
+}
+
+/** Ticket de retour (et l'avoir s'il y en a un). */
+export function returnHtml(ret: SaleReturn, settings: Settings): string {
+  const lines = ret.items
+    .map(
+      (i) => `<div class="r-item"><div class="r-name">${esc(i.product_name)}${i.restock ? "" : ` (${ts("abîmé")})`}</div>
+        <div class="r-row"><span>${qty(i.quantity)}</span><span>-${money(i.total, false)}</span></div></div>`,
+    )
+    .join("");
+  return `
+  <div class="receipt">
+    ${shopHeader(settings)}
+    <div class="r-center r-title">${ts("RETOUR")}</div>
+    ${row(ts("Retour"), esc(ret.number))}
+    ${row(ts("Ticket d'origine"), esc(ret.sale_number))}
+    ${row(ts("Date"), dateTime(ret.created_at))}
+    ${row(ts("Caissier"), esc(ret.user_name))}
+    ${ret.approved_by_name ? row(ts("Validé par"), esc(ret.approved_by_name)) : ""}
+    ${ret.customer_name ? row(ts("Client"), esc(ret.customer_name)) : ""}
+    <div class="r-sep"></div>
+    ${lines}
+    <div class="r-sep"></div>
+    ${row(ts("Montant rendu"), money(ret.total), true)}
+    ${row(ts("Remboursement"), esc(paymentLabelShop(ret.refund_method)))}
+    ${ret.refund_reference ? row(ts("Réf."), esc(ret.refund_reference)) : ""}
+    <div class="r-row r-small"><span>${ts("Motif :")} ${esc(ret.reason)}</span></div>
+  </div>
+  ${ret.credit_note ? `<div class="r-cut"></div>${creditNoteHtml(ret.credit_note, settings)}` : ""}`;
+}
+
+export function printReturn(ret: SaleReturn, settings: Settings) {
+  printHtml(returnHtml(ret, settings), Number(settings.receipt_width || 80));
+}
+
+export function printCreditNote(note: CreditNote, settings: Settings) {
+  printHtml(creditNoteHtml(note, settings), Number(settings.receipt_width || 80));
+}
+
+/** Rapport X (caisse en cours) ou Z (clôture), sur ticket ou en A4. */
+export function zReportHtml(d: ZData, kind: "X" | "Z", settings: Settings): string {
+  const title = kind === "Z" ? `${ts("RAPPORT Z")} N° ${String(d.number ?? "").padStart(4, "0")}` : ts("RAPPORT X (caisse en cours)");
+  const methods = d.payments.map((p) => row(`${esc(paymentLabelShop(p.method))} (${p.count})`, money(p.amount))).join("");
+  const taxes = d.taxes.map((t) => row(`${ts("Taxe")} ${t.rate} % — ${ts("base")} ${money(t.base, false)}`, money(t.tax))).join("");
+  const refunds = d.returns.by_method.map((r) => row(`${esc(paymentLabelShop(r.method))} (${r.count})`, "-" + money(r.amount))).join("");
+  return `
+  <div class="receipt">
+    ${shopHeader(settings)}
+    <div class="r-center r-title">${title}</div>
+    ${row(ts("Caisse de"), esc(d.cashier))}
+    ${row(ts("Ouverte le"), dateTime(d.opened_at))}
+    ${d.closed_at ? row(ts("Clôturée le"), dateTime(d.closed_at)) : row(ts("Imprimé le"), esc(new Date().toLocaleString()))}
+    <div class="r-sep"></div>
+    <div class="r-strong">${ts("Ventes")}</div>
+    ${row(ts("Nombre de tickets"), String(d.sales.count))}
+    ${row(ts("Ventes brutes"), money(d.sales.gross))}
+    ${d.sales.line_discounts + d.sales.ticket_discounts > 0 ? row(ts("Remises"), "-" + money(d.sales.line_discounts + d.sales.ticket_discounts)) : ""}
+    ${d.sales.promo_savings > 0 ? row(ts("dont promotions (économie clients)"), money(d.sales.promo_savings)) : ""}
+    ${d.sales.wholesale_total > 0 ? row(ts("Ventes au prix de gros"), money(d.sales.wholesale_total)) : ""}
+    ${row(ts("Total des ventes TTC"), money(d.sales.total), true)}
+    ${taxes}
+    ${d.sales.cancelled_count > 0 ? row(`${ts("Ventes annulées")} (${d.sales.cancelled_count})`, money(d.sales.cancelled_total)) : ""}
+    <div class="r-sep"></div>
+    <div class="r-strong">${ts("Encaissements")}</div>
+    ${methods}
+    ${d.sales.credit > 0 ? row(ts("Crédit client"), money(d.sales.credit)) : ""}
+    ${d.customer_payments.cash + d.customer_payments.electronic > 0
+      ? row(ts("Règlements clients"), money(d.customer_payments.cash + d.customer_payments.electronic)) : ""}
+    <div class="r-sep"></div>
+    <div class="r-strong">${ts("Retours")} (${d.returns.count})</div>
+    ${refunds}
+    ${d.returns.damaged > 0 ? row(ts("dont articles abîmés"), money(d.returns.damaged)) : ""}
+    ${row(ts("Total net (ventes − retours)"), money(d.net_total), true)}
+    <div class="r-sep"></div>
+    <div class="r-strong">${ts("Espèces")}</div>
+    ${row(ts("Fond de caisse"), money(d.cash.opening))}
+    ${row(ts("Ventes en espèces"), money(d.cash.sales))}
+    ${d.cash.customer_payments ? row(ts("Règlements clients"), money(d.cash.customer_payments)) : ""}
+    ${d.cash.cash_in ? row(ts("Entrées"), money(d.cash.cash_in)) : ""}
+    ${d.cash.cash_out ? row(ts("Sorties"), "-" + money(d.cash.cash_out)) : ""}
+    ${d.cash.refunds ? row(ts("Remboursements"), "-" + money(d.cash.refunds)) : ""}
+    ${row(ts("Attendu"), money(d.cash.expected), true)}
+    ${d.cash.counted != null ? row(ts("Compté"), money(d.cash.counted)) : ""}
+    ${d.cash.difference != null ? row(ts("Écart"), money(d.cash.difference), true) : ""}
+  </div>`;
+}
+
+export function printZReport(d: ZData, kind: "X" | "Z", settings: Settings, a4 = false) {
+  printHtml(zReportHtml(d, kind, settings), a4 ? undefined : Number(settings.receipt_width || 80));
 }

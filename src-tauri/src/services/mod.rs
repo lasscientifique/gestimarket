@@ -8,13 +8,16 @@ pub mod locations;
 pub mod media;
 pub mod partners;
 pub mod plan;
+pub mod promotions;
 pub mod purchases;
+pub mod returns;
 pub mod reports;
 pub mod sales;
 pub mod settings;
 pub mod stock;
 pub mod templates;
 pub mod users;
+pub mod zreport;
 
 #[cfg(test)]
 mod tests;
