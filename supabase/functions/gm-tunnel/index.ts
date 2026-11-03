@@ -48,8 +48,9 @@ function readToken(): string {
   if (!CF_TOKEN) {
     try {
       // Noms seulement (jamais les valeurs), pour repérer un secret mal nommé dans les journaux.
-      const names = Object.keys(Deno.env.toObject()).filter((k) => /CF|CLOUD|TOKEN|TUNNEL/i.test(k) && !k.startsWith("SUPABASE"));
-      console.warn(`CF_API_TOKEN absent ; secrets voisins : ${names.join(", ") || "aucun"}`);
+      const all = Object.keys(Deno.env.toObject());
+      const names = all.filter((k) => !k.startsWith("SUPABASE") && !k.startsWith("DENO") && !k.startsWith("SB_"));
+      console.warn(`CF_API_TOKEN absent ; ${all.length} variables, secrets du projet : ${names.join(", ") || "aucun"}`);
     } catch {
       // lecture de l'environnement refusée
     }
