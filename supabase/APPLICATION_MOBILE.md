@@ -6,8 +6,8 @@ L'application est faite en **widgets natifs FlutterFlow et Supabase uniquement**
 
 | Page | Rôle | Supabase |
 |---|---|---|
-| `Demarrage` (page d'entrée sans session) | Logo, champ du code du commerce, « par Eden Dev » ; lien vers l'espace propriétaire | RPC `gm_server_status` |
-| `boutique` | WebView native sur l'adresse de la boutique ; écran « Serveur éteint » | RPC `gm_server_status` |
+| `Demarrage` (page d'entrée sans session) | Logo, champ du code du commerce, « par Eden Dev » ; lien vers l'espace propriétaire | requête `gm_servers_statut` |
+| `boutique` | WebView native sur l'adresse de la boutique ; écran « Serveur éteint » | requête `gm_servers_statut` + fonction `isServerActive` |
 | `Connexion` | Connexion de la propriétaire (compte boutique) | Supabase Auth, e-mail |
 | `Boutiques` (page après connexion) | Ses boutiques, chacune avec deux boutons : « Ouvrir » (WebView) et « Abonnement » ; déconnexion | requête `gm_stores` |
 | `Abonnement` | Abonnements de la boutique choisie : formule, statut, début, fin, durée | requête `gm_subscriptions` filtrée par `store_id` |
@@ -18,31 +18,30 @@ L'application est faite en **widgets natifs FlutterFlow et Supabase uniquement**
 
 ## 1. Supabase
 
-**Statut du PC serveur : RPC `gm_server_status`** (action FlutterFlow Supabase → Call RPC, clé publique). Script `gestimarket_statut_serveur.sql`, en *security definer* : la table `gm_servers` reste fermée au téléphone, sans policy.
+**Statut du PC serveur : vue `gm_servers_statut` + fonction FlutterFlow `isServerActive`.** Script `gestimarket_statut_serveur.sql`.
 
-```
-gm_server_status(p_shop_code text) → [{"check": bool, "active": bool}]
-  check   le code existe dans gm_servers
-  active  le PC a donné signe de vie depuis moins de 90 s (coupure de courant = false)
-```
+- La vue ne montre que `shop_code`, `active` et `last_seen`. Elle est en *security_invoker* : le téléphone a la lecture de ces trois colonnes de `gm_servers`, et seulement elles. `select *` sur `gm_servers` reste refusé, de même que l'empreinte du secret du PC.
+- Requête Supabase native sur `gm_servers_statut` : filtre `shop_code` = code **en majuscules** (les codes sont enregistrés en majuscules), une seule ligne.
+- `isServerActive(shopCode, active, lastSeen)` → vrai si `active` et `last_seen` il y a moins de 90 s. Le PC publie toutes les 30 s, donc une coupure de courant passe en « éteint ». Elle se fie à l'heure du téléphone.
+- Adresse de la WebView : `https://` + code en minuscules + `.gestimarket.shop`.
 
-Le code est accepté en minuscules et avec des espaces autour.
+La RPC `gm_server_status` (version du 4 novembre 2026) a été supprimée et remplacée par cette vue.
 
 **Espace propriétaire : requêtes natives** sur `gm_stores` et `gm_subscriptions`. Les policies existantes (« gm mes boutiques », « gm mes abonnements », « gm mes paiements ») limitent la propriétaire connectée à ses propres boutiques. Rien à ajouter côté Supabase.
 
 | Page, déclencheur | Action | Suite |
 |---|---|---|
 | `Demarrage`, au chargement | si `storeCode` n'est pas vide | aller à `boutique` |
-| `Demarrage`, bouton (icône connexion) | Call RPC `gm_server_status`, `p_shop_code` = champ code | si `check` : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
+| `Demarrage`, bouton (icône connexion) | requête `gm_servers_statut`, `shop_code` = champ code en majuscules | si une ligne : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
 | `Demarrage`, lien « Espace propriétaire » | — | aller à `Connexion` |
-| `boutique`, au chargement et « Réessayer » | Call RPC `gm_server_status`, `p_shop_code` = `storeCode` | si `active` : WebView sur `https://` + code en minuscules + `.gestimarket.shop` ; sinon « Serveur éteint » |
+| `boutique`, au chargement et « Réessayer » | requête `gm_servers_statut`, `shop_code` = `storeCode`, puis `isServerActive(shop_code, active, last_seen)` | si vrai : WebView sur `https://` + code en minuscules + `.gestimarket.shop` ; sinon « Serveur éteint » |
 | `Connexion`, « Se connecter » | Log In (e-mail, mot de passe) | FlutterFlow ouvre `Boutiques` |
 | `Boutiques`, au chargement | requête `gm_stores`, filtre `owner_id` = utilisateur connecté, triée par nom | liste |
 | `Boutiques`, « Ouvrir » | `storeCode` = code de la boutique | aller à `boutique` |
 | `Boutiques`, « Abonnement » | `selectedStoreId` et `selectedStoreName` | aller à `Abonnement` |
 | `Abonnement`, au chargement | requête `gm_subscriptions`, filtre `store_id` = `selectedStoreId`, du plus récent au plus ancien | liste |
 
-FlutterFlow doit connaître la fonction RPC : Settings → Integrations → Supabase → **Get Schema**, après chaque script SQL qui ajoute une fonction.
+FlutterFlow doit connaître la vue : Settings → Integrations → Supabase → **Get Schema**, après chaque script SQL qui ajoute une table, une vue ou une fonction.
 
 Sur les pages `Boutiques` et `Abonnement`, la requête est lancée au chargement de la page puis affichée par la ListView. On peut la déplacer en « Backend Query » directement sur la ListView dans l'éditeur. L'outil en ligne de commande ne sait pas poser une requête Supabase sur un widget.
 
@@ -93,11 +92,11 @@ Nom de l'application sous l'icône : Settings → General → App Details → Ap
 4. `gestimarket_international.sql`
 5. `gestimarket_mobile.sql`
 6. `gestimarket_abonnement_mobile.sql` (0.15)
-7. `gestimarket_statut_serveur.sql` (application mobile)
+7. `gestimarket_statut_serveur.sql` (application mobile : vue `gm_servers_statut`)
 
 Fonctions Edge à déployer, avec *Verify JWT* désactivé : `gm-license`, `gm-pay`, `gm-tunnel`.
 
-L'application appelle `gm_server_status(code)` (clé publique) et lit `gm_stores` et `gm_subscriptions` (propriétaire connectée). `gm_get_server(code)` reste pour les anciennes versions. Les fonctions de la propriétaire (`gm_my_stores`, `gm_my_server`, `gm_my_payments`, `gm_my_redeem_voucher`, `gm_declare_payment`) et la page de paiement de `gm-pay` (champ `html`) restent disponibles, au cas où des écrans natifs reviendraient un jour.
+L'application lit la vue `gm_servers_statut` (clé publique), puis `gm_stores` et `gm_subscriptions` (propriétaire connectée). `gm_get_server(code)` reste pour les anciennes versions. Les fonctions de la propriétaire (`gm_my_stores`, `gm_my_server`, `gm_my_payments`, `gm_my_redeem_voucher`, `gm_declare_payment`) et la page de paiement de `gm-pay` (champ `html`) restent disponibles, au cas où des écrans natifs reviendraient un jour.
 
 ## 5. Adresse Internet automatique de chaque boutique
 
