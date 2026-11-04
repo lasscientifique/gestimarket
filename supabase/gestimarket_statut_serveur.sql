@@ -7,7 +7,8 @@
 -- téléphone (anon et authenticated). gm_servers reste fermée au téléphone : ni secret du PC, ni adresses locales.
 -- public_url = adresse Internet de la boutique (https://gm-000123.gestimarket.shop), ouverte dans la WebView.
 --
--- active = le PC est allumé. Le PC publie toutes les 30 s (gm_publish_server, qui met à jour gm_servers) :
+-- active = l'application peut ouvrir la boutique : PC allumé ET adresse Internet connue (sinon la WebView
+-- n'aurait rien à ouvrir). Le PC publie toutes les 30 s (gm_publish_server, qui met à jour gm_servers) :
 -- le trigger recopie active et last_seen. S'il se tait (coupure de courant), la tâche pg_cron
 -- « gm-servers-statut-expire » passe active à false au bout de 90 s : le changement part en temps réel.
 --
@@ -51,8 +52,10 @@ begin
   if tg_op = 'UPDATE' and old.shop_code is distinct from new.shop_code then
     delete from public.gm_servers_statut where shop_code = old.shop_code;
   end if;
+  -- active = l'application peut ouvrir la boutique : PC allumé et adresse Internet connue.
   insert into public.gm_servers_statut (shop_code, active, last_seen, public_url)
-  values (new.shop_code, coalesce(new.active, false), new.last_seen, nullif(new.public_url, ''))
+  values (new.shop_code, coalesce(new.active, false) and nullif(new.public_url, '') is not null,
+          new.last_seen, nullif(new.public_url, ''))
   on conflict (shop_code) do update
     set active = excluded.active, last_seen = excluded.last_seen, public_url = excluded.public_url
     where gm_servers_statut.active is distinct from excluded.active
@@ -70,7 +73,8 @@ create trigger gm_servers_statut_sync
 
 -- Remplissage initial (PC silencieux depuis plus de 90 s = éteint).
 insert into public.gm_servers_statut (shop_code, active, last_seen, public_url)
-select shop_code, coalesce(active, false) and last_seen > now() - interval '90 seconds', last_seen, nullif(public_url, '')
+select shop_code, coalesce(active, false) and last_seen > now() - interval '90 seconds' and nullif(public_url, '') is not null,
+       last_seen, nullif(public_url, '')
 from public.gm_servers
 on conflict (shop_code) do update
   set active = excluded.active, last_seen = excluded.last_seen, public_url = excluded.public_url;

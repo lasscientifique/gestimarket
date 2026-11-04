@@ -11,6 +11,15 @@ L'application est faite en **widgets natifs FlutterFlow et Supabase uniquement**
 | `Connexion` | Connexion de la propriétaire (compte boutique) | Supabase Auth, e-mail |
 | `Boutiques` (page après connexion) | Ses boutiques, chacune avec deux boutons : « Ouvrir » (WebView) et « Abonnement » ; déconnexion | requête `gm_stores` |
 | `Abonnement` | Abonnements de la boutique choisie : formule, statut, début, fin, durée | requête `gm_subscriptions` filtrée par `store_id` |
+| `ContactEdenDev` (`/contact`) | Eden Dev : e-mail, WhatsApp @edendeveloppeur, téléphone +223 76 59 36 76 (boutons « Launch URL ») | — |
+
+**Menu flottant** (widget `MenuFlottant`, code `supabase/flutterflow/menu_flottant.dart`) :
+- Une bulle verte qu'on fait glisser n'importe où sur l'écran, au-dessus de la WebView. Elle est sur les pages `Boutiques`, `boutique`, `Abonnement` et `ContactEdenDev`.
+- Un toucher ouvre le menu : Mes boutiques, Ma boutique, Abonnement, Contact Eden Dev, Se déconnecter. Chaque choix remplace la page affichée, donc une seule WebView est ouverte à la fois. « Se déconnecter » vide `storeCode` et ferme la session Supabase.
+- Le widget posé dans une page ne prend aucune place : il installe une seule bulle pour toute l'application, cachée sur les autres pages. Elle navigue par les routes (`/mes-boutiques`, `/boutique`, `/abonnements`, `/contact`). Si une route change dans FlutterFlow, il faut la changer aussi dans le widget.
+- L'outil FlutterFlow n'accepte pas de paramètres de type « action » dans un widget déclaré par script : c'est pour ça que la navigation est dans le widget.
+
+**Thème** : vert GestiMarket `#0F766E` (principal), `#14B8A6` (secondaire), fonds `#F3F5F8` / blanc, textes ardoise, avec une version sombre.
 
 État de l'application :
 - `storeCode` (gardé) : code de la boutique ouverte ;
@@ -22,7 +31,7 @@ L'application est faite en **widgets natifs FlutterFlow et Supabase uniquement**
 
 - Colonnes : `shop_code`, `active`, `last_seen`, `public_url`. C'est une copie de `gm_servers` tenue à jour par un trigger, et publiée dans **Supabase Realtime** (une vue ne peut pas l'être).
 - Le téléphone (clé publique ou session) la lit, sans pouvoir l'écrire. `gm_servers` lui reste fermée : ni secret du PC, ni adresses locales.
-- `active` = PC allumé. Le PC publie toutes les 30 s. S'il se tait (coupure de courant), la tâche `pg_cron` `gm-servers-statut-expire`, qui tourne toutes les 30 s, passe `active` à false au bout de 90 s. Le changement part alors en temps réel.
+- `active` = l'application peut ouvrir la boutique : PC allumé **et** adresse Internet connue (sinon la WebView n'aurait rien à ouvrir). Le PC publie toutes les 30 s. S'il se tait (coupure de courant), la tâche `pg_cron` `gm-servers-statut-expire`, qui tourne toutes les 30 s, passe `active` à false au bout de 90 s. Le changement part alors en temps réel.
 - Dans FlutterFlow : requête Supabase sur `gm_servers_statut`, avec **Enable Real-time** (streaming), filtre `shop_code` = code **en majuscules**, une seule ligne. La WebView prend `public_url`. On peut se fier à `active` seul, ou passer `active` et `last_seen` à la fonction `isServerActive` (même règle des 90 s, à l'heure du téléphone).
 
 Historique : la RPC `gm_server_status`, puis la vue `gm_servers_statut`, ont été remplacées par cette table de même nom (4 novembre 2026).
@@ -34,7 +43,7 @@ Historique : la RPC `gm_server_status`, puis la vue `gm_servers_statut`, ont ét
 | `Demarrage`, au chargement | si `storeCode` n'est pas vide | aller à `boutique` |
 | `Demarrage`, bouton (icône connexion) | requête `gm_servers_statut`, `shop_code` = champ code en majuscules | si une ligne : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
 | `Demarrage`, lien « Espace propriétaire » | — | aller à `Connexion` |
-| `boutique` | requête temps réel `gm_servers_statut`, `shop_code` = `storeCode` | si `active` : WebView sur `public_url` ; sinon « Serveur éteint ». La page bascule seule quand le PC s'éteint ou se rallume |
+| `boutique` | requête temps réel `gm_servers_statut` (streaming), `shop_code` = `storeCode`, une ligne, sans « masquer si vide » | si `active` : WebView sur `public_url` ; sinon « Serveur éteint » (aussi pour un code introuvable). La page bascule seule quand le PC s'éteint ou se rallume. Pas de boucle de rafraîchissement : le temps réel la remplace |
 | `Connexion`, « Se connecter » | Log In (e-mail, mot de passe) | FlutterFlow ouvre `Boutiques` |
 | `Boutiques`, au chargement | requête `gm_stores`, filtre `owner_id` = utilisateur connecté, triée par nom | liste |
 | `Boutiques`, « Ouvrir » | `storeCode` = code de la boutique | aller à `boutique` |
