@@ -313,18 +313,22 @@ async fn asset_handler(State(app): State<AppHandle>, uri: Uri) -> Response {
         "/" | "" => "index.html".to_string(),
         p => p.trim_start_matches('/').to_string(),
     };
-    let resolver = app.asset_resolver();
-    let (asset, cache) = match resolver.get(path.clone()) {
-        Some(a) => (Some(a), cache_policy(&path)),
-        // Fichier de l'interface introuvable (ancienne version encore ouverte sur un téléphone) : 404, pas la
-        // page d'accueil à la place d'un script. Les autres adresses sont des pages de l'application.
-        None if path.starts_with("assets/") => (None, ""),
-        None => (resolver.get("index.html".into()), cache_policy("index.html")),
-    };
-    match asset {
-        Some(a) => ([(header::CONTENT_TYPE, a.mime_type), (header::CACHE_CONTROL, cache.to_string())], a.bytes).into_response(),
+    // Tauri renvoie de lui-même la page d'accueil pour une adresse inconnue (pages de l'application).
+    let asset = app.asset_resolver().get(path.clone()).or_else(|| app.asset_resolver().get("index.html".into()));
+    match asset.and_then(|a| served(&path, &a.mime_type).map(|cache| (a, cache))) {
+        Some((a, cache)) => ([(header::CONTENT_TYPE, a.mime_type), (header::CACHE_CONTROL, cache.to_string())], a.bytes).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// Règle de cache d'un fichier servi, ou `None` pour un 404 : un script ou un style d'une ancienne version
+/// (téléphone resté ouvert pendant une mise à jour) ne doit pas recevoir la page d'accueil à sa place.
+fn served(path: &str, mime: &str) -> Option<&'static str> {
+    let html = mime.starts_with("text/html");
+    if html && path.starts_with("assets/") {
+        return None;
+    }
+    Some(if html { "no-cache" } else { cache_policy(path) })
 }
 
 /// Fichiers de l'interface : les scripts et styles portent une empreinte dans leur nom (gardés un an sur
@@ -341,7 +345,7 @@ fn cache_policy(path: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{allowed_origin, cache_policy, client_route, remote_args};
+    use super::{allowed_origin, cache_policy, client_route, remote_args, served};
     use serde_json::json;
     use axum::http::{HeaderMap, HeaderValue};
     use std::net::SocketAddr;
@@ -404,5 +408,9 @@ mod tests {
         assert_eq!(cache_policy("assets/index-4f2a9c.js"), "public, max-age=31536000, immutable");
         assert_eq!(cache_policy("index.html"), "no-cache");
         assert_eq!(cache_policy("icon.png"), "public, max-age=86400");
+        // Page d'accueil renvoyée par Tauri à la place d'un script disparu : 404 ; pages de l'application : jamais en cache.
+        assert_eq!(served("assets/index-ancien.js", "text/html"), None);
+        assert_eq!(served("assets/index-4f2a9c.js", "text/javascript"), Some("public, max-age=31536000, immutable"));
+        assert_eq!(served("settings", "text/html"), Some("no-cache"));
     }
 }
