@@ -15,14 +15,16 @@ import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { Badge } from "../components/ui";
 import { activitiesOf, BusinessTypeGrid, featuresOf, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
-import { Building2 } from "lucide-react";
+import { Building2, Code2, Mail, MessageCircle, Phone } from "lucide-react";
 import { currencySymbol, dateTime, isoDate, minorToInput, toMinor } from "../lib/format";
 import type { CloudStatus, Settings, TunnelStatus } from "../types";
 import { LANGS, tl, tm } from "../lib/i18n";
+import { invoke } from "@tauri-apps/api/core";
+import { isTauri } from "../lib/transport";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
-type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup";
+type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup" | "developer";
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "shop", label: tl("Commerce"), icon: <Store size={17} /> },
   { id: "business", label: tl("Type de commerce"), icon: <Building2 size={17} /> },
@@ -32,6 +34,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "security", label: tl("Sécurité & PIN"), icon: <Lock size={17} /> },
   { id: "network", label: tl("Réseau & mobile"), icon: <Network size={17} /> },
   { id: "backup", label: tl("Sauvegarde"), icon: <ShieldCheck size={17} /> },
+  { id: "developer", label: tl("Développeur Eden Dev"), icon: <Code2 size={17} /> },
 ];
 
 export default function SettingsPage() {
@@ -339,6 +342,60 @@ export default function SettingsPage() {
       </div>
         </>
       )}
+
+      {tab === "developer" && <DeveloperTab version={info?.version} />}
+    </div>
+  );
+}
+
+// Coordonnées d'Eden Dev, éditeur de GestiMarket (mêmes adresses que la commande Rust « open_contact »).
+const EDEN_EMAIL = "lasscientifique@gmail.com";
+const EDEN_WHATSAPP = "@edendeveloppeur";
+const EDEN_PHONE = "+223 76 59 36 76";
+const EDEN_NAME = "Eden Dev";
+const EDEN_LINKS = {
+  email: `mailto:${EDEN_EMAIL}`,
+  whatsapp: "https://wa.me/22376593676",
+  phone: "tel:+22376593676",
+} as const;
+
+/** Paramètres → Développeur Eden Dev : contacter l'éditeur du logiciel (e-mail, WhatsApp, téléphone). */
+function DeveloperTab({ version }: { version?: string }) {
+  const { toast } = useApp();
+  // Fenêtre GestiMarket du PC : programme par défaut de Windows. Navigateur ou application mobile : lien normal.
+  const openLink = (kind: keyof typeof EDEN_LINKS) => async (e: React.MouseEvent) => {
+    if (!isTauri) return;
+    e.preventDefault();
+    try {
+      await invoke("open_contact", { kind });
+    } catch (err) {
+      toast.error(err);
+    }
+  };
+  const rows: { kind: keyof typeof EDEN_LINKS; icon: React.ReactNode; label: string; value: string; action: string }[] = [
+    { kind: "email", icon: <Mail size={20} />, label: tl("E-mail"), value: EDEN_EMAIL, action: tl("Écrire un e-mail") },
+    { kind: "whatsapp", icon: <MessageCircle size={20} />, label: tl("WhatsApp"), value: EDEN_WHATSAPP, action: tl("Ouvrir WhatsApp") },
+    { kind: "phone", icon: <Phone size={20} />, label: tl("Téléphone"), value: EDEN_PHONE, action: tl("Appeler") },
+  ];
+  return (
+    <div className="card">
+      <h3 className="card-title"><Code2 size={18} />  {tl("Développeur Eden Dev")}</h3>
+      <p className="muted">
+        {tl("GestiMarket est conçu et maintenu par {0}. Pour une question, une panne, une formation ou une nouvelle fonction, contactez-nous.", [EDEN_NAME])}
+      </p>
+      <div className="contact-list">
+        {rows.map((r) => (
+          <div className="contact-row" key={r.kind}>
+            <span className="contact-icon">{r.icon}</span>
+            <span className="contact-text">
+              <span className="muted small">{r.label}</span>
+              <strong className="mono">{r.value}</strong>
+            </span>
+            <a className="btn" href={EDEN_LINKS[r.kind]} target="_blank" rel="noreferrer" onClick={openLink(r.kind)}>{r.action}</a>
+          </div>
+        ))}
+      </div>
+      {version && <p className="muted small" style={{ marginTop: 12 }}>{tl("GestiMarket version {0}", [version])}</p>}
     </div>
   );
 }

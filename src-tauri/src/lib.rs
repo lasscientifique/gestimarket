@@ -139,6 +139,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::rpc,
+            commands::open_contact,
             commands::save_text_file,
             commands::save_binary_file,
             commands::read_text_file,

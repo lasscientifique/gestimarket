@@ -23,6 +23,40 @@ pub async fn rpc(state: State<'_, AppState>, cmd: String, args: Option<Value>) -
 // ───────────────────────────── Fichiers locaux ─────────────────────────────
 // Les chemins proviennent toujours des boîtes de dialogue du système (choix de l'utilisateur).
 
+/// Contact Eden Dev (Paramètres → Développeur Eden Dev) : ouvre la messagerie, WhatsApp ou l'appel
+/// avec le programme par défaut de ce PC. Seules ces trois adresses fixes peuvent être ouvertes.
+#[tauri::command]
+pub async fn open_contact(kind: String) -> AppResult<()> {
+    let url = match kind.as_str() {
+        "email" => "mailto:lasscientifique@gmail.com",
+        "whatsapp" => "https://wa.me/22376593676",
+        "phone" => "tel:+22376593676",
+        _ => return invalid("Contact inconnu."),
+    };
+    #[cfg(windows)]
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", "", url]).creation_flags(CREATE_NO_WINDOW);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        c.arg(url);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(url);
+        c
+    };
+    cmd.spawn().map_err(|e| AppError::Validation(format!("Impossible d'ouvrir le lien : {e}")))?;
+    Ok(())
+}
+
 /// Écrit un fichier texte (export CSV) sur ce PC.
 #[tauri::command]
 pub async fn save_text_file(path: String, contents: String) -> AppResult<()> {

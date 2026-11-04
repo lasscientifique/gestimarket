@@ -2112,4 +2112,11 @@ export const EN: Record<string, string> = {
   "… et": "… and",
   "…jusqu'au rayon (facultatif)": "…up to shelf (optional)",
   "…ou contenu texte du QR code (si vous le connaissez)": "…or the QR code text (if you know it)",
+  "Développeur Eden Dev": "Developer: Eden Dev",
+  "WhatsApp": "WhatsApp",
+  "Écrire un e-mail": "Write an e-mail",
+  "Ouvrir WhatsApp": "Open WhatsApp",
+  "Appeler": "Call",
+  "GestiMarket est conçu et maintenu par {0}. Pour une question, une panne, une formation ou une nouvelle fonction, contactez-nous.": "GestiMarket is designed and maintained by {0}. For a question, a problem, training or a new feature, contact us.",
+  "GestiMarket version {0}": "GestiMarket version {0}",
 };

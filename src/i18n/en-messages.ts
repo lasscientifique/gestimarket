@@ -589,4 +589,6 @@ export const EN_MESSAGES: Record<string, string> = {
   "« {} » : le prix de gros doit être inférieur au prix de vente normal.": "“{}”: the wholesale price must be lower than the normal sale price.",
   "« {} » : prix de gros ou quantité minimale invalide.": "“{}”: invalid wholesale price or minimum quantity.",
   "« {} » : {} au plus peut encore être retourné.": "“{}”: at most {} can still be returned.",
+  "Contact inconnu.": "Unknown contact.",
+  "Impossible d'ouvrir le lien : {}": "Could not open the link: {}",
 };

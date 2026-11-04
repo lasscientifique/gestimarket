@@ -1323,3 +1323,14 @@ input, select, textarea { border-radius: 10px; }
 @media (max-width: 860px) {
   .proposal, .backdrop-grid, .export-choices { grid-template-columns: 1fr; }
 }
+
+/* Paramètres → Développeur Eden Dev */
+.contact-list { display: flex; flex-direction: column; gap: 10px; }
+.contact-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.contact-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); flex: none; }
+.contact-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.contact-text strong { overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .contact-row { flex-wrap: wrap; }
+  .contact-row .btn { width: 100%; justify-content: center; }
+}
