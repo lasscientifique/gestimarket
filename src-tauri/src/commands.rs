@@ -67,7 +67,7 @@ pub async fn journal_text() -> AppResult<String> {
 /// puis montre le fichier dans l'explorateur, prêt à être glissé dans WhatsApp ou un e-mail.
 #[tauri::command]
 pub async fn journal_export(app: AppHandle) -> AppResult<String> {
-    let docs = app.path().document_dir().map_err(internal)?;
+    let docs = app.path().document_dir().or_else(|_| app.path().home_dir().map(|h| h.join("Documents"))).map_err(internal)?;
     let dir = docs.join("GestiMarket");
     std::fs::create_dir_all(&dir)?;
     let now = chrono::Local::now();

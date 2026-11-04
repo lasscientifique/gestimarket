@@ -85,6 +85,13 @@ const tauriBridge = (lanIp) => `
         return d.ok;
       }
       if (cmd === "list_monitors") return [];
+      // Imprimante à tickets de ce poste (0.16) : une imprimante simulée ; les tickets envoyés sont gardés.
+      if (cmd === "printer_list") return ["XP-80C (test)"];
+      if (cmd === "printer_get_config") return window.__printerConfig ?? { printer: "", auto_print: true, open_drawer: false };
+      if (cmd === "printer_save_config") { window.__printerConfig = args.config; return null; }
+      if (cmd === "printer_send") { (window.__printed = window.__printed || []).push(args.data); return null; }
+      if (cmd === "journal_text") return "2026-11-04 08:00:00 [INFO] Démarrage de GestiMarket";
+      if (cmd === "journal_export") return "/home/runner/Documents/GestiMarket/journal-gestimarket-test.txt";
       throw "Commande non disponible dans le test : " + cmd;
     },
     transformCallback: (cb) => { const id = Math.floor(Math.random() * 1e9); window["_" + id] = cb; return id; },
@@ -371,6 +378,86 @@ try {
   await shot(pc, "18-promotions.png");
   await pc.goto(`${SRV}/#/returns`);
   await seen(pc, "page Retours & avoirs", "Retours & avoirs");
+
+  // ── 0.16 : serveur durci, remises contrôlées par le serveur, ventes sans doublon, sauvegarde, impression directe
+  const raw = async (base, cmd, body) => {
+    const r = await fetch(`${base}/rpc/${cmd}`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    return { status: r.status, text: await r.text() };
+  };
+  const staffList = await raw(PUB, "list_login_users", "[]");
+  check("Internet : appel avec une liste au lieu d'un objet refusé (personnel non divulgué)", staffList.status === 400 && staffList.text.includes("objet JSON") && !staffList.text.includes("caisse1"), `${staffList.status} ${staffList.text.slice(0, 100)}`);
+  const settingsList = await raw(PUB, "get_settings", "[]");
+  check("Internet : paramètres de la boutique non lisibles par une liste", settingsList.status === 400 && !settingsList.text.includes("om_merchant"), String(settingsList.status));
+  const home = await fetch(`${SRV}/`, { headers: { "Accept-Encoding": "gzip, br" } });
+  const homeHtml = await home.text();
+  check("interface compressée, page d'accueil toujours revérifiée", /gzip|br/.test(home.headers.get("content-encoding") ?? "") && home.headers.get("cache-control") === "no-cache", `${home.headers.get("content-encoding")} / ${home.headers.get("cache-control")}`);
+  const script = homeHtml.match(/\/assets\/index-[^"]+\.js/)?.[0];
+  const asset = script ? await fetch(`${SRV}${script}`) : null;
+  check("fichiers de l'interface gardés en cache sur l'appareil", !!asset && /immutable/.test(asset.headers.get("cache-control") ?? ""), asset?.headers.get("cache-control") ?? "aucun script");
+  const stale = await fetch(`${SRV}/assets/ancienne-version-0000.js`);
+  check("fichier d'une ancienne version : 404 (pas la page d'accueil)", stale.status === 404, String(stale.status));
+
+  if (caisse) {
+    const gerant = team.find((m) => m.username === "gestionnaire");
+    const gerantId = (await rpc("list_users", {}, admin)).find((u) => u.username === "gestionnaire").id;
+    const cashier = (await rpc("login", { username: "caisse1", pin: caisse.pin })).token;
+    await rpc("open_cash_session", { amount: 0 }, cashier).catch(() => null);
+    // 10 canettes à 400 (promotion du jour) = 4 000 FCFA.
+    const sell = (lineDiscount, input = {}) =>
+      rpc("create_sale", {
+        input: {
+          items: [{ product_id: coca.id, quantity: 10, discount: lineDiscount, packaging_id: null }],
+          customer_id: null, discount: 0, payments: [{ method: "cash", amount: 5000, reference: null, phone: null }], note: null, ...input,
+        },
+      }, cashier);
+    const refusedDiscount = await sell(400).then(() => "acceptée", (e) => e.message);
+    check("remise de 10 % refusée par le serveur sans le PIN d'un responsable", refusedDiscount.includes("10 %") && refusedDiscount.includes("gestionnaire"), refusedDiscount);
+    const caissePin = await sell(400, { discount_pin: caisse.pin }).then(() => "acceptée", (e) => e.message);
+    check("la caissière ne valide pas sa propre remise", caissePin !== "acceptée", caissePin);
+    const approved = await sell(400, { discount_pin: `${gerantId}:${gerant.pin}` }).then((v) => v, (e) => e.message);
+    check("remise de 10 % validée par le PIN du gestionnaire", approved?.total === 3600, typeof approved === "string" ? approved : approved.total);
+    const small = await sell(200).then((v) => v, (e) => e.message);
+    check("remise de 5 % acceptée sans validation", small?.total === 3800, typeof small === "string" ? small : small.total);
+    const ref = `e2e-${Date.now()}`;
+    const first = await sell(0, { client_ref: ref });
+    const stockAfter = (await rpc("get_product", { id: coca.id }, admin)).stock;
+    const again = await sell(0, { client_ref: ref });
+    const stockAgain = (await rpc("get_product", { id: coca.id }, admin)).stock;
+    check("même ticket envoyé deux fois (coupure réseau) : une seule vente, stock décompté une fois", first.id === again.id && stockAfter === stockAgain, `${first.number} / ${again.number}, stock ${stockAfter} → ${stockAgain}`);
+    const report = await rpc("sales_report", { from: today, to: today }, admin);
+    const mine = (report.discounts_by_user ?? []).find((d) => d.label === "Caissière 1");
+    check("rapport : remises par caissier (dont 1 validée par un responsable)", mine?.count === 2 && mine?.amount === 600 && mine?.approved === 1, JSON.stringify(report.discounts_by_user));
+    await pc.goto(`${SRV}/#/reports`);
+    await seen(pc, "Rapports", "Remises par caissier");
+    await pc.locator(':text("Remises par caissier")').first().scrollIntoViewIfNeeded();
+    await shot(pc, "19-remises-par-caissier.png");
+  }
+
+  const backup = await rpc("backup_status", {}, admin);
+  check("sauvegarde automatique active sans réglage (dossier par défaut, copie récente)", !!backup.dir && backup.is_default && !backup.stale && !backup.error, JSON.stringify(backup));
+  await pc.goto(`${SRV}/#/dashboard`);
+  await seen(pc, "Tableau de bord", "Chiffre d'affaires du jour");
+  check("tableau de bord : pas d'alerte de sauvegarde", (await pc.locator(':text("Sauvegarde à vérifier.")').count()) === 0);
+  await shot(pc, "20-tableau-de-bord.png");
+
+  // Imprimante à tickets (poste serveur, pont Tauri simulé) : page de test en ESC/POS, sans fenêtre d'impression.
+  await server.evaluate(() => sessionStorage.setItem("gm-settings-tab", "sales"));
+  await server.goto(`${SRV}/#/settings`);
+  await server.reload();
+  if (await seen(server, "Paramètres → Ventes", "Imprimante à tickets de ce poste")) {
+    await server.locator("select").filter({ hasText: "Aucune : fenêtre d'impression" }).selectOption("XP-80C (test)");
+    await server.getByRole("button", { name: "Imprimer une page de test" }).click();
+    await server.waitForTimeout(1500);
+    const printed = await server.evaluate(() => window.__printed ?? []);
+    const bytes = printed[0] ? Buffer.from(printed[0], "base64") : Buffer.alloc(0);
+    check("page de test envoyée en ESC/POS (initialisation, coupe du papier)", bytes[0] === 0x1b && bytes[1] === 0x40 && bytes.includes(Buffer.from([0x1d, 0x56])), `${bytes.length} octets`);
+    check("accents du ticket en page de code PC850 (é = 0x82)", bytes.includes(0x82));
+    await shot(server, "21-imprimante-a-tickets.png");
+  }
+  await server.evaluate(() => sessionStorage.setItem("gm-settings-tab", "developer"));
+  await server.reload();
+  await seen(server, "Paramètres → Développeur Eden Dev", "En cas de problème : envoyer le journal");
+  await shot(server, "22-journal-eden-dev.png");
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

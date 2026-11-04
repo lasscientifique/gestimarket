@@ -70,7 +70,9 @@ pub fn run() {
                 journal::error(format!("Attribution des codes-barres impossible : {e}"));
             }
             // Sauvegarde automatique, même sans dossier choisi : Documents\GestiMarket\Sauvegardes.
-            if let Ok(docs) = app.path().document_dir() {
+            // Dossier Documents ; à défaut (Linux sans dossiers utilisateur déclarés), ~/Documents.
+            let docs = app.path().document_dir().or_else(|_| app.path().home_dir().map(|h| h.join("Documents")));
+            if let Ok(docs) = docs {
                 let mut d = docs.join("GestiMarket").join("Sauvegardes");
                 if slot > 1 {
                     d = d.join(format!("Boutique {slot}"));
