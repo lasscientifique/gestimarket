@@ -164,15 +164,24 @@ t0 = Date.now();
 const browser = await chromium.launch({
   headless: false,
   env: { ...process.env, DISPLAY },
-  args: ["--kiosk", "--window-position=0,0", "--window-size=1920,1080", "--force-device-scale-factor=1", "--hide-scrollbars",
+  // Zoom 150 % : l'interface (1280 x 720 en pixels CSS) reste lisible dans la vidéo 1920 x 1080.
+  args: ["--window-position=0,0", "--window-size=1920,1080", "--force-device-scale-factor=1.5", "--hide-scrollbars",
     "--disable-infobars", "--no-first-run", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
 });
 const ctx = await browser.newContext({ viewport: null, locale: "fr-FR" });
 await ctx.addInitScript({ content: curseur });
 const page = await ctx.newPage();
 page.on("pageerror", (e) => console.log("erreur page :", e.message));
+// Vrai plein écran (sans onglets ni barre d'adresse) par le protocole de Chrome.
+try {
+  const cdp = await ctx.newCDPSession(page);
+  const { windowId } = await cdp.send("Browser.getWindowForTarget");
+  await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "fullscreen" } });
+} catch (e) {
+  console.log("plein écran :", e.message);
+}
 
-let souris = { x: 960, y: 540 };
+let souris = { x: 640, y: 360 };
 async function aller(x, y, etapes = 24) {
   await page.mouse.move(x, y, { steps: etapes });
   souris = { x, y };
@@ -201,7 +210,7 @@ async function sequence(nom, fn) {
 try {
   await page.goto(`${SRV}/#/`);
   await page.locator(".auth-page").waitFor({ timeout: 45_000 });
-  await aller(960, 540, 1);
+  await aller(640, 360, 1);
   await sleep(1500);
 
   await sequence("connexion", async () => {
@@ -229,12 +238,14 @@ try {
     await sleep(1500);
     await capture("02-caisse");
     // Douchette : le code arrive d'un coup, suivi d'Entrée.
+    repere("scan");
     for (const code of ["6130234000012", "6130234000029"]) {
       await recherche.click();
       await recherche.pressSequentially(code, { delay: 18 });
       await recherche.press("Enter");
       await sleep(1100);
     }
+    repere("tuiles");
     await cliquer(page.locator(".product-tile").filter({ hasText: "Soda cola 33 cl" }));
     await sleep(700);
     const ligneSoda = page.locator(".ticket-lines .line").filter({ hasText: "Soda cola 33 cl" });
@@ -248,14 +259,17 @@ try {
     repere("encaissement");
     await cliquer(page.locator(".pos-ticket .btn-primary.btn-lg"));
     await sleep(1200);
+    repere("orange-money");
     await cliquer(page.locator(".modal button").filter({ hasText: /Orange Money/ }));
     await sleep(1600);
     await capture("04-orange-money");
+    repere("reference");
     const ref = page.getByPlaceholder("Ex. MP251031.1542.C12345");
     await ref.pressSequentially("MP251104.1530.C48213", { delay: 55 });
     await sleep(700);
     await cliquer(page.getByRole("button", { name: "Valider la vente (Entrée)" }));
     await page.locator(".sale-done").waitFor({ timeout: 20_000 });
+    repere("vente-ok");
     await sleep(2200);
     await capture("05-vente-enregistree");
     await cliquer(page.getByRole("button", { name: "Nouvelle vente" }));
@@ -272,8 +286,12 @@ try {
   await sequence("tableau-de-bord", async () => {
     await sleep(3500);
     await capture("06-tableau-de-bord");
-    await aller(1200, 700);
-    await page.mouse.wheel(0, 500);
+    await aller(800, 500);
+    repere("tableau-defile");
+    for (let k = 0; k < 6; k++) {
+      await page.mouse.wheel(0, 90);
+      await sleep(120);
+    }
     await sleep(2500);
   });
 
@@ -281,11 +299,10 @@ try {
     await page.goto(`${SRV}/#/products`);
     await sleep(2800);
     await capture("07-produits");
-    await cliquer(page.getByText("Riz parfumé 25 kg", { exact: true }));
-    await sleep(2800);
-    await capture("08-fiche-produit");
-    await page.keyboard.press("Escape");
-    await sleep(600);
+    repere("stock-bas");
+    await cliquer(page.getByText("Stock bas", { exact: true }));
+    await sleep(2500);
+    await capture("08-produits-stock-bas");
   });
 
   await sequence("stock", async () => {
@@ -303,10 +320,17 @@ try {
   await sequence("plan-3d", async () => {
     await page.goto(`${SRV}/#/locations`);
     await page.getByRole("button", { name: "Modifier le plan" }).waitFor({ timeout: 30_000 }).catch(() => {});
+    const etage = page.getByRole("button", { name: "Magasin", exact: true });
+    if (await etage.count()) {
+      await cliquer(etage);
+      await sleep(1500);
+    }
+    repere("plan-vue");
     const vue3d = page.getByRole("button", { name: "3D", exact: true });
     if (await vue3d.count()) {
       await cliquer(vue3d);
       await sleep(3500);
+      repere("plan-3d-ok");
       await capture("11-plan-3d");
       await aller(1300, 600);
       await page.mouse.down();
@@ -315,6 +339,7 @@ try {
       await sleep(1500);
       const visite = page.getByRole("button", { name: "Visite", exact: true });
       if (await visite.count()) {
+        repere("plan-visite");
         await cliquer(visite);
         await sleep(3500);
         await capture("12-visite");
@@ -334,6 +359,7 @@ try {
   await sequence("developpeur", async () => {
     await page.goto(`${SRV}/#/settings`);
     await sleep(1500);
+    repere("developpeur-onglet");
     await cliquer(page.getByRole("tab", { name: "Développeur Eden Dev" }));
     await sleep(2800);
     await capture("14-developpeur");
