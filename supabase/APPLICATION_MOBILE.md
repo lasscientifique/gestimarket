@@ -11,28 +11,29 @@ L'application est une simple fenêtre sur GestiMarket. Elle a **deux pages en wi
 
 ```
 Poste serveur GestiMarket ──(toutes les 30 s)──► Supabase : gm_publish_server (adresses, dernière activité)
-Application : code GM-… ──► RPC gm_get_server(code) ──► active ? WebView(public_url) : « Serveur éteint »
+Application : code GM-… ──► RPC gm_server_status(code) ──► active ? WebView(public_url) : « Serveur éteint »
 ```
 
 ## 1. La fonction Supabase utilisée
 
-L'application lit la boutique **uniquement par la fonction RPC `gm_get_server`** (action FlutterFlow Supabase → Call RPC). Elle ne lit **pas** la table `gm_servers`. Cette table est fermée au téléphone (« permission denied ») : elle contient l'empreinte du secret de chaque PC et les adresses locales de toutes les boutiques.
+L'application lit la boutique **uniquement par la fonction RPC `gm_server_status`** (action FlutterFlow Supabase → Call RPC), avec la clé publique. Elle ne lit **aucune table** : `gm_servers` refuse le téléphone (« permission denied ») et `gm_stores` lui renvoie une liste vide. C'est voulu : ces tables contiennent les secrets des PC, les adresses locales et les comptes de toutes les boutiques.
 
-`gm_get_server(p_shop_code text) → jsonb` :
-- `found` : le code existe ;
-- `active` : le PC a donné signe de vie depuis moins de 90 s. Une coupure de courant passe donc bien en « Serveur éteint » ;
-- `shop_name`, `shop_code`, `public_url` (adresse Internet de la boutique), `seconds_ago`, `version`.
+`gm_server_status(p_shop_code text) → jsonb` (script `gestimarket_statut_serveur.sql`) :
+- `found` : le code du commerce existe ;
+- `online` : le PC a donné signe de vie depuis moins de 90 s. Une coupure de courant passe donc en « éteint » ;
+- `active` : `online` et adresse Internet connue, donc l'application peut ouvrir la boutique ;
+- `shop_code`, `shop_name`, `public_url` (adresse Internet de la boutique), `seconds_ago`.
 
 Le code est accepté en minuscules et avec des espaces autour.
 
 | Page, déclencheur | Action | Suite |
 |---|---|---|
 | `Demarrage`, au chargement | si `storeCode` n'est pas vide | aller à `boutique` |
-| `Demarrage`, bouton (icône connexion) | Call RPC `gm_get_server`, `p_shop_code` = champ code, résultat `serverInfo` | si `$.found` : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
-| `boutique`, au chargement et bouton « Réessayer » | Call RPC `gm_get_server`, `p_shop_code` = `storeCode`, résultat dans l'état de page `server` (JSON) | Conditional Builder sur `$.active` : WebView sur `$.public_url`, sinon « Serveur éteint » |
+| `Demarrage`, bouton (icône connexion) | Call RPC `gm_server_status`, `p_shop_code` = champ code, sortie `serverInfo` | si `$.found` : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
+| `boutique`, au chargement et bouton « Réessayer » | Call RPC `gm_server_status`, `p_shop_code` = `storeCode`, sortie dans l'état de page `server` (JSON) | Conditional Builder sur `$.active` : WebView sur `$.public_url`, sinon « Serveur éteint » |
 | `boutique`, « Changer de boutique » | `storeCode` = vide | aller à `Demarrage` |
 
-FlutterFlow doit connaître la fonction : Settings → Integrations → Supabase → **Get Schema**. `gm_get_server` y est déjà.
+FlutterFlow doit connaître la fonction : Settings → Integrations → Supabase → **Get Schema**, après chaque script SQL qui ajoute une fonction.
 
 **Limites connues.**
 - Toujours par l'adresse Internet, même sur le Wi-Fi du magasin : un peu plus lent qu'en réseau local, mais ça marche partout.
@@ -75,10 +76,11 @@ Nom de l'application sous l'icône : Settings → General → App Details → Ap
 4. `gestimarket_international.sql`
 5. `gestimarket_mobile.sql`
 6. `gestimarket_abonnement_mobile.sql` (0.15)
+7. `gestimarket_statut_serveur.sql` (application mobile)
 
 Fonctions Edge à déployer, avec *Verify JWT* désactivé : `gm-license`, `gm-pay`, `gm-tunnel`.
 
-L'application n'appelle que `gm_get_server(code)`, avec la clé publique. Les fonctions de la propriétaire (`gm_my_stores`, `gm_my_server`, `gm_my_payments`, `gm_my_redeem_voucher`, `gm_declare_payment`) et la page de paiement de `gm-pay` (champ `html`) restent disponibles, au cas où des écrans natifs reviendraient un jour.
+L'application n'appelle que `gm_server_status(code)`, avec la clé publique. `gm_get_server(code)` reste pour les anciennes versions. Les fonctions de la propriétaire (`gm_my_stores`, `gm_my_server`, `gm_my_payments`, `gm_my_redeem_voucher`, `gm_declare_payment`) et la page de paiement de `gm-pay` (champ `html`) restent disponibles, au cas où des écrans natifs reviendraient un jour.
 
 ## 5. Adresse Internet automatique de chaque boutique
 
