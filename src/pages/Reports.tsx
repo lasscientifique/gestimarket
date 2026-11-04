@@ -7,7 +7,7 @@ import { Empty, Loading, PageHeader, StatCard } from "../components/ui";
 import { exportCsv } from "../lib/files";
 import { printHtml } from "../lib/receipt";
 import { addDays, csvMoney, dateOnly, fromMinor, isoDate, money, paymentLabel, percent, qty, toCsv } from "../lib/format";
-import type { Breakdown, SalesReport } from "../types";
+import type { Breakdown, DiscountRow, SalesReport } from "../types";
 import { locale, tl } from "../lib/i18n";
 
 const PALETTE = ["#0f766e", "#2563eb", "#d97706", "#7c3aed", "#db2777", "#64748b"];
@@ -77,6 +77,9 @@ export default function ReportsPage() {
       [],
       ["Caissier", "Ventes", "CA", "Marge"],
       ...r.by_user.map((c) => [c.label, c.count, csvMoney(c.amount), csvMoney(c.margin)]),
+      [],
+      [tl("Remises par caissier"), tl("Ventes avec remise"), tl("Total des remises"), tl("Validées par un responsable")],
+      ...(r.discounts_by_user ?? []).map((d) => [d.label, d.count, csvMoney(d.amount), d.approved]),
     ];
     try {
       if (await exportCsv(`rapport-${from}-au-${to}.csv`, toCsv([`Rapport du ${dateOnly(from)} au ${dateOnly(to)}`, "", "", ""], rows))) toast.success(tl("Export terminé."));
@@ -108,6 +111,7 @@ export default function ReportsPage() {
         ${table(tl("Par mode de paiement"), [tl("Mode"), tl("Ventes"), tl("Montant")], r.by_payment.map((b) => [paymentLabel(b.label), String(b.count), money(b.amount)]))}
         ${table(tl("Par catégorie"), [tl("Catégorie"), tl("CA"), tl("Marge")], r.by_category.map((b) => [b.label, money(b.amount), money(b.margin)]))}
         ${table(tl("Par caissier"), [tl("Caissier"), tl("Ventes"), tl("CA")], r.by_user.map((b) => [b.label, String(b.count), money(b.amount)]))}
+        ${table(tl("Remises par caissier"), [tl("Caissier"), tl("Ventes avec remise"), tl("Total des remises"), tl("Validées par un responsable")], (r.discounts_by_user ?? []).map((d) => [d.label, String(d.count), money(d.amount), String(d.approved)]))}
         ${table(tl("Meilleures ventes"), [tl("Produit"), tl("Quantité"), tl("CA"), tl("Marge")], r.top_products.map((p) => [p.name, `${qty(p.quantity)} ${p.unit}`, money(p.revenue), money(p.margin)]))}
       </div>`);
   };
@@ -201,7 +205,34 @@ export default function ReportsPage() {
           )}
         </div>
         <BreakdownCard title={tl("Par caissier")} data={r.by_user} />
+        <DiscountCard data={r.discounts_by_user ?? []} />
       </div>
+    </div>
+  );
+}
+
+/** Remises par caissier : à surveiller (une remise au-delà du seuil est validée par un responsable). */
+function DiscountCard({ data }: { data: DiscountRow[] }) {
+  return (
+    <div className="card">
+      <div className="card-header"><h3>{tl("Remises par caissier")}</h3></div>
+      {data.length === 0 ? (
+        <Empty title={tl("Aucune remise sur la période")} />
+      ) : (
+        <table className="table compact">
+          <thead><tr><th>{tl("Caissier")}</th><th className="num">{tl("Ventes avec remise")}</th><th className="num">{tl("Total des remises")}</th><th className="num">{tl("Validées par un responsable")}</th></tr></thead>
+          <tbody>
+            {data.map((d) => (
+              <tr key={d.label}>
+                <td>{d.label}</td>
+                <td className="num">{d.count}</td>
+                <td className="num">{money(d.amount)}</td>
+                <td className="num">{d.approved}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

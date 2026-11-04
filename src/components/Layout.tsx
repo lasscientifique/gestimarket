@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { LanguageSwitch } from "./LanguageSwitch";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -39,9 +39,11 @@ import { ROLE_LABELS } from "../lib/format";
 import { BrandLogo } from "./Brand";
 import type { Role } from "../types";
 import { ChangePinModal } from "./ChangePinModal";
-import { ProductFinderModal } from "./ProductFinder";
 import { ConnChip } from "../pages/Poste";
 import { tl } from "../lib/i18n";
+
+// « Où est le produit ? » (plan, scanner caméra) : chargé seulement quand on l'ouvre.
+const ProductFinderModal = lazy(() => import("./ProductFinder").then((m) => ({ default: m.ProductFinderModal })));
 
 interface NavItem {
   to: string;
@@ -268,7 +270,11 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       )}
       {pwdOpen && <ChangePinModal onClose={() => setPwdOpen(false)} />}
-      {finderOpen && <ProductFinderModal onClose={() => setFinderOpen(false)} />}
+      {finderOpen && (
+        <Suspense fallback={null}>
+          <ProductFinderModal onClose={() => setFinderOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

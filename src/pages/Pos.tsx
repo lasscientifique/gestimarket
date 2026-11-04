@@ -45,6 +45,7 @@ import { openCustomerDisplay } from "../components/CustomerDisplayPanel";
 import { posteId } from "../lib/presence";
 import { locationText, currencyDecimals, currencySymbol, minorToInput, money, parseNumber, paymentLabel, qty, toMinor } from "../lib/format";
 import { printReceipt } from "../lib/receipt";
+import { afterSalePrint } from "../lib/printer";
 import { IDLE_DISPLAY, publishDisplay, type DisplayLine } from "../lib/display";
 import { isTauri, posteName } from "../lib/transport";
 import type { CashSession, Category, CreditNote, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, QuoteLine, Sale } from "../types";
@@ -84,6 +85,16 @@ interface HeldTicket {
 const lineGross = (l: CartLine) => Math.round(l.quantity * linePrice(l));
 const lineTotal = (l: CartLine) => lineGross(l) - Math.min(l.discount, lineGross(l));
 
+/** Numéro unique d'un ticket : la même vente renvoyée après une coupure n'est enregistrée qu'une fois.
+ *  `crypto.getRandomValues` fonctionne aussi en HTTP simple (téléphones du réseau du magasin). */
+function newTicketRef(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return `${posteId()}-${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`.slice(0, 80);
+}
+
+const ROLE_LEVEL: Record<string, number> = { cashier: 1, manager: 2, admin: 3 };
+
 function loadHeld(key: string): HeldTicket[] {
   try {
     return JSON.parse(localStorage.getItem(key) || "[]");
@@ -96,11 +107,29 @@ export default function PosPage() {
   const { settings, toast, user, askPin } = useApp();
 
   /** Confirmation par PIN d'une action sensible en caisse (niveau réglable dans Paramètres → Sécurité). */
-  const guard = async (kind: "void" | "discount", title: string, action: string) => {
-    const level = (kind === "void" ? settings.pin_void_level : settings.pin_discount_level) || "cashier";
+  const guard = async (_kind: "void", title: string, action: string) => {
+    const level = settings.pin_void_level || "cashier";
     return !!(await askPin({ title, action, level: level as "cashier" | "manager" | "admin" }));
   };
+  // Remises : jusqu'au seuil sans validation ; au-delà, PIN d'un responsable (le serveur le contrôle aussi).
+  const freePercent = Math.min(100, Math.max(0, Number(settings.discount_free_percent ?? "5") || 0));
+  const discountLevel = (settings.pin_discount_level || "manager") as "cashier" | "manager" | "admin";
+  const canApproveDiscount = (ROLE_LEVEL[user?.role ?? "cashier"] ?? 1) >= (ROLE_LEVEL[discountLevel] ?? 2);
+  const overDiscountLimit = (allDiscount: number, gross: number) => allDiscount > 0 && allDiscount * 100 > freePercent * gross;
   const requireSession = settings.require_cash_session !== "0";
+  /** Demande le PIN d'un responsable si la remise totale du ticket dépasse le seuil (sinon rien). */
+  const approveDiscount = async (allDiscount: number, gross: number, what: string): Promise<boolean> => {
+    if (!overDiscountLimit(allDiscount, gross) || canApproveDiscount || (discountPin && allDiscount <= discountPin.upTo)) return true;
+    const pct = gross > 0 ? Math.round((allDiscount * 1000) / gross) / 10 : 0;
+    const pin = await askPin({
+      title: tl("Valider la remise"),
+      message: tl("{0} : {1} % du ticket, au-delà des {2} % autorisés. Un responsable valide avec son code PIN.", [what, String(pct).replace(".", ","), freePercent]),
+      level: discountLevel,
+    });
+    if (!pin) return false;
+    setDiscountPin({ pin, upTo: allDiscount });
+    return true;
+  };
   const allowNegative = settings.allow_negative_stock === "1";
   const heldKey = `gm-held-${user?.id ?? 0}`;
 
@@ -116,6 +145,11 @@ export default function PosPage() {
   const [modal, setModal] = useState<null | "open" | "customer" | "pay" | "discount" | "held" | { line: number }>(null);
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  /** PIN du responsable qui a validé la remise du ticket en cours (envoyé avec la vente), et jusqu'à quel montant. */
+  const [discountPin, setDiscountPin] = useState<{ pin: string; upTo: number } | null>(null);
+  const [ticketRef, setTicketRef] = useState(newTicketRef);
+  // Nouveau contenu = nouveau numéro ; le même ticket renvoyé tel quel garde le sien.
+  useEffect(() => setTicketRef(newTicketRef()), [cart, discount, customer]);
 
   const subtotal = useMemo(() => cart.reduce((s, l) => s + lineTotal(l), 0), [cart]);
   const total = Math.max(0, subtotal - Math.min(discount, subtotal));
@@ -373,6 +407,7 @@ export default function PosPage() {
     setCart([]);
     setCustomer(null);
     setDiscount(0);
+    setDiscountPin(null);
     setSearch("");
     searchRef.current?.focus();
   };
@@ -786,7 +821,9 @@ export default function PosPage() {
           percentBase={subtotal}
           onClose={() => setModal(null)}
           onSave={async (v) => {
-            if (v > discount && !(await guard("discount", "Remise sur le ticket", `Remise ticket : ${money(v)}`))) return;
+            const gross = cart.reduce((t, l) => t + lineGross(l), 0);
+            const lineDiscounts = cart.reduce((t, l) => t + Math.min(l.discount, lineGross(l)), 0);
+            if (v > discount && !(await approveDiscount(lineDiscounts + Math.min(v, subtotal), gross, tl("Remise sur le ticket")))) return;
             setDiscount(v);
             setModal(null);
           }}
@@ -804,7 +841,13 @@ export default function PosPage() {
               return;
             }
             if (quantity < line.quantity && !(await guard("void", tl("Diminuer la quantité"), tl("Diminution de quantité : {0} ({1} → {2})", [p.name, qty(line.quantity), qty(quantity)])))) return;
-            if (lineDiscount > line.discount && !(await guard("discount", tl("Remise sur l'article"), tl("Remise article : {0} {1}", [p.name, money(lineDiscount)])))) return;
+            if (lineDiscount > line.discount) {
+              const next = cart.map((l, i) => (i === modal.line ? { ...l, quantity, discount: lineDiscount } : l));
+              const gross = next.reduce((t, l) => t + lineGross(l), 0);
+              const sub = next.reduce((t, l) => t + lineTotal(l), 0);
+              const all = next.reduce((t, l) => t + Math.min(l.discount, lineGross(l)), 0) + Math.min(discount, sub);
+              if (!(await approveDiscount(all, gross, tl("Remise sur l'article")))) return;
+            }
             setCart((c) => c.map((l, i) => (i === modal.line ? { ...l, quantity, discount: lineDiscount } : l)));
             setModal(null);
           }}
@@ -818,15 +861,32 @@ export default function PosPage() {
           onClose={() => setModal(null)}
           onPay={async (payments, note) => {
             try {
+              // Remise au-delà du seuil sans validation (ticket repris, PIN refusé…) : on la demande maintenant.
+              const gross = cart.reduce((t, l) => t + lineGross(l), 0);
+              const allDiscount = cart.reduce((t, l) => t + Math.min(l.discount, lineGross(l)), 0) + Math.min(discount, subtotal);
+              let pin = discountPin && allDiscount <= discountPin.upTo ? discountPin.pin : null;
+              if (overDiscountLimit(allDiscount, gross) && !canApproveDiscount && !pin) {
+                pin = await askPin({
+                  title: tl("Valider la remise"),
+                  message: tl("Remise de {0} au-delà des {1} % autorisés : un responsable valide avec son code PIN.", [money(allDiscount), freePercent]),
+                  level: discountLevel,
+                });
+                if (!pin) return false;
+                setDiscountPin({ pin, upTo: allDiscount });
+              }
               const sale = await api.createSale({
                 items: cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, quantity: l.quantity, discount: l.discount })),
                 customer_id: customer?.id ?? null,
                 discount: Math.min(discount, subtotal),
                 payments,
                 note,
+                client_ref: ticketRef,
+                discount_pin: pin,
               });
               setModal(null);
               setLastSale(sale);
+              // Imprimante à tickets de ce poste : ticket et tiroir sans fenêtre (si réglé).
+              afterSalePrint(sale, settings).catch((e) => toast.error(tl("Vente enregistrée, mais le ticket n'est pas sorti : {0}", [e instanceof Error ? e.message : String(e)])));
               publishDisplay({
                 status: "done",
                 ...cartDisplay,
@@ -856,7 +916,7 @@ export default function PosPage() {
           width={460}
           footer={
             <>
-              <button className="btn" onClick={() => printReceipt(lastSale, settings)}>
+              <button className="btn" onClick={() => printReceipt(lastSale, settings).catch(toast.error)}>
                 <Printer size={16} />  {tl("Imprimer le ticket")}</button>
               <button
                 className="btn btn-primary"

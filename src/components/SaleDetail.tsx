@@ -54,7 +54,7 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
           {current.status === "completed" && !cancelling && (
             <HelpTip k="cancel_sale" side="top" />
           )}
-          <button className="btn" onClick={() => printReceipt(current, settings)}>
+          <button className="btn" onClick={() => printReceipt(current, settings).catch(toast.error)}>
             <Printer size={16} />  {tl("Réimprimer le ticket")}</button>
           <button className="btn btn-primary" onClick={onClose}>{tl("Fermer")}</button>
         </>

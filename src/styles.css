@@ -1334,3 +1334,9 @@ input, select, textarea { border-radius: 10px; }
   .contact-row { flex-wrap: wrap; }
   .contact-row .btn { width: 100%; justify-content: center; }
 }
+
+/* Paramètres → Développeur Eden Dev : journal à envoyer en cas de problème. */
+.journal-card { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.journal-card h4 { margin: 0 0 6px; font-size: 15px; }
+
+.checks { display: grid; gap: 8px; margin-top: 8px; }

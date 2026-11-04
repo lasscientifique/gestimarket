@@ -163,6 +163,7 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
                 s.last_ok_at = Some(now());
                 s.last_error = None;
             });
+            crate::journal::state("Publication du poste serveur (Supabase)", Ok(()));
             let public = public_url.trim().trim_end_matches('/').to_string();
             if active && !public.is_empty() {
                 let r = check_public(&public);
@@ -195,6 +196,7 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
                 other => format!("Supabase injoignable : {other}"),
             };
             set_status(|s| s.last_error = Some(msg.clone()));
+            crate::journal::state("Publication du poste serveur (Supabase)", Err(&msg));
             Err(msg)
         }
     }

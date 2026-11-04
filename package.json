@@ -1,7 +1,7 @@
 {
   "name": "gestimarket",
   "private": true,
-  "version": "0.15.1",
+  "version": "0.16.0",
   "type": "module",
   "description": "GestiMarket — logiciel de gestion de supermarché et de boutiques (Tauri + React)",
   "scripts": {

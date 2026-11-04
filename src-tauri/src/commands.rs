@@ -57,6 +57,79 @@ pub async fn open_contact(kind: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Journal de ce PC (Paramètres → Développeur Eden Dev) : dernières lignes, à copier dans un message.
+#[tauri::command]
+pub async fn journal_text() -> AppResult<String> {
+    Ok(crate::journal::tail(300))
+}
+
+/// Enregistre le journal (14 derniers jours et description du poste) dans Documents\GestiMarket,
+/// puis montre le fichier dans l'explorateur, prêt à être glissé dans WhatsApp ou un e-mail.
+#[tauri::command]
+pub async fn journal_export(app: AppHandle) -> AppResult<String> {
+    let docs = app.path().document_dir().map_err(internal)?;
+    let dir = docs.join("GestiMarket");
+    std::fs::create_dir_all(&dir)?;
+    let now = chrono::Local::now();
+    let path = dir.join(format!("journal-gestimarket-{}.txt", now.format("%Y-%m-%d-%Hh%M")));
+    let config = app.try_state::<NetworkState>().map(|n| n.get()).unwrap_or_default();
+    let text = format!(
+        "GestiMarket {}\nPC : {} ({} {})\nPoste : {} — mode {} (port {})\nJournal enregistré le {}\n\n{}\n",
+        env!("CARGO_PKG_VERSION"),
+        network::hostname(),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        config.poste_name,
+        config.mode,
+        config.port,
+        now.format("%d/%m/%Y à %H:%M"),
+        crate::journal::tail(5000),
+    );
+    std::fs::write(&path, text)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.display())).spawn();
+    }
+    Ok(path.display().to_string())
+}
+
+// ───────────────────────────── Imprimante à tickets de ce poste ─────────────────────────────
+
+fn printer_path(app: &AppHandle) -> AppResult<std::path::PathBuf> {
+    let dir = app.path().app_data_dir().map_err(internal)?;
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.join("imprimante.json"))
+}
+
+#[tauri::command]
+pub async fn printer_list() -> AppResult<Vec<String>> {
+    Ok(tauri::async_runtime::spawn_blocking(crate::printer::list).await.unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn printer_get_config(app: AppHandle) -> AppResult<crate::printer::PrinterConfig> {
+    Ok(crate::printer::load(&printer_path(&app)?))
+}
+
+#[tauri::command]
+pub async fn printer_save_config(app: AppHandle, config: crate::printer::PrinterConfig) -> AppResult<()> {
+    crate::printer::save(&printer_path(&app)?, &config)?;
+    Ok(())
+}
+
+/// Envoie un ticket déjà préparé (ESC/POS, en base64) à l'imprimante de ce poste.
+#[tauri::command]
+pub async fn printer_send(app: AppHandle, data: String) -> AppResult<()> {
+    use base64::Engine;
+    let config = crate::printer::load(&printer_path(&app)?);
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).map_err(|_| AppError::Validation("Ticket à imprimer invalide.".into()))?;
+    tauri::async_runtime::spawn_blocking(move || crate::printer::send(&config.printer, &bytes))
+        .await
+        .map_err(internal)?
+        .map_err(AppError::Validation)
+}
+
 /// Écrit un fichier texte (export CSV) sur ce PC.
 #[tauri::command]
 pub async fn save_text_file(path: String, contents: String) -> AppResult<()> {

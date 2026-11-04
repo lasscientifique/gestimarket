@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { api } from "./api";
 import { useApp } from "./context/AppContext";
@@ -7,32 +7,35 @@ import { Loading } from "./components/ui";
 import type { Role } from "./types";
 import LoginPage from "./pages/Login";
 import PinSetupPage from "./pages/PinSetup";
-import SetupPage from "./pages/Setup";
-import DashboardPage from "./pages/Dashboard";
-import PosPage from "./pages/Pos";
-import CashierDashboardPage from "./pages/CashierDashboard";
-import PostePage from "./pages/Poste";
-import ProductsPage from "./pages/Products";
-import CategoriesPage from "./pages/Categories";
-import StockPage from "./pages/Stock";
-import PurchasesPage from "./pages/Purchases";
-import SuppliersPage from "./pages/Suppliers";
-import CustomersPage from "./pages/Customers";
-import SalesPage from "./pages/Sales";
-import CashSessionsPage from "./pages/CashSessions";
-import ReportsPage from "./pages/Reports";
-import UsersPage from "./pages/Users";
-import AuditPage from "./pages/Audit";
-import SettingsPage from "./pages/Settings";
-import FinderPage from "./pages/Finder";
-import LocationsPage from "./pages/Locations";
-import PaymentsPage from "./pages/Payments";
-import PromotionsPage from "./pages/Promotions";
-import ReturnsPage from "./pages/Returns";
-import CustomerDisplayPage from "./pages/CustomerDisplay";
-import LicencePage from "./pages/Licence";
 import { useLocation } from "react-router-dom";
 import { tl } from "./lib/i18n";
+
+// Pages chargées à la demande : l'écran de connexion s'affiche vite, même en 4G sur un téléphone ;
+// la 3D, les graphiques et le PDF ne sont téléchargés qu'à l'ouverture de leur page.
+const SetupPage = lazy(() => import("./pages/Setup"));
+const DashboardPage = lazy(() => import("./pages/Dashboard"));
+const PosPage = lazy(() => import("./pages/Pos"));
+const CashierDashboardPage = lazy(() => import("./pages/CashierDashboard"));
+const PostePage = lazy(() => import("./pages/Poste"));
+const ProductsPage = lazy(() => import("./pages/Products"));
+const CategoriesPage = lazy(() => import("./pages/Categories"));
+const StockPage = lazy(() => import("./pages/Stock"));
+const PurchasesPage = lazy(() => import("./pages/Purchases"));
+const SuppliersPage = lazy(() => import("./pages/Suppliers"));
+const CustomersPage = lazy(() => import("./pages/Customers"));
+const SalesPage = lazy(() => import("./pages/Sales"));
+const CashSessionsPage = lazy(() => import("./pages/CashSessions"));
+const ReportsPage = lazy(() => import("./pages/Reports"));
+const UsersPage = lazy(() => import("./pages/Users"));
+const AuditPage = lazy(() => import("./pages/Audit"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
+const FinderPage = lazy(() => import("./pages/Finder"));
+const LocationsPage = lazy(() => import("./pages/Locations"));
+const PaymentsPage = lazy(() => import("./pages/Payments"));
+const PromotionsPage = lazy(() => import("./pages/Promotions"));
+const ReturnsPage = lazy(() => import("./pages/Returns"));
+const CustomerDisplayPage = lazy(() => import("./pages/CustomerDisplay"));
+const LicencePage = lazy(() => import("./pages/Licence"));
 
 function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { can } = useApp();
@@ -47,7 +50,13 @@ const CASHIER: Role[] = ["cashier"];
 export default function App() {
   // L'écran client (2ᵉ écran, TV) s'affiche sans connexion utilisateur.
   const location = useLocation();
-  if (location.pathname.startsWith("/display")) return <CustomerDisplayPage />;
+  if (location.pathname.startsWith("/display")) {
+    return (
+      <Suspense fallback={<Loading />}>
+        <CustomerDisplayPage />
+      </Suspense>
+    );
+  }
   return <MainApp />;
 }
 
@@ -71,13 +80,20 @@ function MainApp() {
   }, [setUser]);
 
   if (state === "loading") return <Loading label={tl("Démarrage de GestiMarket…")} />;
-  if (state === "setup") return <SetupPage onDone={() => setState("ready")} />;
+  if (state === "setup") {
+    return (
+      <Suspense fallback={<Loading />}>
+        <SetupPage onDone={() => setState("ready")} />
+      </Suspense>
+    );
+  }
   if (!user) return <LoginPage />;
   // Chaque utilisateur doit avoir un code PIN pour confirmer les actions critiques.
   if (!user.has_pin) return <PinSetupPage />;
 
   return (
     <Layout>
+      <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/" element={<Navigate to={user.role === "admin" ? "/dashboard" : user.role === "manager" ? "/products" : "/pos"} replace />} />
         <Route path="/dashboard" element={<Guard roles={ADMIN}><DashboardPage /></Guard>} />
@@ -104,6 +120,7 @@ function MainApp() {
         <Route path="/licence" element={<Guard roles={ADMIN}><LicencePage /></Guard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </Layout>
   );
 }

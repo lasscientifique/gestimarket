@@ -129,7 +129,9 @@ pub fn start(app: AppHandle) {
         if let Some(state) = app.try_state::<AppState>() {
             let token = settings::get(&state.conn(), "tunnel_token").unwrap_or_default();
             if !token.is_empty() && !running() {
-                if let Err(e) = launch(&token) {
+                let r = launch(&token);
+                crate::journal::state("Adresse Internet (cloudflared)", r.as_ref().map(|_| ()).map_err(|e| e.as_str()));
+                if let Err(e) = r {
                     *lock(&LAST_ERROR) = Some(e);
                 }
             }

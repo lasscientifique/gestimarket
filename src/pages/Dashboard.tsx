@@ -6,15 +6,17 @@ import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Badge, Empty, Loading, PageHeader, StatCard } from "../components/ui";
 import { dateTime, fromMinor, money, paymentLabel, percent, qty, shortDay } from "../lib/format";
-import type { Dashboard } from "../types";
+import type { BackupStatus, Dashboard } from "../types";
 import { locale, tl } from "../lib/i18n";
 
 export default function DashboardPage() {
   const { toast, user } = useApp();
   const [data, setData] = useState<Dashboard | null>(null);
   const [noCashier, setNoCashier] = useState(false);
+  const [backup, setBackup] = useState<BackupStatus | null>(null);
   useEffect(() => {
     api.listUsers().then((u) => setNoCashier(!u.some((x) => x.role === "cashier" && x.active))).catch(() => undefined);
+    api.backupStatus().then(setBackup).catch(() => undefined);
   }, []);
 
   const load = () => api.dashboard().then(setData).catch(toast.error);
@@ -43,6 +45,18 @@ export default function DashboardPage() {
             <RefreshCw size={16} />  {tl("Actualiser")}</button>
         }
       />
+
+      {backup && (backup.stale || backup.error) && (
+        <div className="alert alert-danger">
+          <strong>{tl("Sauvegarde à vérifier.")}</strong>{"  "}
+          {backup.error
+            ? tl("La dernière sauvegarde automatique a échoué : {0}", [backup.error])
+            : backup.last
+              ? tl("Aucune sauvegarde automatique depuis le {0}. Si le PC tombe en panne, les ventes depuis cette date seraient perdues.", [dateTime(backup.last)])
+              : tl("Aucune sauvegarde automatique pour l'instant. Si le PC tombe en panne, toutes les données seraient perdues.")}{" "}
+          <Link to="/settings" onClick={() => { try { sessionStorage.setItem("gm-settings-tab", "backup"); } catch { /* stockage indisponible */ } }}>{tl("Sauvegarder maintenant →")}</Link>
+        </div>
+      )}
 
       {noCashier && (
         <div className="alert alert-warning">

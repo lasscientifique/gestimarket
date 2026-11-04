@@ -208,6 +208,15 @@ pub struct Breakdown {
     pub margin: i64,
 }
 
+/// Remises d'un caissier sur la période : ventes concernées, montant (lignes + ticket), validées par un responsable.
+#[derive(Debug, Serialize)]
+pub struct DiscountRow {
+    pub label: String,
+    pub count: i64,
+    pub amount: i64,
+    pub approved: i64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SalesReport {
     pub from: String,
@@ -227,6 +236,7 @@ pub struct SalesReport {
     pub by_payment: Vec<Breakdown>,
     pub by_category: Vec<Breakdown>,
     pub by_user: Vec<Breakdown>,
+    pub discounts_by_user: Vec<DiscountRow>,
     pub top_products: Vec<TopProduct>,
 }
 
@@ -261,6 +271,28 @@ pub fn sales_report(conn: &Connection, from: &str, to: &str) -> AppResult<SalesR
             params![from, to],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
         )?;
+    // Remises sur les lignes (en plus de la remise du ticket, comptée ci-dessus).
+    let line_discounts: i64 = conn.query_row(
+        &format!(
+            "SELECT COALESCE(SUM(si.discount), 0) FROM sale_items si JOIN sales s ON s.id = si.sale_id
+             WHERE s.status = 'completed' AND {period}"
+        ),
+        params![from, to],
+        |r| r.get(0),
+    )?;
+    let discount_total = discount_total + line_discounts;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT u.full_name, COUNT(*),
+                SUM(s.discount + COALESCE((SELECT SUM(si.discount) FROM sale_items si WHERE si.sale_id = s.id), 0)),
+                SUM(CASE WHEN s.discount_approved_by IS NOT NULL AND s.discount_approved_by <> s.user_id THEN 1 ELSE 0 END)
+         FROM sales s JOIN users u ON u.id = s.user_id
+         WHERE s.status = 'completed' AND {period}
+           AND (s.discount > 0 OR EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id = s.id AND si.discount > 0))
+         GROUP BY s.user_id ORDER BY 3 DESC"
+    ))?;
+    let discounts_by_user = stmt
+        .query_map(params![from, to], |r| Ok(DiscountRow { label: r.get(0)?, count: r.get(1)?, amount: r.get(2)?, approved: r.get(3)? }))?
+        .collect::<Result<Vec<_>, _>>()?;
     let (cancelled_count, cancelled_total): (i64, i64) = conn.query_row(
         &format!("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM sales s WHERE s.status = 'cancelled' AND {period}"),
         params![from, to],
@@ -323,6 +355,7 @@ pub fn sales_report(conn: &Connection, from: &str, to: &str) -> AppResult<SalesR
         by_payment,
         by_category,
         by_user,
+        discounts_by_user,
         top_products: top_products(conn, from, to, 30)?,
     })
 }

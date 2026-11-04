@@ -115,6 +115,13 @@ pub struct SaleInput {
     pub discount: Option<i64>,
     pub payments: Vec<PaymentInput>,
     pub note: Option<String>,
+    /// Numéro unique du ticket, choisi par la caisse : la même vente reçue deux fois (réseau coupé
+    /// pendant l'encaissement, nouvel essai) n'est enregistrée qu'une fois.
+    #[serde(default)]
+    pub client_ref: Option<String>,
+    /// Code PIN qui valide une remise au-delà du seuil (« PIN » ou « id:PIN »), vérifié par `rpc`.
+    #[serde(default)]
+    pub discount_pin: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -551,9 +558,49 @@ struct Line {
 /// Enregistre une vente : contrôle des stocks, calcul des totaux, paiements (éventuellement multiples),
 /// crédit client, mouvements de stock et points de fidélité — dans une seule transaction.
 pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) -> AppResult<Sale> {
+    create_sale_with(conn, user, input, None)
+}
+
+/// Taux de remise lisible : « 12,5 », « 20 ».
+fn percent_text(part: i64, whole: i64) -> String {
+    let p = if whole > 0 { part as f64 * 100.0 / whole as f64 } else { 0.0 };
+    format!("{p:.1}").replace('.', ",").trim_end_matches(",0").to_string()
+}
+
+/// Qui peut valider une remise au-delà du seuil (message d'erreur).
+fn discount_validator(level: u8) -> &'static str {
+    match level {
+        3 => "l'administrateur",
+        2 => "un gestionnaire ou l'administrateur",
+        _ => "un responsable",
+    }
+}
+
+/// Vente, avec le responsable qui a validé la remise par son code PIN (vérifié par `rpc`), s'il y en a un.
+/// Les remises (lignes et ticket) au-delà du seuil « discount_free_percent » sont refusées sans validation,
+/// quel que soit l'écran qui envoie la vente.
+pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleInput, approver: Option<&SessionUser>) -> AppResult<Sale> {
     if input.items.is_empty() {
         return invalid("Le panier est vide.");
     }
+    // Même ticket déjà enregistré (nouvel essai après une coupure) : on renvoie la vente faite.
+    let client_ref = db::clean(&input.client_ref);
+    if let Some(r) = &client_ref {
+        if r.len() > 80 {
+            return invalid("Numéro de ticket invalide.");
+        }
+        let existing: Option<(i64, i64)> = conn
+            .query_row("SELECT id, user_id FROM sales WHERE client_ref = ?1", [r], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional()?;
+        if let Some((id, owner)) = existing {
+            if owner != user.id {
+                return invalid("Ce numéro de ticket appartient à une autre vente.");
+            }
+            return get_sale(conn, id);
+        }
+    }
+    let free_percent = settings::get_i64(conn, "discount_free_percent")?.clamp(0, 100);
+    let discount_level = crate::state::role_level(&settings::get(conn, "pin_discount_level")?);
     let allow_negative = settings::get_bool(conn, "allow_negative_stock")?;
     let require_session = settings::get_bool(conn, "require_cash_session")?;
     let loyalty_step = settings::get_i64(conn, "loyalty_step")?;
@@ -629,6 +676,27 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
     let tax_total = if subtotal > 0 { (line_tax as f64 * total as f64 / subtotal as f64).round() as i64 } else { 0 };
     let cost_total: i64 = lines.iter().map(|l| l.cost).sum();
 
+    // Remises (lignes + ticket) au-delà du seuil : validation par un responsable, contrôlée ici.
+    let gross_total: i64 = lines.iter().map(|l| l.total + l.discount).sum();
+    let all_discount: i64 = lines.iter().map(|l| l.discount).sum::<i64>() + discount;
+    let mut discount_approved_by: Option<i64> = None;
+    let mut discount_note = String::new();
+    if all_discount > 0 && all_discount * 100 > free_percent * gross_total {
+        let level_ok = |u: &SessionUser| crate::state::role_level(&u.role) >= discount_level;
+        let approved = if level_ok(user) { Some(user) } else { approver.filter(|a| level_ok(*a)) };
+        let Some(a) = approved else {
+            return invalid(format!(
+                "Remise de {} % : au-delà de {free_percent} %, elle doit être validée par {} (code PIN).",
+                percent_text(all_discount, gross_total),
+                discount_validator(discount_level)
+            ));
+        };
+        discount_approved_by = Some(a.id);
+        if a.id != user.id {
+            discount_note = format!(" — validée par {}", a.full_name);
+        }
+    }
+
     // 3. Paiements
     let mut payments: Vec<PaymentInput> = Vec::new();
     for p in input.payments.iter().filter(|p| p.amount > 0) {
@@ -702,8 +770,8 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
     let now = db::now();
     tx.execute(
         "INSERT INTO sales (number, customer_id, user_id, session_id, subtotal, discount, tax_total, total, cost_total,
-            amount_paid, change_due, credit_amount, payment_method, status, note, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'completed', ?14, ?15)",
+            amount_paid, change_due, credit_amount, payment_method, status, note, created_at, discount_approved_by, client_ref)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'completed', ?14, ?15, ?16, ?17)",
         params![
             number,
             input.customer_id,
@@ -719,10 +787,22 @@ pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) 
             credit_amount,
             payment_method,
             db::clean(&input.note),
-            now
+            now,
+            discount_approved_by,
+            client_ref
         ],
     )?;
     let sale_id = tx.last_insert_rowid();
+    if all_discount > 0 {
+        audit::log(
+            &tx,
+            user,
+            "Remise",
+            "sale",
+            Some(sale_id),
+            format!("{number} : remise de {all_discount} ({} %){discount_note}", percent_text(all_discount, gross_total)),
+        )?;
+    }
 
     // Les espèces sont regroupées en une seule ligne (montant imputé + montant remis).
     if cash_tendered > 0 {

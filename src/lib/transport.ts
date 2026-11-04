@@ -96,6 +96,12 @@ function toError(e: unknown): Error {
 }
 
 /** Appel d'une opération métier. Les erreurs sont des messages en français prêts à afficher. */
+/** Opérations longues (import, sauvegarde, plan, compte Eden Dev) : délai plus large. */
+const SLOW_COMMANDS = new Set([
+  "import_products", "import_categories", "seed_catalogue", "backup_database", "run_auto_backup", "plan_generate_layout",
+  "license_sync", "account_signup", "account_login", "account_create_store", "account_link", "account_card_start",
+]);
+
 export async function rpc<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (remoteBase === null) {
     try {
@@ -104,17 +110,26 @@ export async function rpc<T>(cmd: string, args?: Record<string, unknown>): Promi
       throw toError(e);
     }
   }
+  // Délai maximum : sur un réseau qui coupe (Wi-Fi faible, 4G), le bouton ne tourne pas sans fin.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SLOW_COMMANDS.has(cmd) ? 180_000 : 45_000);
   let res: Response;
   try {
     res = await fetch(`${remoteBase}/rpc/${cmd}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(args ?? {}),
+      signal: controller.signal,
     });
   } catch {
+    clearTimeout(timer);
+    if (controller.signal.aborted) {
+      throw new Error(tl("Le serveur ne répond pas (délai dépassé). Vérifiez le réseau, puis réessayez : une vente déjà enregistrée ne sera pas comptée deux fois."));
+    }
     throw new Error(tl("Serveur injoignable ({0}). Vérifiez que le poste serveur est allumé et sur le même réseau.", [remoteBase]));
   }
   const data = await res.json().catch(() => ({ error: tl("Réponse invalide du serveur ({0}).", [res.status]) }));
+  clearTimeout(timer);
   if (data.error) throw new Error(data.error);
   return data.ok as T;
 }

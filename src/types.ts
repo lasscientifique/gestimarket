@@ -671,6 +671,10 @@ export interface SaleInput {
   discount: number;
   payments: PaymentInput[];
   note: string | null;
+  /** Numéro unique du ticket (même vente renvoyée après une coupure : enregistrée une fois). */
+  client_ref?: string | null;
+  /** PIN du responsable qui valide une remise au-delà du seuil. */
+  discount_pin?: string | null;
 }
 
 export interface PurchaseItem {
@@ -797,7 +801,27 @@ export interface SalesReport {
   by_payment: Breakdown[];
   by_category: Breakdown[];
   by_user: Breakdown[];
+  /** Remises par caissier : ventes concernées, montant (lignes + ticket), validées par un responsable. */
+  discounts_by_user: DiscountRow[];
   top_products: TopProduct[];
+}
+
+/** Sauvegarde automatique (poste qui a la base). */
+export interface BackupStatus {
+  dir: string | null;
+  is_default: boolean;
+  default_dir: string | null;
+  last: string | null;
+  error: string | null;
+  /** Pas de sauvegarde automatique réussie depuis 48 h (ou jamais). */
+  stale: boolean;
+}
+
+export interface DiscountRow {
+  label: string;
+  count: number;
+  amount: number;
+  approved: number;
 }
 
 export interface AuditEntry {

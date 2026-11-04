@@ -4,9 +4,11 @@ mod cloud;
 mod commands;
 mod db;
 mod error;
+mod journal;
 mod license;
 mod live;
 mod network;
+mod printer;
 mod rpc;
 mod services;
 mod state;
@@ -58,15 +60,25 @@ pub fn run() {
             let root = app.path().app_data_dir()?;
             let dir = boutique::data_dir(&root, slot);
             std::fs::create_dir_all(&dir)?;
+            journal::init(dir.join("journaux"));
+            journal::info(format!("Démarrage de GestiMarket {} (boutique {slot}, {})", env!("CARGO_PKG_VERSION"), std::env::consts::OS));
             let db_path = dir.join("gestimarket.db");
             let conn = db::open(&db_path)?;
             let shop_name = services::settings::get(&conn, "shop_name").unwrap_or_default();
             // Le code-barres est obligatoire : on en attribue un aux anciens produits qui n'en ont pas.
             if let Err(e) = services::catalog::fill_missing_barcodes(&conn) {
-                eprintln!("Attribution des codes-barres impossible : {e}");
+                journal::error(format!("Attribution des codes-barres impossible : {e}"));
+            }
+            // Sauvegarde automatique, même sans dossier choisi : Documents\GestiMarket\Sauvegardes.
+            if let Ok(docs) = app.path().document_dir() {
+                let mut d = docs.join("GestiMarket").join("Sauvegardes");
+                if slot > 1 {
+                    d = d.join(format!("Boutique {slot}"));
+                }
+                services::backup::set_default_dir(d);
             }
             if let Err(e) = services::backup::auto_backup(&conn, false) {
-                eprintln!("Sauvegarde automatique impossible : {e}");
+                journal::error(format!("Sauvegarde automatique impossible : {e}"));
             }
             // Licence de cette boutique (vérifiée hors ligne) et horloge mémorisée.
             license::init(&conn, &root, &dir, slot);
@@ -94,6 +106,7 @@ pub fn run() {
             // Chaque boutique a son propre port par défaut (7878, 7888, 7898…).
             let net = network::NetworkState::load(dir.join("network.json"), boutique::default_port(slot));
             let config = net.get();
+            journal::info(format!("Poste « {} » en mode {} (port {})", config.poste_name, config.mode, config.port));
             app.manage(net);
             if config.mode == "server" {
                 network::start_server(app.handle().clone(), config.port);
@@ -115,9 +128,8 @@ pub fn run() {
                         // Toutes les 30 minutes ; toutes les 2 minutes dans les 24 h qui suivent un paiement.
                         let due = minutes % 30 == 0 || (minutes % 2 == 0 && account::fast_sync());
                         if due && license::should_sync() {
-                            if let Err(e) = account::sync(&state) {
-                                eprintln!("Synchronisation de la licence impossible : {e}");
-                            }
+                            let r = account::sync(&state);
+                            journal::state("Synchronisation de la licence", r.as_ref().map(|_| ()).map_err(|e| e.as_str()));
                         }
                     }
                     minutes = minutes.wrapping_add(1);
@@ -131,7 +143,7 @@ pub fn run() {
                 std::thread::sleep(Duration::from_secs(3600));
                 if let Some(state) = handle.try_state::<AppState>() {
                     if let Err(e) = services::backup::auto_backup(&state.conn(), false) {
-                        eprintln!("Sauvegarde automatique impossible : {e}");
+                        journal::error(format!("Sauvegarde automatique impossible : {e}"));
                     }
                 }
             });
@@ -140,6 +152,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::rpc,
             commands::open_contact,
+            commands::journal_text,
+            commands::journal_export,
+            commands::printer_list,
+            commands::printer_get_config,
+            commands::printer_save_config,
+            commands::printer_send,
             commands::save_text_file,
             commands::save_binary_file,
             commands::read_text_file,

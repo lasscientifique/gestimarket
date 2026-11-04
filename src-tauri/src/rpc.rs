@@ -52,7 +52,19 @@ fn confirm_pin_ex(
     let Some(raw) = pin.filter(|p| !p.trim().is_empty()) else {
         return invalid("Code PIN requis pour confirmer cette action.");
     };
-    let (approver, pin) = parse_pin(&raw);
+    approve_pin(state, conn, user, &raw, level, action)
+}
+
+/// Vérifie un code PIN donné (« PIN » ou « id:PIN ») au niveau demandé, avec l'anti force brute par compte.
+fn approve_pin(
+    state: &AppState,
+    conn: &rusqlite::Connection,
+    user: &crate::state::SessionUser,
+    raw: &str,
+    level: u8,
+    action: Option<&str>,
+) -> AppResult<crate::state::SessionUser> {
+    let (approver, pin) = parse_pin(raw);
     state.account_guard(approver.unwrap_or(user.id))?;
     match auth::approve(conn, user, approver, &pin, level)? {
         auth::Approval::Approved(approver) => {
@@ -584,7 +596,19 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "customer_statement" => run(Any, &|c, _| out(partners::statement(c, arg(&a, "id")?)?)),
 
         // ───── Ventes ─────
-        "create_sale" => run(Any, &|c, u| out(sales::create_sale(c, u, arg(&a, "input")?)?)),
+        // Remise au-delà du seuil : le PIN envoyé avec la vente est vérifié ici (niveau « pin_discount_level »),
+        // puis la vente contrôle elle-même le seuil et trace la remise.
+        "create_sale" => run(Any, &|c, u| {
+            let input: sales::SaleInput = arg(&a, "input")?;
+            let approver = match input.discount_pin.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+                Some(pin) => {
+                    let level = level_of(&settings::get(c, "pin_discount_level")?);
+                    Some(approve_pin(state, c, u, pin, level, None)?)
+                }
+                None => None,
+            };
+            out(sales::create_sale_with(c, u, input, approver.as_ref())?)
+        }),
         "list_sales" => run(Any, &|c, u| {
             let mut f = arg::<Option<sales::SaleFilter>>(&a, "filter")?.unwrap_or_default();
             if !u.is_admin() {
@@ -935,6 +959,8 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             audit::log(c, u, "Sauvegarde de la base", "system", None, &path)?;
             out(())
         }),
+        // Sauvegarde automatique : dossier utilisé, dernière copie, erreur (bandeau du tableau de bord).
+        "backup_status" => run(Admin, &|c, _| out(backup::status(c)?)),
         "run_auto_backup" => run(Admin, &|c, u| match backup::auto_backup(c, true)? {
             Some(p) => {
                 let p = p.display().to_string();

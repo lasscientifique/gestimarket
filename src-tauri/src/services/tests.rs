@@ -94,6 +94,8 @@ fn sale_input(items: Vec<(i64, f64)>, method: &str, paid: i64, customer: Option<
             }]
         },
         note: None,
+        client_ref: None,
+        discount_pin: None,
     }
 }
 
@@ -546,7 +548,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 10);
+    assert_eq!(count("PRAGMA user_version"), 11);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -1055,7 +1057,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 10);
+    assert_eq!(count("PRAGMA user_version"), 11);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
@@ -1334,7 +1336,7 @@ fn migration_to_pin_only_staff() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 10);
+    assert_eq!(count("PRAGMA user_version"), 11);
     // Plus de mot de passe, sauf pour l'administrateur qui n'a pas encore de PIN.
     assert_eq!(count("SELECT COUNT(*) FROM users WHERE password_hash <> ''"), 1);
     assert_eq!(count("SELECT internet_access FROM users WHERE id = 1"), 1);
@@ -1585,4 +1587,69 @@ fn returns_credit_notes_and_z_reports() {
     assert_eq!(list[0].data["cash"]["difference"], 0);
     assert!(conn.execute("UPDATE z_reports SET data = '{}' WHERE number = 1", []).is_err());
     assert!(conn.execute("DELETE FROM z_reports", []).is_err());
+}
+
+#[test]
+fn discounts_need_validation_and_sales_are_not_duplicated() {
+    let (mut conn, admin) = setup();
+    let p = product(&mut conn, &admin, "Riz 5 kg", 2000, 4000, 50.0);
+    let caisse = cashier(&conn, &admin);
+    let gerant_id = users::create(&conn, &admin, users::UserInput {
+        username: Some("gerant".into()), full_name: "Gérant Test".into(), role: "manager".into(), active: Some(true), pin: Some("5937".into()), internet_access: None,
+    }).unwrap();
+    let gerant = SessionUser { id: gerant_id, username: "gerant".into(), full_name: "Gérant Test".into(), role: "manager".into(), has_pin: true, lang: None };
+    cash::open(&conn, &caisse, 0).unwrap();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let with_line_discount = |d: i64| {
+        let mut input = sale_input(vec![(p, 2.0)], "cash", 8000, None);
+        input.items[0].discount = Some(d);
+        input
+    };
+
+    // 2 × 4 000 = 8 000 : remise de 400 (5 %) sans validation.
+    let mut input = sale_input(vec![(p, 2.0)], "cash", 8000, None);
+    input.discount = Some(400);
+    assert_eq!(sales::create_sale(&mut conn, &caisse, input).unwrap().total, 7600);
+    // 10 % : refusée sans validation, même envoyée directement au serveur (sans passer par l'écran).
+    let err = sales::create_sale(&mut conn, &caisse, with_line_discount(800)).unwrap_err().to_string();
+    assert!(err.contains("10 %") && err.contains("gestionnaire"), "{err}");
+    // Ligne et ticket cumulés : 300 + 300 = 7,5 % → refusée aussi.
+    let mut input = with_line_discount(300);
+    input.discount = Some(300);
+    assert!(sales::create_sale(&mut conn, &caisse, input).unwrap_err().to_string().contains("7,5 %"));
+    // Une caissière ne valide pas ; le gérant oui (son PIN est vérifié par rpc), et c'est tracé.
+    assert!(sales::create_sale_with(&mut conn, &caisse, with_line_discount(800), Some(&caisse)).is_err());
+    let s = sales::create_sale_with(&mut conn, &caisse, with_line_discount(800), Some(&gerant)).unwrap();
+    assert_eq!(s.total, 7200);
+    let approved: Option<i64> = conn.query_row("SELECT discount_approved_by FROM sales WHERE id = ?1", [s.id], |r| r.get(0)).unwrap();
+    assert_eq!(approved, Some(gerant_id));
+    let trace: String = conn
+        .query_row("SELECT details FROM audit_log WHERE action = 'Remise' AND entity_id = ?1", [s.id], |r| r.get(0))
+        .unwrap();
+    assert!(trace.contains("10 %") && trace.contains("validée par Gérant Test"), "{trace}");
+    // Seuil réglable : à 10 %, la même remise passe sans validation.
+    settings::set(&conn, "discount_free_percent", "10").unwrap();
+    sales::create_sale(&mut conn, &caisse, with_line_discount(800)).unwrap();
+
+    // Même ticket envoyé deux fois (réseau coupé pendant l'encaissement) : une seule vente, stock décompté une fois.
+    let mut input = sale_input(vec![(p, 1.0)], "cash", 4000, None);
+    input.client_ref = Some("caisse1-k3x9".into());
+    let first = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    let stock_after = stock_of(&conn, p);
+    let mut again = sale_input(vec![(p, 1.0)], "cash", 4000, None);
+    again.client_ref = Some("caisse1-k3x9".into());
+    let second = sales::create_sale(&mut conn, &caisse, again).unwrap();
+    assert_eq!((first.id, first.number.clone()), (second.id, second.number));
+    assert_eq!(stock_of(&conn, p), stock_after);
+    // Le numéro d'un autre ne rend pas sa vente.
+    let mut other = sale_input(vec![(p, 1.0)], "cash", 4000, None);
+    other.client_ref = Some("caisse1-k3x9".into());
+    assert!(sales::create_sale(&mut conn, &gerant, other).unwrap_err().to_string().contains("autre vente"));
+
+    // Rapport : remises par caissier (lignes + ticket), dont celles validées par un responsable.
+    let r = reports::sales_report(&conn, &today, &today).unwrap();
+    assert_eq!(r.discount_total, 2000);
+    assert_eq!(r.discounts_by_user.len(), 1);
+    let d = &r.discounts_by_user[0];
+    assert_eq!((d.label.as_str(), d.count, d.amount, d.approved), ("Caissière Test", 3, 2000, 1));
 }

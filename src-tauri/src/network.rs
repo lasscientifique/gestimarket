@@ -18,7 +18,8 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
-use tower_http::cors::CorsLayer;
+use tower_http::compression::CompressionLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::state::{AppState, Origin};
 
@@ -118,7 +119,9 @@ pub fn start_server(app: AppHandle, port: u16) {
             .route("/media/{id}", get(media_handler))
             .route("/api/ping", get(ping_handler))
             .fallback(get(asset_handler))
-            .layer(CorsLayer::permissive())
+            .layer(cors())
+            // gzip / brotli selon le navigateur (les photos, déjà compressées, ne le sont pas).
+            .layer(CompressionLayer::new())
             .with_state(app.clone());
         // HTTPS (port + 1) : indispensable pour utiliser la caméra des téléphones et tablettes (scanner).
         if let Some(tls) = tls_config(&app).await {
@@ -129,17 +132,17 @@ pub fn start_server(app: AppHandle, port: u16) {
                     .serve(https.into_make_service_with_connect_info::<std::net::SocketAddr>())
                     .await
                 {
-                    eprintln!("Serveur HTTPS arrêté : {e}");
+                    crate::journal::error(format!("Serveur HTTPS arrêté : {e}"));
                 }
             });
         }
         match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
             Ok(listener) => {
                 if let Err(e) = axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await {
-                    eprintln!("Serveur réseau arrêté : {e}");
+                    crate::journal::error(format!("Serveur réseau arrêté : {e}"));
                 }
             }
-            Err(e) => eprintln!("Impossible d'ouvrir le port {port} : {e}"),
+            Err(e) => crate::journal::error(format!("Impossible d'ouvrir le port {port} : {e}")),
         }
     });
 }
@@ -177,7 +180,7 @@ async fn tls_config(app: &AppHandle) -> Option<axum_server::tls_rustls::RustlsCo
     match axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert_path, &key_path).await {
         Ok(c) => Some(c),
         Err(e) => {
-            eprintln!("HTTPS indisponible : {e}");
+            crate::journal::error(format!("HTTPS indisponible : {e}"));
             None
         }
     }
@@ -199,6 +202,39 @@ fn client_route(addr: &std::net::SocketAddr, headers: &HeaderMap) -> (String, &'
     (peer.to_string(), "local")
 }
 
+/// Origines autorisées à appeler ce serveur depuis une autre adresse : les postes clients (application de
+/// bureau) et le développement. Tablettes, téléphones et écran client chargent l'interface depuis ce serveur
+/// lui-même (même origine) : un site web quelconque ouvert sur un appareil du magasin ne peut pas l'appeler.
+fn cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::predicate(|origin, _| allowed_origin(origin.as_bytes())))
+        .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+}
+
+fn allowed_origin(origin: &[u8]) -> bool {
+    matches!(origin, b"tauri://localhost" | b"http://tauri.localhost" | b"https://tauri.localhost" | b"http://localhost:1420")
+}
+
+/// Paramètres d'un appel venu du réseau : toujours un objet JSON (sinon refusé), auquel le serveur ajoute
+/// l'adresse et la route de l'appareil. Celles qu'un appareil enverrait lui-même sont remplacées.
+/// Sans ce contrôle, une liste (`[]`) passait sans route et l'appel venu d'Internet semblait venir du magasin.
+fn remote_args(body: &[u8], ip: String, route: &str) -> Result<Value, &'static str> {
+    let parsed: Value = if body.iter().all(|b| b.is_ascii_whitespace()) {
+        Value::Null
+    } else {
+        serde_json::from_slice(body).map_err(|_| "Requête invalide : paramètres JSON illisibles.")?
+    };
+    let mut map = match parsed {
+        Value::Object(m) => m,
+        Value::Null => serde_json::Map::new(),
+        _ => return Err("Requête invalide : les paramètres doivent être un objet JSON."),
+    };
+    map.insert("__ip".into(), Value::String(ip));
+    map.insert("__route".into(), Value::String(route.into()));
+    Ok(Value::Object(map))
+}
+
 async fn rpc_handler(
     State(app): State<AppHandle>,
     Path(cmd): Path<String>,
@@ -211,7 +247,6 @@ async fn rpc_handler(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .map(String::from);
-    let mut args: Value = if body.is_empty() { Value::Null } else { serde_json::from_slice(&body).unwrap_or(Value::Null) };
     let (ip, route) = client_route(&addr, &headers);
     // Autres appareils et accès par Internet : selon la formule. Ce PC lui-même (127.0.0.1 hors tunnel)
     // n'est pas un poste client.
@@ -222,14 +257,10 @@ async fn rpc_handler(
         }
     }
     // Adresse IP et route de l'appareil (postes connectés, anti force brute, restrictions Internet).
-    // Elles remplacent toujours celles qu'un appareil enverrait lui-même.
-    if args.is_null() {
-        args = json!({});
-    }
-    if let Value::Object(m) = &mut args {
-        m.insert("__ip".into(), Value::String(ip));
-        m.insert("__route".into(), Value::String(route.into()));
-    }
+    let args = match remote_args(&body, ip, route) {
+        Ok(a) => a,
+        Err(msg) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response(),
+    };
     let result = tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
         crate::rpc::dispatch(&state, &Origin::Remote(token), &cmd, args)
@@ -282,16 +313,36 @@ async fn asset_handler(State(app): State<AppHandle>, uri: Uri) -> Response {
         "/" | "" => "index.html".to_string(),
         p => p.trim_start_matches('/').to_string(),
     };
-    let asset = app.asset_resolver().get(path).or_else(|| app.asset_resolver().get("index.html".into()));
+    let resolver = app.asset_resolver();
+    let (asset, cache) = match resolver.get(path.clone()) {
+        Some(a) => (Some(a), cache_policy(&path)),
+        // Fichier de l'interface introuvable (ancienne version encore ouverte sur un téléphone) : 404, pas la
+        // page d'accueil à la place d'un script. Les autres adresses sont des pages de l'application.
+        None if path.starts_with("assets/") => (None, ""),
+        None => (resolver.get("index.html".into()), cache_policy("index.html")),
+    };
     match asset {
-        Some(a) => ([(header::CONTENT_TYPE, a.mime_type)], a.bytes).into_response(),
+        Some(a) => ([(header::CONTENT_TYPE, a.mime_type), (header::CACHE_CONTROL, cache.to_string())], a.bytes).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// Fichiers de l'interface : les scripts et styles portent une empreinte dans leur nom (gardés un an sur
+/// l'appareil) ; la page d'accueil est toujours revérifiée, pour qu'une nouvelle version arrive aussitôt.
+fn cache_policy(path: &str) -> &'static str {
+    if path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else if path == "index.html" || path.ends_with(".html") {
+        "no-cache"
+    } else {
+        "public, max-age=86400"
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::client_route;
+    use super::{allowed_origin, cache_policy, client_route, remote_args};
+    use serde_json::json;
     use axum::http::{HeaderMap, HeaderValue};
     use std::net::SocketAddr;
 
@@ -322,5 +373,36 @@ mod tests {
         // IPv4 vue en IPv6 (::ffff:192.168.1.30) : même adresse.
         let mapped: SocketAddr = "[::ffff:192.168.1.30]:50000".parse().unwrap();
         assert_eq!(client_route(&mapped, &HeaderMap::new()), ("192.168.1.30".to_string(), "local"));
+    }
+
+    #[test]
+    fn parametres_toujours_un_objet_avec_la_route_du_serveur() {
+        // Liste, texte, nombre : refusés (avant, la route manquait et Internet passait pour le magasin).
+        for body in [&b"[]"[..], &b"\"x\""[..], &b"1"[..], &b"true"[..], &b"{"[..]] {
+            assert!(remote_args(body, "41.73.10.20".into(), "internet").is_err(), "{:?}", std::str::from_utf8(body));
+        }
+        // Corps vide : objet vide avec la route.
+        let a = remote_args(b"", "41.73.10.20".into(), "internet").unwrap();
+        assert_eq!(a, json!({"__ip": "41.73.10.20", "__route": "internet"}));
+        // Route et adresse envoyées par l'appareil : remplacées.
+        let a = remote_args(br#"{"pin":"1234","__route":"local","__ip":"192.168.1.2"}"#, "41.73.10.20".into(), "internet").unwrap();
+        assert_eq!(a["__route"], "internet");
+        assert_eq!(a["__ip"], "41.73.10.20");
+        assert_eq!(a["pin"], "1234");
+    }
+
+    #[test]
+    fn cors_postes_clients_seulement() {
+        assert!(allowed_origin(b"http://tauri.localhost"));
+        assert!(allowed_origin(b"tauri://localhost"));
+        assert!(!allowed_origin(b"https://site-piege.example"));
+        assert!(!allowed_origin(b"http://192.168.1.10:7878"));
+    }
+
+    #[test]
+    fn cache_des_fichiers_de_l_interface() {
+        assert_eq!(cache_policy("assets/index-4f2a9c.js"), "public, max-age=31536000, immutable");
+        assert_eq!(cache_policy("index.html"), "no-cache");
+        assert_eq!(cache_policy("icon.png"), "public, max-age=86400");
     }
 }

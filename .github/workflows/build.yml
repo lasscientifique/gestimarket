@@ -43,6 +43,26 @@ jobs:
           msg=$(grep -E -A16 '^(error(\[E[0-9]+\])?:|---- .* stdout ----|thread .* panicked)' cargo-test.log | head -200 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=cargo test::${msg:-voir le journal}"
 
+  # Le code propre à Windows (impression directe par la file d'impression, explorateur) n'est pas compilé
+  # par les tests Ubuntu : sa compilation est vérifiée sur Windows à chaque push, avant toute version.
+  windows-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npx vite build
+      - name: cargo check (Windows)
+        working-directory: src-tauri
+        run: cargo check --all-targets --color never
+
   # Test d'interface : GestiMarket en mode serveur sous Xvfb, piloté par Playwright
   # (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare).
   # Les captures sont publiées dans une pré-release « e2e-N » (dépôt public : lisibles sans connexion).

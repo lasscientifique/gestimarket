@@ -57,7 +57,9 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("sidebar_style", "dark"),
     // Sécurité : niveau requis pour confirmer par PIN (cashier, manager, admin)
     ("pin_void_level", "cashier"),
-    ("pin_discount_level", "cashier"),
+    ("pin_discount_level", "manager"),
+    // Remise maximale sans validation (% du ticket) ; au-delà, PIN du niveau ci-dessus, contrôlé par le serveur.
+    ("discount_free_percent", "5"),
     // Stock
     ("expiry_alert_days", "30"),
     // Retours : délai après la vente (jours) et durée de validité d'un avoir (jours)
@@ -154,6 +156,9 @@ pub fn update(
         }
         if key == "mobile_operators" {
             crate::services::sales::validate_operators(value)?;
+        }
+        if key == "discount_free_percent" && !matches!(value.trim().parse::<i64>(), Ok(0..=100)) {
+            return invalid("La remise maximale sans validation doit être comprise entre 0 et 100 %.");
         }
         if key == "shop_name" && value.trim().is_empty() {
             return invalid("Le nom du commerce est obligatoire.");

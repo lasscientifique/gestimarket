@@ -15,9 +15,10 @@ import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { Badge } from "../components/ui";
 import { activitiesOf, BusinessTypeGrid, featuresOf, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
-import { Building2, Code2, Mail, MessageCircle, Phone } from "lucide-react";
+import { Building2, Code2, Copy, FileText, Mail, MessageCircle, Phone } from "lucide-react";
 import { currencySymbol, dateTime, isoDate, minorToInput, toMinor } from "../lib/format";
-import type { CloudStatus, Settings, TunnelStatus } from "../types";
+import type { BackupStatus, CloudStatus, Settings, TunnelStatus } from "../types";
+import { PrinterSettings } from "../components/PrinterSettings";
 import { LANGS, tl, tm } from "../lib/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "../lib/transport";
@@ -62,7 +63,11 @@ export default function SettingsPage() {
     setF(settings);
     setLoyalty(minorToInput(Number(settings.loyalty_step || 0)));
   }, [settings]);
-  const loadInfo = () => api.appInfo().then(setInfo).catch(() => undefined);
+  const [backupState, setBackupState] = useState<BackupStatus | null>(null);
+  const loadInfo = () => {
+    api.appInfo().then(setInfo).catch(() => undefined);
+    api.backupStatus().then(setBackupState).catch(() => undefined);
+  };
   useEffect(() => {
     loadInfo();
   }, []);
@@ -228,6 +233,7 @@ export default function SettingsPage() {
           </Field>
         </div>
       </div>
+      {isTauri && <PrinterSettings />}
 
       <div className="card">
         <h3 className="card-title"><Coins size={18} />  {tl("Devise, taxes et ventes")}</h3>
@@ -323,16 +329,24 @@ export default function SettingsPage() {
         <div className="form-grid">
           <Field label={tl("Dossier des sauvegardes automatiques")} span={2}>
             <div className="input-group">
-              <input value={f.auto_backup_dir ?? ""} onChange={set("auto_backup_dir")} placeholder={tl("Aucun dossier : sauvegarde automatique désactivée")} />
+              <input
+                value={f.auto_backup_dir ?? ""}
+                onChange={set("auto_backup_dir")}
+                placeholder={backupState?.default_dir ? tl("Par défaut : {0}", [backupState.default_dir]) : tl("Aucun dossier : sauvegarde automatique désactivée")}
+              />
               <button className="btn" type="button" onClick={chooseBackupDir}><FolderOpen size={16} />  {tl("Choisir")}</button>
             </div>
           </Field>
           <Field label={tl("Nombre de sauvegardes conservées")}><input inputMode="numeric" value={f.auto_backup_keep ?? "14"} onChange={set("auto_backup_keep")} /></Field>
         </div>
         <div className="row-start">
-          <button className="btn" onClick={runAuto} disabled={!settings.auto_backup_dir}><DatabaseBackup size={16} />  {tl("Sauvegarder maintenant dans ce dossier")}</button>
-          {!isRemote() && <button className="btn" onClick={backup}><DatabaseBackup size={16} />  {tl("Sauvegarder vers un fichier…")}</button>}
+          <button className="btn" onClick={runAuto} disabled={!settings.auto_backup_dir && !backupState?.dir}><DatabaseBackup size={16} />  {tl("Sauvegarder maintenant dans ce dossier")}</button>
+          {!isRemote() && <button className="btn" onClick={backup}><DatabaseBackup size={16} />  {tl("Copier sur une clé USB ou un autre disque…")}</button>}
         </div>
+        {backupState?.error && <div className="alert alert-danger" style={{ marginTop: 12 }}>{tl("La dernière sauvegarde automatique a échoué : {0}", [backupState.error])}</div>}
+        {backupState?.is_default && backupState.dir && (
+          <p className="muted small" style={{ marginTop: 12 }}>{tl("Aucun dossier choisi : les copies sont faites chaque jour dans {0}, sur ce même PC. Choisissez plutôt une clé USB, un disque externe ou un dossier synchronisé pour être protégé d'une panne du PC.", [backupState.dir])}</p>
+        )}
         {info && (
           <p className="muted small" style={{ marginTop: 12 }}>
             {tl("Version")} {info.version}  {tl("· Dernière sauvegarde automatique :")} {info.last_auto_backup ? dateTime(info.last_auto_backup) : tl("jamais")}
@@ -395,7 +409,48 @@ function DeveloperTab({ version }: { version?: string }) {
           </div>
         ))}
       </div>
+      {isTauri && <JournalCard openWhatsApp={openLink("whatsapp")} />}
       {version && <p className="muted small" style={{ marginTop: 12 }}>{tl("GestiMarket version {0}", [version])}</p>}
+    </div>
+  );
+}
+
+/** Journal de ce PC (erreurs, démarrages, sauvegardes, tunnel) : à envoyer à Eden Dev en cas de problème. */
+function JournalCard({ openWhatsApp }: { openWhatsApp: (e: React.MouseEvent) => void }) {
+  const { toast } = useApp();
+  const [saved, setSaved] = useState<string | null>(null);
+  const exportJournal = async () => {
+    try {
+      setSaved(await invoke<string>("journal_export"));
+    } catch (err) {
+      toast.error(err);
+    }
+  };
+  const copyJournal = async () => {
+    try {
+      const text = await invoke<string>("journal_text");
+      await navigator.clipboard.writeText(text || tl("Journal vide."));
+      toast.success(tl("Journal copié : collez-le dans la discussion WhatsApp ou dans un e-mail."));
+    } catch (err) {
+      toast.error(err);
+    }
+  };
+  return (
+    <div className="journal-card">
+      <h4>{tl("En cas de problème : envoyer le journal")}</h4>
+      <p className="muted small">
+        {tl("GestiMarket note ses démarrages et ses erreurs (sauvegarde, réseau, adresse Internet, licence) pendant 14 jours. Envoyez ce journal à Eden Dev : il aide à comprendre la panne.")}
+      </p>
+      <div className="row-start">
+        <button className="btn btn-primary" onClick={exportJournal}><FileText size={16} />  {tl("Enregistrer le journal")}</button>
+        <button className="btn" onClick={copyJournal}><Copy size={16} />  {tl("Copier les dernières lignes")}</button>
+        <a className="btn" href={EDEN_LINKS.whatsapp} target="_blank" rel="noreferrer" onClick={openWhatsApp}><MessageCircle size={16} />  {tl("Ouvrir WhatsApp")}</a>
+      </div>
+      {saved && (
+        <p className="muted small" style={{ marginTop: 8 }}>
+          {tl("Fichier prêt : {0}. Glissez-le dans la discussion WhatsApp d'Eden Dev ou joignez-le à un e-mail.", [saved])}
+        </p>
+      )}
     </div>
   );
 }
@@ -499,13 +554,24 @@ function SecurityTab({ f, setF }: { f: Settings; setF: (s: Settings) => void }) 
               {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Field>
-          <Field label={tl("Accorder une remise (article ou ticket)")}>
-            <select value={f.pin_discount_level || "cashier"} onChange={(e) => setF({ ...f, pin_discount_level: e.target.value })}>
+          <Field label={tl("Remise maximale sans validation (% du ticket)")}>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={f.discount_free_percent ?? "5"}
+              onChange={(e) => setF({ ...f, discount_free_percent: String(Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0)))) })}
+            />
+          </Field>
+          <Field label={tl("Au-delà, la remise est validée par")}>
+            <select value={f.pin_discount_level || "manager"} onChange={(e) => setF({ ...f, pin_discount_level: e.target.value })}>
               {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Field>
         </div>
         <p className="muted small">{tl("Si un responsable doit confirmer, il tape son propre PIN sur la caisse : l'action est tracée à son nom dans le journal d'activité.")}</p>
+        <p className="muted small">{tl("Remises : le serveur vérifie lui-même le seuil et le code PIN, quel que soit l'appareil qui encaisse. Chaque remise est inscrite au journal, et le rapport des ventes les montre par caissier.")}</p>
       </div>
       <div className="card">
         <h3 className="card-title"><ShieldCheck size={18} />  {tl("Actions toujours confirmées par PIN")}</h3>

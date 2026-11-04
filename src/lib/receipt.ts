@@ -3,6 +3,8 @@ import { barcodeSvg } from "../components/LabelsModal";
 import { dateTime, money, paymentLabelShop, qty } from "./format";
 import { ts } from "./i18n";
 import { mediaUrl } from "./media";
+import { receiptEscpos } from "./escpos";
+import { printerConfig, sendToPrinter } from "./printer";
 
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -98,7 +100,14 @@ export function printHtml(html: string, widthMm?: number) {
   );
 }
 
-export function printReceipt(sale: Sale, settings: Settings) {
+/** Ticket de vente : directement sur l'imprimante à tickets de ce poste si elle est choisie
+ *  (sans fenêtre), sinon par la fenêtre d'impression du système. */
+export async function printReceipt(sale: Sale, settings: Settings): Promise<void> {
+  const pc = await printerConfig();
+  if (pc?.printer) {
+    await sendToPrinter(receiptEscpos(sale, settings));
+    return;
+  }
   printHtml(receiptHtml(sale, settings), Number(settings.receipt_width || 80));
 }
 
