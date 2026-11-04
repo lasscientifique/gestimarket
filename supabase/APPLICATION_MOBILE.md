@@ -2,58 +2,75 @@
 
 Projet FlutterFlow : **GestiMarket** (`gesti-market-ywxut8`), paquet `com.edendev.gestimarket`. Il est branché sur le Supabase d'Eden Dev avec la clé publique, jamais la clé `service_role`.
 
-L'application est une simple fenêtre sur GestiMarket. Elle a **deux pages en widgets natifs FlutterFlow** et aucun code personnalisé. Toute la logique (connexion du personnel, caisse, abonnement…) est dans le logiciel GestiMarket, que la WebView affiche à l'adresse Internet de la boutique (`https://gm-000123.gestimarket.shop`).
+L'application est faite en **widgets natifs FlutterFlow et Supabase uniquement** : pas d'appel d'API, pas de code personnalisé. Toute la logique de la boutique (personnel, caisse, abonnement…) reste dans le logiciel GestiMarket, que la WebView affiche à l'adresse Internet de la boutique : `https://<code en minuscules>.gestimarket.shop`, par exemple `https://gm-000001.gestimarket.shop`.
 
-| Page | Rôle |
-|---|---|
-| `Demarrage` (page d'entrée, `/accueil`) | Logo sur fond `#0F766E`, champ « Boutique Code » et « par Eden Dev ». Vérifie le code, le garde (`storeCode`) et ouvre la boutique |
-| `boutique` (`/boutique`) | WebView native sur l'adresse Internet de la boutique. Écran **« Serveur éteint »** quand le PC est arrêté, avec un bouton « Changer de boutique » |
+| Page | Rôle | Supabase |
+|---|---|---|
+| `Demarrage` (page d'entrée sans session) | Logo, champ du code du commerce, « par Eden Dev » ; lien vers l'espace propriétaire | RPC `gm_server_status` |
+| `boutique` | WebView native sur l'adresse de la boutique ; écran « Serveur éteint » | RPC `gm_server_status` |
+| `Connexion` | Connexion de la propriétaire (compte boutique) | Supabase Auth, e-mail |
+| `Boutiques` (page après connexion) | Ses boutiques, chacune avec deux boutons : « Ouvrir » (WebView) et « Abonnement » ; déconnexion | requête `gm_stores` |
+| `Abonnement` | Abonnements de la boutique choisie : formule, statut, début, fin, durée | requête `gm_subscriptions` filtrée par `store_id` |
+
+État de l'application :
+- `storeCode` (gardé) : code de la boutique ouverte ;
+- `selectedStoreId`, `selectedStoreName` : boutique choisie pour la page Abonnement.
+
+## 1. Supabase
+
+**Statut du PC serveur : RPC `gm_server_status`** (action FlutterFlow Supabase → Call RPC, clé publique). Script `gestimarket_statut_serveur.sql`, en *security definer* : la table `gm_servers` reste fermée au téléphone, sans policy.
 
 ```
-Poste serveur GestiMarket ──(toutes les 30 s)──► Supabase : gm_publish_server (adresses, dernière activité)
-Application : code GM-… ──► RPC gm_server_status(code) ──► active ? WebView(public_url) : « Serveur éteint »
+gm_server_status(p_shop_code text) → [{"check": bool, "active": bool}]
+  check   le code existe dans gm_servers
+  active  le PC a donné signe de vie depuis moins de 90 s (coupure de courant = false)
 ```
-
-## 1. La fonction Supabase utilisée
-
-L'application lit la boutique **uniquement par la fonction RPC `gm_server_status`** (action FlutterFlow Supabase → Call RPC), avec la clé publique. Elle ne lit **aucune table** : `gm_servers` refuse le téléphone (« permission denied ») et `gm_stores` lui renvoie une liste vide. C'est voulu : ces tables contiennent les secrets des PC, les adresses locales et les comptes de toutes les boutiques.
-
-`gm_server_status(p_shop_code text) → jsonb` (script `gestimarket_statut_serveur.sql`) :
-- `found` : le code du commerce existe ;
-- `online` : le PC a donné signe de vie depuis moins de 90 s. Une coupure de courant passe donc en « éteint » ;
-- `active` : `online` et adresse Internet connue, donc l'application peut ouvrir la boutique ;
-- `shop_code`, `shop_name`, `public_url` (adresse Internet de la boutique), `seconds_ago`.
 
 Le code est accepté en minuscules et avec des espaces autour.
+
+**Espace propriétaire : requêtes natives** sur `gm_stores` et `gm_subscriptions`. Les policies existantes (« gm mes boutiques », « gm mes abonnements », « gm mes paiements ») limitent la propriétaire connectée à ses propres boutiques. Rien à ajouter côté Supabase.
 
 | Page, déclencheur | Action | Suite |
 |---|---|---|
 | `Demarrage`, au chargement | si `storeCode` n'est pas vide | aller à `boutique` |
-| `Demarrage`, bouton (icône connexion) | Call RPC `gm_server_status`, `p_shop_code` = champ code, sortie `serverInfo` | si `$.found` : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
-| `boutique`, au chargement et bouton « Réessayer » | Call RPC `gm_server_status`, `p_shop_code` = `storeCode`, sortie dans l'état de page `server` (JSON) | Conditional Builder sur `$.active` : WebView sur `$.public_url`, sinon « Serveur éteint » |
-| `boutique`, « Changer de boutique » | `storeCode` = vide | aller à `Demarrage` |
+| `Demarrage`, bouton (icône connexion) | Call RPC `gm_server_status`, `p_shop_code` = champ code | si `check` : `storeCode` = code, aller à `boutique` ; sinon « Code inconnu » |
+| `Demarrage`, lien « Espace propriétaire » | — | aller à `Connexion` |
+| `boutique`, au chargement et « Réessayer » | Call RPC `gm_server_status`, `p_shop_code` = `storeCode` | si `active` : WebView sur `https://` + code en minuscules + `.gestimarket.shop` ; sinon « Serveur éteint » |
+| `Connexion`, « Se connecter » | Log In (e-mail, mot de passe) | FlutterFlow ouvre `Boutiques` |
+| `Boutiques`, au chargement | requête `gm_stores`, filtre `owner_id` = utilisateur connecté, triée par nom | liste |
+| `Boutiques`, « Ouvrir » | `storeCode` = code de la boutique | aller à `boutique` |
+| `Boutiques`, « Abonnement » | `selectedStoreId` et `selectedStoreName` | aller à `Abonnement` |
+| `Abonnement`, au chargement | requête `gm_subscriptions`, filtre `store_id` = `selectedStoreId`, du plus récent au plus ancien | liste |
 
-FlutterFlow doit connaître la fonction : Settings → Integrations → Supabase → **Get Schema**, après chaque script SQL qui ajoute une fonction.
+FlutterFlow doit connaître la fonction RPC : Settings → Integrations → Supabase → **Get Schema**, après chaque script SQL qui ajoute une fonction.
+
+Sur les pages `Boutiques` et `Abonnement`, la requête est lancée au chargement de la page puis affichée par la ListView. On peut la déplacer en « Backend Query » directement sur la ListView dans l'éditeur. L'outil en ligne de commande ne sait pas poser une requête Supabase sur un widget.
 
 **Limites connues.**
 - Toujours par l'adresse Internet, même sur le Wi-Fi du magasin : un peu plus lent qu'en réseau local, mais ça marche partout.
 - Une boutique sans adresse Internet automatique (PC serveur avant la 0.15) ne s'ouvre pas dans l'application.
 - Le scanner de la caisse, dans GestiMarket, passe par la caméra du navigateur de la WebView.
-- L'abonnement se gère dans GestiMarket, sur le PC ou par la WebView.
+- Le paiement de l'abonnement se fait dans GestiMarket (PC ou WebView) : la page `Abonnement` ne fait que l'afficher.
 
-Les versions précédentes restent dans le dépôt pour mémoire, sans être dans le projet FlutterFlow :
-- l'application en code personnalisé (`gestimarket_*.dart`, script `flutterflow_edit.dart`) ;
-- la version native à cinq pages (`flutterflow_natif.dart`).
+Les versions précédentes restent dans le dépôt pour mémoire : `gestimarket_*.dart` et `flutterflow_edit.dart` (code personnalisé), `flutterflow_natif.dart` (cinq pages avec appels d'API).
 
 ## 2. Outil FlutterFlow (ligne de commande)
 
-Le dossier `gestimarket-mobile` (à côté du dépôt) est relié au projet. Pour regénérer le code et le vérifier :
+Le dossier `gestimarket-mobile` (à côté du dépôt) est relié au projet. Le script `supabase/flutterflow/flutterflow_proprietaire.dart` a créé les pages `Connexion`, `Boutiques` et `Abonnement`.
+
+Pour regénérer le code :
 
 ```bash
 dart pub global run flutterflow_cli ai refresh-context gesti-market-ywxut8
 ```
 
-Puis lancer `dart analyze lib` dans `gestimarket-mobile/generated_code`. L'action RPC de l'outil n'accepte que des valeurs écrites en dur : les branchements se font dans l'éditeur.
+Puis lancer `dart analyze lib` dans `gestimarket-mobile/generated_code`.
+
+Ce que l'outil ne sait pas faire :
+- relier les arguments d'une action RPC à l'état ou aux champs : il n'accepte que des valeurs écrites en dur ;
+- poser une requête Supabase directement sur un widget.
+
+Ces deux réglages se font dans l'éditeur.
 
 ## 3. Images
 
@@ -80,7 +97,7 @@ Nom de l'application sous l'icône : Settings → General → App Details → Ap
 
 Fonctions Edge à déployer, avec *Verify JWT* désactivé : `gm-license`, `gm-pay`, `gm-tunnel`.
 
-L'application n'appelle que `gm_server_status(code)`, avec la clé publique. `gm_get_server(code)` reste pour les anciennes versions. Les fonctions de la propriétaire (`gm_my_stores`, `gm_my_server`, `gm_my_payments`, `gm_my_redeem_voucher`, `gm_declare_payment`) et la page de paiement de `gm-pay` (champ `html`) restent disponibles, au cas où des écrans natifs reviendraient un jour.
+L'application appelle `gm_server_status(code)` (clé publique) et lit `gm_stores` et `gm_subscriptions` (propriétaire connectée). `gm_get_server(code)` reste pour les anciennes versions. Les fonctions de la propriétaire (`gm_my_stores`, `gm_my_server`, `gm_my_payments`, `gm_my_redeem_voucher`, `gm_declare_payment`) et la page de paiement de `gm-pay` (champ `html`) restent disponibles, au cas où des écrans natifs reviendraient un jour.
 
 ## 5. Adresse Internet automatique de chaque boutique
 
