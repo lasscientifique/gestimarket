@@ -27,7 +27,7 @@ L'application est faite en **widgets natifs FlutterFlow et Supabase uniquement**
 
 Historique : la RPC `gm_server_status`, puis la vue `gm_servers_statut`, ont été remplacées par cette table de même nom (4 novembre 2026).
 
-**Espace propriétaire : requêtes natives** sur `gm_stores` et `gm_subscriptions`. Les policies existantes (« gm mes boutiques », « gm mes abonnements », « gm mes paiements ») limitent la propriétaire connectée à ses propres boutiques. Rien à ajouter côté Supabase.
+**Espace propriétaire : requêtes natives** sur `gm_stores` et `gm_subscriptions`, publiées elles aussi dans Supabase Realtime : les listes se mettent à jour toutes seules. Les policies existantes (« gm mes boutiques », « gm mes abonnements », « gm mes paiements ») limitent la propriétaire connectée à ses propres boutiques. Rien à ajouter côté Supabase.
 
 | Page, déclencheur | Action | Suite |
 |---|---|---|

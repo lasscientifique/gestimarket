@@ -75,13 +75,17 @@ from public.gm_servers
 on conflict (shop_code) do update
   set active = excluded.active, last_seen = excluded.last_seen, public_url = excluded.public_url;
 
--- Temps réel.
+-- Temps réel : statut des PC, et listes de l'espace propriétaire (boutiques, abonnements).
+-- Realtime applique les policies : chaque propriétaire ne reçoit que ses boutiques et ses abonnements.
 do $$
+declare t text;
 begin
-  if not exists (select 1 from pg_publication_tables
-                 where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'gm_servers_statut') then
-    alter publication supabase_realtime add table public.gm_servers_statut;
-  end if;
+  foreach t in array array['gm_servers_statut', 'gm_stores', 'gm_subscriptions'] loop
+    if not exists (select 1 from pg_publication_tables
+                   where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
 end;
 $$;
 
