@@ -6,7 +6,7 @@
 //    Application mobile : POST JSON { "store_code", "plan", "months" } avec « Authorization: Bearer <session
 //    du compte boutique> » → gm_card_start_owner (boutique de la propriétaire connectée).
 //    → champs signés (HMAC-SHA256 avec la clé secrète du profil Secure Acceptance)
-//    → { status: "ok", payment_id, amount, currency, plan_label, months, endpoint, fields }.
+//    → { status: "ok", payment_id, amount, currency, plan_label, months, endpoint, fields, html }.
 //    GestiMarket ouvre la page de paiement de Cybersource dans le navigateur (formulaire envoyé seul).
 // 2. Cybersource : POST (formulaire) du résultat signé à override_backoffice_post_url (cette fonction)
 //    → signature vérifiée → gm_card_result : ACCEPT au bon montant = abonnement activé ; REVIEW ou montant
@@ -119,7 +119,20 @@ async function start(req: Request): Promise<Response> {
     months: s.months,
     endpoint: ENDPOINT,
     fields,
+    // Page prête à afficher (WebView native de l'application en mode HTML) : le formulaire signé part tout seul.
+    html: autoSubmitPage(ENDPOINT, fields),
   });
+}
+
+function esc(v: string): string {
+  return v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function autoSubmitPage(endpoint: string, fields: Record<string, string>): string {
+  const inputs = Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>` +
+    `<body onload="document.forms[0].submit()" style="font-family:sans-serif;padding:24px">` +
+    `<p>Ouverture de la page de paiement sécurisée…</p><form method="post" action="${esc(endpoint)}">${inputs}</form></body></html>`;
 }
 
 /** Résultat envoyé par Cybersource (serveur à serveur), répété tant qu'il n'est pas accepté. */

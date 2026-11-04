@@ -1,71 +1,77 @@
 # Application mobile GestiMarket (FlutterFlow)
 
-Projet FlutterFlow : **GestiMarket** (`gesti-market-ywxut8`), paquet `com.edendev.gestimarket`, Supabase d'Eden Dev branché avec la clé publique (jamais la clé `service_role`).
+Projet FlutterFlow : **GestiMarket** (`gesti-market-ywxut8`), paquet `com.edendev.gestimarket`. Il est branché sur le Supabase d'Eden Dev avec la clé publique, jamais la clé `service_role`.
 
-L'application ouvre GestiMarket complet dans une WebView (l'interface s'adapte au téléphone). Elle a quatre pages, chacune portée par un widget personnalisé dont le code est dans `supabase/flutterflow/` :
+L'application ouvre GestiMarket complet dans la **WebView native** de FlutterFlow, sur l'adresse Internet de la boutique (`https://gm-000123.gestimarket.shop`). L'interface s'adapte au téléphone. Depuis le 4 novembre 2026, toutes les pages sont en **widgets natifs FlutterFlow**, sans code personnalisé. Elles se modifient dans l'éditeur.
 
-| Page | Widget | Rôle |
-|---|---|---|
-| `SplashPage` (départ) | `GestiMarketSplash` | Logo, nom, « par Eden Dev » ; puis la boutique retenue sur le téléphone, ou la connexion |
-| `ConnexionPage` | `GestiMarketConnexion` | **Propriétaire** : e-mail et mot de passe du compte boutique → ses boutiques → « Ouvrir » ou « Abonnement ». **Personnel** : code du commerce tapé ou scanné (QR du PC) |
-| `MagasinPage` | `GestiMarketWebView` | GestiMarket : réseau local d'abord, sinon Internet ; écran **« Serveur éteint »** quand le PC est arrêté |
-| `AbonnementPage` | `GestiMarketAbonnement` | Formule, échéance, postes, paiements ; payer par carte de bon, Orange Money ou carte Visa ; 1, 3, 6 ou 12 mois (2 offerts) |
+| Page | Rôle |
+|---|---|
+| `Demarrage` (page d'entrée) | Logo sur fond `#0F766E`, « par Eden Dev ». Ouvre ensuite la boutique retenue sur le téléphone (état `shopCode`), ou la connexion |
+| `Connexion` | Deux onglets. **Propriétaire** : e-mail et mot de passe du compte boutique (Supabase Auth). **Personnel** : code du commerce tapé ou scanné (QR affiché sur le PC) |
+| `MesBoutiques` (page après connexion) | Boutiques du compte, chacune avec deux boutons : « Ouvrir » et « Abonnement ». Déconnexion |
+| `Boutique` | WebView sur l'adresse de la boutique. Écran **« Serveur éteint »** quand le PC est arrêté, avec trois boutons : « Réessayer », « Mon abonnement », « Changer de boutique » |
+| `Abonnement` | Formule (STARTER, PRO, BUSINESS) et durée (1, 3, 6, 12 mois ; 12 mois = 2 offerts). Paiement par carte de bon, Orange Money ou Visa. Derniers paiements |
 
 ```
 Poste serveur GestiMarket ──(toutes les 30 s)──► Supabase : gm_publish_server (adresses, boutique Eden Dev du PC)
-Propriétaire : compte boutique ──► gm_my_stores ──► gm_my_server(boutique) ──► adresse du PC
-Personnel : code du commerce ──► gm_get_server(code) ──► adresse du PC
-Application ──► WebView : http://192.168.x.x:7878 (Wi-Fi du magasin) ou https://gm-000123.<domaine> (Internet)
+Personnel : code du commerce ──► gm_get_server(code) ──► adresse Internet du PC ──► WebView
+Propriétaire : compte boutique ──► gm_my_stores ──► gm_my_server(boutique) ──► code ──► WebView
 ```
 
-## 1. Ce que fait chaque page
+Données du téléphone (état de l'application, gardé) : `shopCode` (boutique ouverte) et `storeCode` (boutique choisie pour l'abonnement). Structures : `Boutique`, `Serveur`, `Paiement`, `Resultat`, `PageCarte`.
 
-**Démarrage.** Le logo est dessiné par le widget (aucune image à charger). Une boutique déjà ouverte sur ce téléphone est rouverte directement.
+## 1. Actions Supabase de chaque page
 
-**Connexion.**
-- La propriétaire se connecte une fois ; la session reste sur le téléphone.
-- Le poste serveur de chaque boutique est retrouvé tout seul : le PC publie l'identifiant de sa boutique Eden Dev, et Supabase vérifie que ce PC y est bien relié.
-- Le personnel tape ou scanne le code du commerce (Paramètres → Réseau & mobile sur le PC). Il se connecte ensuite dans GestiMarket avec son identifiant et son code PIN. Depuis Internet, la première fois, il tape aussi le code d'accès de 8 caractères donné par l'administrateur (0.14).
+Chaque page appelle les fonctions Supabase par l'action native **Supabase → Call RPC**, qui utilise toute seule la session de la propriétaire. FlutterFlow doit connaître ces fonctions : Settings → Integrations → Supabase → **Get Schema**, à refaire après chaque script SQL qui en ajoute.
 
-**Magasin.**
-- Route : réseau local d'abord (réponse de `/api/ping` en moins de 1,5 s), sinon l'adresse publique.
-- **PC serveur éteint** : écran « Serveur éteint » avec le nom de la boutique et l'heure de la dernière activité. La reconnexion se fait seule toutes les 10 s. Deux boutons : « Mon abonnement » (marche sans le PC) et « Changer de boutique ».
-- Redémarrage du PC (pages 502/530 du tunnel) ou coupure du Wi-Fi : la page se recharge seule.
-- La pastille « Réseau local / Internet », en bas à gauche, ouvre un menu : abonnement, autre boutique, recharger.
-- Scanner natif de codes-barres pour la caisse et bouton retour d'Android.
+| Page, déclencheur | Fonction | Arguments | Suite |
+|---|---|---|---|
+| `Boutique`, au chargement et bouton « Réessayer » | `gm_get_server` | `p_shop_code` = `shopCode` | état de page `server` ; WebView visible si `server.active`, sinon « Serveur éteint » |
+| `MesBoutiques`, au chargement | `gm_my_stores` | — | liste `stores` |
+| `MesBoutiques`, bouton « Ouvrir » | `gm_my_server` | `p_store_code` = code de la boutique | si `found` : `shopCode` = `shop_code`, puis `Boutique` ; sinon message `error` |
+| `MesBoutiques`, bouton « Abonnement » | — | — | `storeCode` = code de la boutique, puis `Abonnement` |
+| `Abonnement`, au chargement | `gm_my_payments` | `p_store_code` = `storeCode` | liste `payments` |
+| `Abonnement`, « Activer la carte » | `gm_my_redeem_voucher` | `p_store_code` = `storeCode`, `p_code` = champ `voucherCode` | message selon `ok` / `error` |
+| `Abonnement`, « Envoyer le paiement » | `gm_declare_payment` | `p_store_code`, `p_plan`, `p_months` (nombre), `p_method` = `orange_money`, `p_reference`, `p_payer_phone` | message ; Eden Dev valide ensuite |
+| `Abonnement`, « Payer par carte » | fonction Edge `gm-pay` | `store_code`, `plan`, `months` (session de la propriétaire) | son champ `html` va dans la WebView en mode HTML : la page Cybersource s'ouvre seule |
 
-**Abonnement** (réservé à la propriétaire). L'écran affiche la formule, la date de fin, les jours restants, les PC reliés et les 12 derniers paiements. Trois façons de payer :
-- **Carte de bon** : activation immédiate.
-- **Orange Money** : code marchand, puis l'ID de transaction ; Eden Dev valide.
-- **Carte Visa** : page sécurisée Cybersource dans l'application ; le numéro de carte ne passe ni par GestiMarket ni par Eden Dev.
+Le script qui a créé les pages (`supabase/flutterflow/flutterflow_natif.dart`) passait par des appels d'API. Ils sont remplacés par ces actions RPC ; une fois tous remplacés, on supprime les appels d'API inutiles (API Calls).
 
-La licence du PC se met à jour toute seule ensuite.
+**Réglages d'authentification** (Settings → Authentication, Supabase, e-mail) : page d'entrée `Demarrage`, page après connexion `MesBoutiques`. Avant « Se déconnecter », vider `shopCode` et `storeCode`.
 
-## 2. Mettre à jour le projet FlutterFlow
+**Limites connues de la version native.**
+- Toujours par l'adresse Internet, même sur le Wi-Fi du magasin. C'est un peu plus lent qu'en réseau local, mais ça marche partout.
+- Pas de reconnexion automatique : on touche « Réessayer » après avoir rallumé le PC.
+- Le bouton scanner de la caisse, dans GestiMarket, passe par la caméra du navigateur de la WebView.
+- Le scanner natif ne fonctionne que sur téléphone : il ne marche pas dans l'aperçu web « Run ».
 
-Le dossier `gestimarket-mobile` (à côté du dépôt) est relié au projet par l'outil FlutterFlow. Son script `dsl/edit.dart` envoie le code des quatre widgets depuis `supabase/flutterflow/` et crée les pages si elles manquent :
+L'ancienne version en code personnalisé (`gestimarket_*.dart`, script `flutterflow_edit.dart`) reste dans le dépôt pour mémoire. Elle n'est plus dans le projet FlutterFlow.
+
+## 2. Outil FlutterFlow (ligne de commande)
+
+Le dossier `gestimarket-mobile` (à côté du dépôt) est relié au projet :
 
 ```bash
-dart pub global run flutterflow_cli ai run dsl/edit.dart --dry-run
-dart pub global run flutterflow_cli ai run dsl/edit.dart --commit-message "…"
+dart pub global run flutterflow_cli ai status gesti-market-ywxut8
+dart pub global run flutterflow_cli ai codegen refresh
 ```
 
-Il règle aussi :
-- Android : `android:usesCleartextTraffic="true"`, pour les adresses http du réseau local. La permission caméra vient du paquet `mobile_scanner`.
-- iOS : `NSCameraUsageDescription`, `NSLocalNetworkUsageDescription` et `NSAppTransportSecurity → NSAllowsLocalNetworking`.
-- Dépendance ajoutée : `mobile_scanner 6.0.0`. Les autres paquets sont ceux de FlutterFlow : `webview_flutter`, `supabase_flutter`, `shared_preferences`, `http` et `go_router`.
+À savoir avant de l'utiliser :
+- L'action RPC native n'y accepte que des valeurs écrites en dur. Pour les relier à l'état ou aux champs, il faut passer par l'éditeur.
+- Dans un appel d'API, une variable s'écrit `<nom>` dans le corps et `[nom]` dans les en-têtes.
+- Un script de création ne se relance pas sur des pages existantes.
 
-## 3. Images (à poser une fois dans FlutterFlow)
+## 3. Images
 
-Les images sont dans `supabase/flutterflow/images/` (copiées aussi dans les livrables) :
+Les images sont dans `supabase/flutterflow/images/`, et copiées aussi dans les livrables. Le logo et l'icône sont déjà dans la bibliothèque d'images du projet.
 
 | Fichier | Où le mettre |
 |---|---|
-| `GestiMarket_splash_logo.png` | FlutterFlow → Settings → App Assets → **Splash Image**, couleur de fond `#0F766E` |
-| `GestiMarket_icone_1024.png` | FlutterFlow → Settings → App Assets → **Launcher Icon** |
-| `GestiMarket_splash_1080x1920.png`, `GestiMarket_splash_1242x2688.png` | Écran complet : fiches du Play Store et de l'App Store, présentations |
+| `GestiMarket_splash_logo.png` | Affiché par la page `Demarrage`. Aussi : Settings → App Assets → **Splash Image**, fond `#0F766E` |
+| `GestiMarket_icone_1024.png` | Settings → App Assets → **Launcher Icon** |
+| `GestiMarket_splash_1080x1920.png`, `GestiMarket_splash_1242x2688.png` | Fiches du Play Store et de l'App Store, présentations |
 
-L'outil FlutterFlow ne sait pas encore téléverser ces images : il faut le faire à la main dans l'éditeur.
+Nom de l'application sous l'icône : Settings → General → App Details → App Name = **GestiMarket**.
 
 ## 4. Supabase
 
@@ -85,7 +91,7 @@ Fonctions Edge à déployer, avec *Verify JWT* désactivé : `gm-license`, `gm-p
 | `gm_my_stores()`, `gm_my_server(boutique)` | propriétaire connectée | ses boutiques ; poste serveur d'une boutique |
 | `gm_my_payments(boutique)`, `gm_my_redeem_voucher(boutique, code)` | propriétaire connectée | paiements ; carte de bon depuis le téléphone |
 | `gm_declare_payment(…)` | propriétaire connectée | Orange Money |
-| fonction `gm-pay` (`store_code`, `plan`, `months`) | propriétaire connectée | carte Visa |
+| fonction `gm-pay` (`store_code`, `plan`, `months`) | propriétaire connectée | carte Visa ; renvoie aussi `html`, la page de paiement prête pour la WebView |
 
 ## 5. Adresse Internet automatique de chaque boutique
 
