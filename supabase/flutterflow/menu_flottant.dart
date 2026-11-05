@@ -10,7 +10,9 @@
 // « Se déconnecter » vide la boutique retenue (storeCode) et ferme la session Supabase.
 // La position de la bulle est gardée d'une page à l'autre.
 // Routes des pages FlutterFlow : Boutiques /mes-boutiques, boutique /boutique, Abonnement /abonnements,
-// ContactEdenDev /contact ; accueil / (Demarrage sans session).
+// ContactEdenDev /contact ; accueil / (Mes boutiques avec une session, Demarrage sans session).
+// Correction du 5 novembre 2026 : la page affichée est la dernière de la pile (pages ouvertes par
+// pushNamed), et non l'adresse de base de go_router : la bulle apparaît et le menu change bien de page.
 
 const _menuBrand = Color(0xFF0F766E);
 
@@ -80,10 +82,24 @@ class _BulleMenu {
   /// La bulle reste installée (elle se cache hors des pages listées).
   static void detacher(_MenuFlottantState h) {}
 
+  /// Page réellement affichée : la dernière de la pile.
+  /// FlutterFlow ouvre les pages par « push » (pushNamed) et, dans go_router, un push ne change pas
+  /// l'adresse de base (currentConfiguration.uri) : il faut lire la dernière page empilée.
+  /// L'adresse « / » affiche Mes boutiques avec une session, l'écran de démarrage sans session.
+  static String _cheminAffiche() {
+    final config = _routeur?.routerDelegate.currentConfiguration;
+    if (config == null || config.isEmpty) return '';
+    final chemin = config.last.matchedLocation;
+    if (chemin == _routeAccueil && SupaFlow.client.auth.currentUser != null) {
+      return _routeBoutiques;
+    }
+    return chemin;
+  }
+
   static void _routeChangee() {
     String chemin = '';
     try {
-      chemin = _routeur?.routerDelegate.currentConfiguration.uri.path ?? '';
+      chemin = _cheminAffiche();
     } catch (_) {
       chemin = '';
     }
