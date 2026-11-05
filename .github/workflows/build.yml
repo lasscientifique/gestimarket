@@ -77,7 +77,7 @@ jobs:
       - name: Dépendances système (WebKitGTK, Xvfb, ImageMagick)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb imagemagick
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb imagemagick gdb
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -99,6 +99,9 @@ jobs:
           echo '{"mode":"server","poste_name":"Caisse 1","port":7878,"server_url":""}' > ~/.local/share/com.gestimarket.app/network.json
           Xvfb :99 -screen 0 1366x850x24 > /dev/null 2>&1 &
           sleep 2
+          # Si le poste serveur s'arrête net, un fichier core permet de lire sa pile d'appels (étape suivante).
+          sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
+          ulimit -c unlimited
           DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 nohup src-tauri/target/debug/gestimarket > e2e-app.log 2>&1 &
           for i in $(seq 1 90); do curl -sf http://127.0.0.1:7878/api/ping && break; sleep 2; done
           curl -sf http://127.0.0.1:7878/api/ping || (cat e2e-app.log; exit 1)
@@ -111,6 +114,14 @@ jobs:
           DISPLAY=:99 import -window root e2e/out/00-fenetre-serveur-xvfb.png || true
           montage e2e/out/0*.png -tile 4x -geometry 480x+8+8 -background '#eeeeee' e2e/out/apercu.png || true
           cp e2e-app.log e2e/out/ || true
+      - name: Pile d'appels si le poste serveur s'est arrêté
+        if: always()
+        run: |
+          for c in /tmp/core.*; do
+            [ -f "$c" ] || continue
+            sudo chmod a+r "$c"
+            gdb -q -batch -ex "bt 60" -ex "info threads" -ex "thread apply all bt 8" src-tauri/target/debug/gestimarket "$c" > e2e/out/pile-serveur.txt 2>&1 || true
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
