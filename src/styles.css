@@ -1161,6 +1161,10 @@ input, select, textarea { border-radius: 10px; }
   .ticket-head { gap: 6px; }
   .line { grid-template-columns: minmax(0, 1fr) auto 64px auto; gap: 6px; }
   .line-sub { flex-wrap: wrap; row-gap: 2px; }
+
+  /* Messages : en haut, sous la barre du haut, pour ne cacher ni les onglets du bas ni le bouton « Encaisser ». */
+  .toasts { top: calc(64px + env(safe-area-inset-top)); bottom: auto; left: 10px; right: 10px; }
+  .toast { min-width: 0; max-width: none; }
   .line > .thumb { display: none; }
 
   /* Écrans de connexion */
