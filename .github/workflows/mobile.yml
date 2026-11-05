@@ -30,4 +30,4 @@ jobs:
       - name: Analyse (erreurs et avertissements)
         run: flutter analyze --no-fatal-infos
       - name: Tests (bulle, menu, déplacement, serveur actif)
-        run: flutter test --reporter expanded
+        run: flutter test --reporter github
