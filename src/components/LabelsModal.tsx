@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
-import { Printer, Tag, LayoutGrid, QrCode, Barcode } from "lucide-react";
+import { Printer, Tag, LayoutGrid, QrCode, Barcode, ReceiptText } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { locationText, money } from "../lib/format";
 import { printHtml } from "../lib/receipt";
+import { labelsEscpos } from "../lib/escpos";
+import { printerConfig, sendToPrinter } from "../lib/printer";
 import type { Product } from "../types";
 import { Field, Modal } from "./ui";
 import { tl } from "../lib/i18n";
@@ -51,16 +53,50 @@ export async function qrSvg(code: string, size = 70): Promise<string> {
 }
 
 /** Impression d'étiquettes : étiquettes produit (A4, 24 par page) ou étiquettes de rayon (prix + emplacement). */
-export function LabelsModal({ products, onClose }: { products: Product[]; onClose: () => void }) {
-  const { settings } = useApp();
-  const [template, setTemplate] = useState<Template>("product");
+export function LabelsModal({
+  products,
+  onClose,
+  initialTemplate = "product",
+  placeOf,
+}: {
+  products: Product[];
+  onClose: () => void;
+  initialTemplate?: Template;
+  /** Emplacement écrit sur l'étiquette de rayon (par défaut : l'emplacement principal du produit). */
+  placeOf?: (p: Product) => string;
+}) {
+  const { settings, toast } = useApp();
+  const [template, setTemplate] = useState<Template>(initialTemplate);
   const [copies, setCopies] = useState("1");
   const [format, setFormat] = useState<"barcode" | "qr">("barcode");
+  // Imprimante à tickets de ce poste (Paramètres → Ventes) : étiquettes imprimées directement, une par coupe.
+  const [ticketPrinter, setTicketPrinter] = useState<string | null>(null);
+  const [output, setOutput] = useState<"sheet" | "ticket">("sheet");
+  useEffect(() => {
+    printerConfig().then((c) => setTicketPrinter(c?.printer || null));
+  }, []);
   const withCode = products.filter((p) => p.barcode);
+  const place = (p: Product) => (placeOf ? placeOf(p) : locationText(p));
 
   const print = async () => {
     const n = Math.max(1, Math.min(100, Math.floor(Number(copies) || 1)));
     const items = withCode.flatMap((p) => Array.from({ length: n }, () => p));
+    if (output === "ticket" && ticketPrinter) {
+      try {
+        await sendToPrinter(
+          labelsEscpos(
+            items.map((p) => ({ name: p.name, price: money(p.sale_price), unit: p.unit, code: p.barcode, place: place(p) })),
+            settings,
+            template,
+          ),
+        );
+        toast.success(tl("{0} étiquette(s) envoyée(s) à l'imprimante.", [items.length]));
+        onClose();
+      } catch (e) {
+        toast.error(e);
+      }
+      return;
+    }
     const codes = new Map<string, string>();
     for (const p of withCode) codes.set(p.barcode!, format === "qr" ? await qrSvg(p.barcode!, template === "product" ? 64 : 56) : "");
     const code = (p: Product, h: number) => (format === "qr" ? codes.get(p.barcode!)! : barcodeSvg(p.barcode!, h));
@@ -78,7 +114,7 @@ export function LabelsModal({ products, onClose }: { products: Product[]; onClos
         : `<div class="labels-shelf">${items
             .map(
               (p) => `<div class="shelf">
-                <div class="shelf-top"><span>${esc(settings.shop_name)}</span><span>${esc(locationText(p))}</span></div>
+                <div class="shelf-top"><span>${esc(settings.shop_name)}</span><span>${esc(place(p))}</span></div>
                 <div class="shelf-name">${esc(p.name)}</div>
                 <div class="shelf-row">
                   <div class="shelf-code">${code(p, 30)}</div>
@@ -114,10 +150,19 @@ export function LabelsModal({ products, onClose }: { products: Product[]; onClos
           <span className="small muted">{tl("Prix, code-barres et emplacement")}</span>
         </button>
       </div>
-      <div className="segmented" style={{ margin: "12px 0" }}>
-        <button className={format === "barcode" ? "active" : ""} onClick={() => setFormat("barcode")}><Barcode size={15} />  {tl("Code-barres")}</button>
-        <button className={format === "qr" ? "active" : ""} onClick={() => setFormat("qr")}><QrCode size={15} />  {tl("QR code")}</button>
-      </div>
+      {ticketPrinter && (
+        <div className="segmented" style={{ marginTop: 12 }}>
+          <button className={output === "sheet" ? "active" : ""} onClick={() => setOutput("sheet")}><Printer size={15} />  {tl("Feuille (fenêtre d'impression)")}</button>
+          <button className={output === "ticket" ? "active" : ""} onClick={() => setOutput("ticket")} title={ticketPrinter}><ReceiptText size={15} />  {tl("Imprimante à tickets")}</button>
+        </div>
+      )}
+      {output === "sheet" && (
+        <div className="segmented" style={{ margin: "12px 0" }}>
+          <button className={format === "barcode" ? "active" : ""} onClick={() => setFormat("barcode")}><Barcode size={15} />  {tl("Code-barres")}</button>
+          <button className={format === "qr" ? "active" : ""} onClick={() => setFormat("qr")}><QrCode size={15} />  {tl("QR code")}</button>
+        </div>
+      )}
+      {output === "ticket" && <p className="muted small" style={{ margin: "12px 0" }}>{tl("Une étiquette par coupe de papier, code-barres imprimé par l'imprimante ({0}).", [ticketPrinter ?? ""])}</p>}
       <Field label={tl("Nombre d'exemplaires par produit")}>
         <input inputMode="numeric" value={copies} onChange={(e) => setCopies(e.target.value)} />
       </Field>

@@ -963,6 +963,8 @@ pub struct FixtureStatus {
     pub out_of_stock: i64,
     pub low_stock: i64,
     pub expiring: i64,
+    /// Produits différents à signaler (un produit en stock bas qui périme compte une fois).
+    pub alerts: i64,
 }
 
 /// Case à signaler (vue 3D) : « out », « low » ou « expiring », le plus grave.
@@ -1064,7 +1066,7 @@ fn placed_states(conn: &Connection, filter: &str, value: i64) -> AppResult<(i64,
 pub fn floor_status(conn: &Connection, floor_id: i64) -> AppResult<FloorStatus> {
     let (alert_days, rows) = placed_states(conn, "f.floor_id = ?1", floor_id)?;
     // Un produit rangé dans deux cases d'un même meuble compte une fois pour le meuble.
-    let mut per: std::collections::BTreeMap<i64, [std::collections::HashSet<i64>; 4]> = std::collections::BTreeMap::new();
+    let mut per: std::collections::BTreeMap<i64, [std::collections::HashSet<i64>; 5]> = std::collections::BTreeMap::new();
     let mut cells: std::collections::BTreeMap<(i64, i64, i64), u8> = std::collections::BTreeMap::new();
     for p in &rows {
         let sets = per.entry(p.fixture_id).or_default();
@@ -1076,6 +1078,7 @@ pub fn floor_status(conn: &Connection, floor_id: i64) -> AppResult<FloorStatus> 
         }
         let s = severity(p.out, p.low, p.expiring);
         if s > 0 {
+            sets[4].insert(p.product_id);
             let c = cells.entry((p.fixture_id, p.level, p.section)).or_insert(0);
             *c = (*c).max(s);
         }
@@ -1090,6 +1093,7 @@ pub fn floor_status(conn: &Connection, floor_id: i64) -> AppResult<FloorStatus> 
                 out_of_stock: s[1].len() as i64,
                 low_stock: s[2].len() as i64,
                 expiring: s[3].len() as i64,
+                alerts: s[4].len() as i64,
             })
             .collect(),
         cells: cells

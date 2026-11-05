@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { ArrowDown, ArrowUp, Image, Layers, Maximize, Package, RotateCcw, RotateCw, Sparkles } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 import type { CellFill, Fixture, Floor } from "../../types";
-import { DRAG_TYPE, geometryOf, type Geometry } from "../plan/StoreMap";
+import { DRAG_TYPE, geometryOf, problemMessage, type Geometry } from "../plan/StoreMap";
 import { StoreEngine, type EngineOptions, type Highlight, type ViewMode } from "./engine";
-import { tl, tm } from "../../lib/i18n";
+import { tl } from "../../lib/i18n";
 
 const PREFS = "gm-plan3d";
 
@@ -39,6 +39,8 @@ export interface Store3DProps {
   height?: number | string;
   /** Recherche d'un produit : outils réduits. */
   compact?: boolean;
+  /** Affichages « État du stock » et « Ventes » : couleur de chaque meuble. */
+  tints?: Record<number, string> | null;
   /** Reçoit la fonction qui capture la vue actuelle en image PNG (export du plan). */
   snapshotRef?: { current: (() => string | null) | null };
 }
@@ -71,7 +73,7 @@ export default function Store3D(p: Store3DProps) {
             const f = props.current.fixtures.find((x) => x.id === id);
             if (f) props.current.onGeometry?.([{ ...geometryOf(f), x, y }], [geometryOf(f)]);
           },
-          onBlocked: (by) => toast.error(tl("Place occupée par {0} : le meuble revient à sa place.", [tm(by.name)])),
+          onBlocked: (problem) => toast.error(problemMessage(problem)),
         },
         opts,
       );
@@ -93,6 +95,7 @@ export default function Store3D(p: Store3DProps) {
   useEffect(() => engine.current?.setFloor(p.floor), [p.floor]);
   useEffect(() => engine.current?.setFixtures(p.fixtures), [p.fixtures]);
   useEffect(() => engine.current?.setFill(p.fill), [p.fill]);
+  useEffect(() => engine.current?.setTints(p.tints ?? null), [p.tints]);
   useEffect(() => engine.current?.setEditable(!!p.editable), [p.editable]);
   useEffect(() => engine.current?.setSelected(p.selectedId ?? null), [p.selectedId]);
   useEffect(() => engine.current?.setMode(p.mode), [p.mode]);

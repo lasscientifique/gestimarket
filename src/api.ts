@@ -14,6 +14,9 @@ import type {
   CatalogueSummary,
   Category,
   CellFill,
+  FloorStatus,
+  SalesMap,
+  StockAlert,
   CloudStatus,
   Customer,
   Dashboard,
@@ -168,6 +171,7 @@ export const api = {
     supplier_id?: number | null;
     location_id?: number | null;
     bloc?: string | null;
+    fixture_id?: number | null;
     without_location?: boolean;
     without_category?: boolean;
     expiring_days?: number;
@@ -195,6 +199,9 @@ export const api = {
   planSaveFloor: (id: number | null, input: { name: string; width: number; depth: number; wall_height?: number; floor_style?: string }) =>
     call<number>("plan_save_floor", { id, input }),
   planFloorFill: (floor_id: number) => call<CellFill[]>("plan_floor_fill", { floor_id }),
+  planFloorStatus: (floor_id: number) => call<FloorStatus>("plan_floor_status", { floor_id }),
+  planFixtureAlerts: (id: number) => call<StockAlert[]>("plan_fixture_alerts", { id }),
+  planSalesMap: (from: string, to: string) => call<SalesMap>("plan_sales_map", { from, to }),
   planGenerateLayout: (input: LayoutInput) => call<number>("plan_generate_layout", { input }),
   planPreviewLayout: (input: LayoutInput) => call<LayoutPreview>("plan_preview_layout", { input }),
   planSetBackdrop: (input: { floor_id: number; media_id: number | null; x?: number; y?: number; w?: number; h?: number; opacity?: number }) =>

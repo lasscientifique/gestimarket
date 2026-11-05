@@ -614,4 +614,8 @@ export const EN_MESSAGES: Record<string, string> = {
   "un gestionnaire ou l'administrateur": "a manager or the administrator",
   "{} : remise de {} ({} %){}": "{}: discount of {} ({}%){}",
   "{} : rétabli": "{}: back to normal",
+  "Date invalide (format AAAA-MM-JJ).": "Invalid date (format YYYY-MM-DD).",
+  "La date de début est après la date de fin.": "The start date is after the end date.",
+  "Place occupée par {} : le meuble revient à sa place.": "Space taken by {}: the fixture goes back to its place.",
+  "{} sortirait du niveau « {} » : le meuble revient à sa place.": "{} would go outside the level “{}”: the fixture goes back to its place.",
 };

@@ -7,7 +7,7 @@ import type { CellFill, Fixture, Floor } from "../../types";
 import { mediaUrl } from "../../lib/media";
 import { buildFixture, cellItems, disposeObject, type Built, type FixtureSpec, type Item } from "./models";
 import { floorTexture, textTexture } from "./materials";
-import { approachPoints, collision, entryPoint, findPath, footprint, frontDir, isFloorItem, snapPosition, type Point } from "./geometry";
+import { approachPoints, entryPoint, findPath, footprint, frontDir, isFloorItem, placementProblem, snapPosition, type PlacementProblem, type Point } from "./geometry";
 
 export type ViewMode = "orbit" | "walk";
 export type Quality = "simple" | "realistic";
@@ -24,7 +24,7 @@ export interface EngineCallbacks {
   onSelect: (id: number | null) => void;
   onOpen: (id: number) => void;
   onMove: (id: number, x: number, y: number) => void;
-  onBlocked: (by: Fixture) => void;
+  onBlocked: (problem: PlacementProblem) => void;
 }
 
 export interface Highlight {
@@ -85,7 +85,9 @@ export class StoreEngine {
   private selectionBox: THREE.LineSegments | null = null;
   private findBits: { box: THREE.Mesh | null; arrow: THREE.Mesh; outline: THREE.LineSegments } | null = null;
   private down: { x: number; y: number; moved: boolean } | null = null;
-  private drag: { id: number; orig: Point; offset: Point; pos: Point; moved: boolean; blocked: Fixture | null } | null = null;
+  private drag: { id: number; orig: Point; offset: Point; pos: Point; moved: boolean; blocked: PlacementProblem | null } | null = null;
+  /** Affichages « État du stock » et « Ventes » : couleur de chaque meuble (halo au sol et contour). */
+  private tints: Record<number, string> | null = null;
   private look: { x: number; y: number; yaw: number; pitch: number } | null = null;
   private walk = { x: 0, z: 0, yaw: 0, pitch: -0.05, forward: 0, turn: 0 };
   private keys = new Set<string>();
@@ -192,6 +194,14 @@ export class StoreEngine {
     }
     this.updateSelection();
     this.updateFind();
+    this.applyTints();
+    this.render();
+  }
+
+  /** Couleur de chaque meuble (affichages « État du stock » et « Ventes ») ; null : couleurs normales. */
+  setTints(tints: Record<number, string> | null) {
+    this.tints = tints;
+    this.applyTints();
     this.render();
   }
 
@@ -545,6 +555,30 @@ export class StoreEngine {
     e.group.add(this.selectionBox);
   }
 
+  /** Halo coloré au sol autour de chaque meuble, et contour de la même couleur. */
+  private applyTints() {
+    for (const e of this.entries.values()) {
+      for (const old of e.group.children.filter((c) => c.userData.tint)) {
+        e.group.remove(old);
+        disposeObject(old);
+      }
+      const color = this.tints?.[e.fixture.id];
+      if (!color) continue;
+      const halo = new THREE.Mesh(
+        new THREE.PlaneGeometry(e.fixture.w + 0.36, e.fixture.h + 0.36),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75, depthWrite: false }),
+      );
+      halo.rotation.x = -Math.PI / 2;
+      halo.position.y = 0.015;
+      halo.renderOrder = 2;
+      halo.raycast = () => undefined;
+      halo.userData.tint = true;
+      const line = this.outline(e, color);
+      line.userData.tint = true;
+      e.group.add(halo, line);
+    }
+  }
+
   private outline(e: Entry, color: string): THREE.LineSegments {
     const top = Math.max(0.05, e.built.top);
     const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(e.fixture.w + 0.08, top + 0.06, e.fixture.h + 0.08));
@@ -861,7 +895,7 @@ export class StoreEngine {
       }
       this.drag.pos = s;
       this.place(e, s.x, s.y);
-      this.drag.blocked = collision(f, footprint({ ...f, x: s.x, y: s.y }), others);
+      this.drag.blocked = placementProblem(this.fixtures, { [f.id]: { ...f, x: s.x, y: s.y } }, this.floor);
       if (this.selectionBox) (this.selectionBox.material as THREE.LineBasicMaterial).color.set(this.drag.blocked ? DANGER : ACCENT);
       canvas.style.cursor = "grabbing";
       this.render();

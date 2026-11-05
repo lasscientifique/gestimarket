@@ -242,6 +242,56 @@ export interface CellFill {
   image_id: number | null;
 }
 
+/** État du stock d'un meuble (affichage « État du stock » du plan). */
+export interface FixtureStatus {
+  fixture_id: number;
+  products: number;
+  out_of_stock: number;
+  low_stock: number;
+  expiring: number;
+  /** Produits différents à signaler. */
+  alerts: number;
+}
+
+export type StockState = "out" | "low" | "expiring";
+
+export interface FloorStatus {
+  alert_days: number;
+  fixtures: FixtureStatus[];
+  cells: { fixture_id: number; level: number; section: number; status: StockState }[];
+}
+
+/** Produit à signaler dans un meuble. */
+export interface StockAlert {
+  product_id: number;
+  name: string;
+  unit: string;
+  stock: number;
+  min_stock: number;
+  expiry_date: string | null;
+  status: StockState;
+  expiring: boolean;
+  etage: string;
+  rangee: string;
+}
+
+/** Ventes d'un meuble sur une période (produits attribués à leur emplacement principal). */
+export interface FixtureSales {
+  fixture_id: number;
+  revenue: number;
+  margin: number;
+  quantity: number;
+  products: number;
+}
+
+export interface SalesMap {
+  from: string;
+  to: string;
+  total: number;
+  unplaced: number;
+  fixtures: FixtureSales[];
+}
+
 /** Assistant « Créer ma boutique ». */
 export interface LayoutInput {
   floor_id: number | null;

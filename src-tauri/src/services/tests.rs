@@ -1702,7 +1702,7 @@ fn plan_refuses_overlaps_and_shows_stock_and_sales() {
     let st = plan::floor_status(&conn, floor).unwrap();
     assert_eq!(st.alert_days, 30);
     let f = st.fixtures.iter().find(|f| f.fixture_id == go1.id).unwrap();
-    assert_eq!((f.products, f.out_of_stock, f.low_stock, f.expiring), (4, 1, 1, 1));
+    assert_eq!((f.products, f.out_of_stock, f.low_stock, f.expiring, f.alerts), (4, 1, 1, 1, 3));
     let cell = |s: usize| st.cells.iter().find(|c| c.fixture_id == go1.id && c.level == slots[s].level && c.section == slots[s].section).map(|c| c.status);
     assert_eq!((cell(0), cell(1), cell(2)), (Some("out"), None, Some("expiring")));
     let alerts = plan::fixture_alerts(&conn, go1.id).unwrap();

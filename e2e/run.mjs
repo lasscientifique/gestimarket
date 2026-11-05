@@ -458,6 +458,88 @@ try {
   await server.reload();
   await seen(server, "Paramètres → Développeur Eden Dev", "En cas de problème : envoyer le journal");
   await shot(server, "22-journal-eden-dev.png");
+
+  // ── 0.17 : plan — chevauchement refusé, place libre, plusieurs meubles, état du stock, ventes, étiquettes de rayon
+  const onFloor = (await rpc("plan_get", {}, admin)).fixtures.filter((f) => f.floor_id === fridge.floor_id);
+  const go = onFloor.find((f) => f.type_code === "gondole");
+  const fr = onFloor.find((f) => f.id === fridge.id);
+  const moveTry = (x, y) => rpc("plan_move_fixtures", { items: [{ id: fr.id, x, y, w: fr.w, h: fr.h, rotation: fr.rotation }] }, admin).then(() => "accepté", (e) => e.message);
+  const overlapMsg = await moveTry(go.x + 0.5, go.y);
+  check("plan : frigo posé sur la gondole refusé par le serveur", overlapMsg.includes("Place occupée"), overlapMsg);
+  const outMsg = await moveTry(40, 1);
+  check("plan : meuble hors du niveau refusé", outMsg.includes("sortirait du niveau"), outMsg);
+  const dup = await rpc("plan_save_fixture", { id: null, input: { type_id: go.type_id, floor_id: go.floor_id, x: go.x + 0.5, y: go.y } }, admin);
+  const box = (f) => [f.x, f.y, f.x + f.w, f.y + f.h];
+  const [a1, b1] = [box(dup), box(go)];
+  check(
+    "plan : copie posée sur un meuble → place libre la plus proche",
+    a1[0] >= b1[2] - 0.02 || b1[0] >= a1[2] - 0.02 || a1[1] >= b1[3] - 0.02 || b1[1] >= a1[3] - 0.02,
+    JSON.stringify({ copie: a1, gondole: b1 }),
+  );
+  await rpc("plan_delete_fixture", { id: dup.id }, admin);
+
+  const lait = await rpc("save_product", { id: null, input: { name: "Lait UHT 1 L", purchase_price: 600, sale_price: 800, initial_stock: 2, min_stock: 5 } }, admin);
+  await rpc("plan_put", { input: { product_id: lait.id, location_id: slots.find((s) => s.level === 1).id } }, admin);
+  const stockState = await rpc("plan_floor_status", { floor_id: fridge.floor_id }, admin);
+  const frState = stockState.fixtures.find((s) => s.fixture_id === fridge.id);
+  check("état du stock : stock bas du lait signalé sur le frigo", frState?.low_stock === 1 && frState?.alerts >= 1, JSON.stringify(frState));
+  const frAlerts = await rpc("plan_fixture_alerts", { id: fridge.id }, admin);
+  check("état du stock : produits à signaler du frigo", frAlerts.some((x) => x.name === "Lait UHT 1 L" && x.status === "low"), JSON.stringify(frAlerts));
+  const salesMap = await rpc("plan_sales_map", { from: today, to: today }, admin);
+  const frSales = salesMap.fixtures.find((s) => s.fixture_id === fridge.id);
+  check("carte des ventes : le Coca vendu compte pour le frigo", frSales?.revenue > 0 && salesMap.total >= frSales.revenue, JSON.stringify(frSales));
+
+  await pc.goto(`${SRV}/#/locations`);
+  await pc.getByRole("button", { name: "Modifier le plan" }).waitFor({ timeout: 45_000 });
+  if (has3d) await pc.getByRole("button", { name: "Dessus", exact: true }).click();
+  const displayBar = pc.locator(".plan-display");
+  await displayBar.getByRole("button", { name: "État du stock" }).click();
+  await seen(pc, "Plan : état du stock (légende)", "Stock bas");
+  await pc.locator(".map-fixture").filter({ hasText: "Réfrigérateur vitré FR1" }).locator("rect").first().click();
+  await seen(pc, "Plan : produits à signaler du frigo", "Lait UHT 1 L");
+  await shot(pc, "23-plan-etat-du-stock.png");
+  await displayBar.getByRole("button", { name: "Ventes", exact: true }).click();
+  await seen(pc, "Plan : ventes du frigo", "Part des ventes");
+  await pc.locator(".map-floor").click({ position: { x: 5, y: 5 } });
+  await seen(pc, "Plan : meubles qui vendent le plus", "Ceux qui vendent le plus");
+  await shot(pc, "24-plan-carte-des-ventes.png");
+  await displayBar.getByRole("button", { name: "Plan", exact: true }).click();
+
+  // Plusieurs meubles : Maj + clic sur le frigo et la gondole, puis « Aligner en haut ».
+  await pc.getByRole("button", { name: "Modifier le plan" }).click();
+  await pc.locator(".map-fixture").filter({ hasText: "FR1" }).locator("rect").first().click();
+  await pc.locator(".map-fixture").filter({ hasText: go.code }).locator("rect").first().click({ modifiers: ["Shift"] });
+  await seen(pc, "Plan : deux meubles sélectionnés", "2 meubles sélectionnés");
+  await pc.getByTitle("Aligner en haut").click();
+  await pc.waitForTimeout(1500);
+  const goAfter = (await rpc("plan_get", {}, admin)).fixtures.find((f) => f.id === go.id);
+  check("plusieurs meubles : gondole alignée en haut sur le frigo", Math.abs(goAfter.y - fr.y) < 0.01, `${goAfter.y} / ${fr.y}`);
+  await shot(pc, "25-plan-plusieurs-meubles.png");
+  await pc.getByRole("button", { name: "Terminer la modification" }).click();
+
+  // Étiquettes de rayon du frigo sur l'imprimante à tickets du poste serveur (pont Tauri simulé).
+  await server.goto(`${SRV}/#/locations`);
+  await server.getByRole("button", { name: "Modifier le plan" }).waitFor({ timeout: 45_000 });
+  if ((await server.getByRole("button", { name: "Dessus", exact: true }).count()) > 0) await server.getByRole("button", { name: "Dessus", exact: true }).click();
+  await server.evaluate(() => {
+    window.__printerConfig = { printer: "XP-80C (test)", auto_print: true, open_drawer: false };
+  });
+  await server.locator(".map-fixture").filter({ hasText: "FR1" }).locator("rect").first().click();
+  await server.getByRole("button", { name: "Étiquettes de rayon" }).click();
+  if (await seen(server, "Étiquettes de rayon : choix de l'imprimante à tickets", "Feuille (fenêtre d'impression)")) {
+    await server.locator(".modal").getByRole("button", { name: "Imprimante à tickets", exact: true }).click();
+    await shot(server, "26-etiquettes-de-rayon.png");
+    const before = await server.evaluate(() => (window.__printed ?? []).length);
+    await server.locator(".modal").getByRole("button", { name: "Imprimer", exact: true }).click();
+    await server.waitForTimeout(1500);
+    const printed = await server.evaluate(() => window.__printed ?? []);
+    const lab = printed.length > before ? Buffer.from(printed[printed.length - 1], "base64") : Buffer.alloc(0);
+    check(
+      "étiquettes de rayon du frigo sur l'imprimante à tickets (code-barres, coupe)",
+      lab.includes(Buffer.from([0x1d, 0x6b])) && lab.includes(Buffer.from([0x1d, 0x56])),
+      `${lab.length} octets`,
+    );
+  }
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

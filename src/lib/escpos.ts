@@ -90,6 +90,46 @@ class Ticket {
   cut() {
     return this.raw(ESC, 0x64, 4, GS, 0x56, 66, 0);
   }
+  /** Code-barres dessiné par l'imprimante, chiffres en dessous : EAN-13 s'il est valide, sinon Code 128. */
+  barcode(code: string) {
+    this.raw(GS, 0x48, 2, GS, 0x68, 64, GS, 0x77, 2);
+    if (isEan13(code)) this.raw(GS, 0x6b, 67, 13, ...Array.from(code, (c) => c.charCodeAt(0)));
+    else {
+      const data = encodeCp850(code).filter((b) => b >= 0x20 && b < 0x7f).slice(0, 60);
+      this.raw(GS, 0x6b, 73, data.length + 2, 0x7b, 0x42, ...data);
+    }
+    return this.raw(0x0a);
+  }
+}
+
+function isEan13(code: string) {
+  if (!/^\d{13}$/.test(code)) return false;
+  const d = Array.from(code, Number);
+  const sum = d.slice(0, 12).reduce((s, x, i) => s + x * (i % 2 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === d[12];
+}
+
+/** Étiquette imprimée sur l'imprimante à tickets (une étiquette par coupe). */
+export interface LabelItem {
+  name: string;
+  price: string;
+  unit: string;
+  code: string | null;
+  place: string;
+}
+
+/** Étiquettes de rayon (boutique, case, nom, prix, code-barres) ou étiquettes produit, l'une après l'autre. */
+export function labelsEscpos(items: LabelItem[], settings: Settings, kind: "shelf" | "product"): Uint8Array {
+  const t = new Ticket(lineWidth(settings));
+  for (const it of items) {
+    if (kind === "shelf") t.align("left").row(settings.shop_name || "GestiMarket", it.place);
+    t.align("center").bold(true).wrap(it.name).bold(false);
+    t.size(2).bold(true).text(it.price).size(0).bold(false);
+    if (kind === "shelf") t.text(`/ ${it.unit}`);
+    if (it.code) t.barcode(it.code);
+    t.cut();
+  }
+  return Uint8Array.from(t.bytes);
 }
 
 /** Ticket de vente (mêmes informations que le ticket imprimé par la fenêtre d'impression). */

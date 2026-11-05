@@ -17,6 +17,7 @@ import {
   Redo2,
   RotateCw,
   Settings2,
+  Tag,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -27,11 +28,26 @@ import { Field, Modal, PageHeader, StatCard } from "../components/ui";
 import { activitiesOf, BusinessTypeGrid, useBusinessProfiles } from "../components/BusinessType";
 import { PlanProposal, defaultProposal, proposalInput, type ProposalValue } from "../components/plan/PlanProposal";
 import { BackdropModal } from "../components/plan/BackdropModal";
-import { DRAG_TYPE, StoreMap, geometryOf, type Geometry } from "../components/plan/StoreMap";
+import { DRAG_TYPE, StoreMap, geometryOf, problemMessage, type Geometry } from "../components/plan/StoreMap";
+import {
+  DisplayBar,
+  DisplayLegend,
+  FixtureLabels,
+  GroupPanel,
+  SalesPanel,
+  StockPanel,
+  lastDays,
+  salesOverlay,
+  stockOverlay,
+  tintsOf,
+  type PlanDisplay,
+  type SalesMetric,
+  type SalesPeriod,
+} from "../components/plan/PlanInsights";
 import { FixtureFront } from "../components/plan/FixtureFront";
 import { printHtml } from "../lib/receipt";
-import type { CellFill, Fixture, FixtureCategory, FixtureType, Floor, FloorStyle, StorePlanData } from "../types";
-import { collision, footprint } from "../components/plan3d/geometry";
+import type { CellFill, Fixture, FixtureCategory, FixtureType, Floor, FloorStatus, FloorStyle, SalesMap, StorePlanData } from "../types";
+import { collision, footprint, placementProblem } from "../components/plan3d/geometry";
 import { saveView, savedView, webglAvailable, type PlanView } from "../components/plan3d/support";
 import { tl, tm } from "../lib/i18n";
 
@@ -75,11 +91,29 @@ interface UndoStep {
  * produits dans leurs étages et leurs cases. Il suffit ensuite de regarder le plan pour trouver un produit.
  */
 export default function LocationsPage() {
-  const { toast, confirm, askPin, settings } = useApp();
+  const { toast, confirm, askPin, settings, isAdmin } = useApp();
   const [plan, setPlan] = useState<StorePlanData | null>(null);
   const [floorId, setFloorId] = useState<number | null>(null);
-  const [edit, setEdit] = useState(false);
+  const [edit, setEditState] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Plusieurs meubles sélectionnés (Maj + clic, cadre, appui long) : déplacés, alignés, supprimés ensemble.
+  const [multi, setMulti] = useState<number[]>([]);
+  // Affichage : plan, état du stock ou ventes (consultation seulement).
+  const [display, setDisplay] = useState<PlanDisplay>("plan");
+  const [status, setStatus] = useState<FloorStatus | null>(null);
+  const [sales, setSales] = useState<SalesMap | null>(null);
+  const [period, setPeriod] = useState<SalesPeriod>(() => lastDays(30));
+  const [metric, setMetric] = useState<SalesMetric>("revenue");
+  const [labelsFor, setLabelsFor] = useState<Fixture | null>(null);
+  const setEdit = (on: boolean) => {
+    setEditState(on);
+    setMulti([]);
+    if (on) setDisplay("plan");
+  };
+  const select = (id: number | null) => {
+    setSelectedId(id);
+    setMulti([]);
+  };
   const [front, setFront] = useState<number | null>(null);
   const [undo, setUndo] = useState<UndoStep[]>([]);
   const [redo, setRedo] = useState<UndoStep[]>([]);
@@ -118,6 +152,22 @@ export default function LocationsPage() {
     api.planFloorFill(floorId).then(setFill).catch(() => setFill([]));
   }, [floorId, plan, view]);
   const fixtures = useMemo(() => plan?.fixtures.filter((f) => f.floor_id === floorId) ?? [], [plan, floorId]);
+  useEffect(() => {
+    if (display !== "stock" || !floorId) return;
+    api.planFloorStatus(floorId).then(setStatus).catch((e) => toast.error(e));
+  }, [display, floorId, plan, toast]);
+  useEffect(() => {
+    if (display !== "sales") return;
+    setSales(null);
+    api.planSalesMap(period.from, period.to).then(setSales).catch((e) => toast.error(e));
+  }, [display, period.from, period.to, toast]);
+  const sold = useMemo(() => salesOverlay(fixtures, sales, metric), [fixtures, sales, metric]);
+  const overlay = useMemo(
+    () => (display === "stock" ? stockOverlay(fixtures, status) : display === "sales" ? sold.overlay : null),
+    [display, fixtures, status, sold],
+  );
+  const tints = useMemo(() => tintsOf(overlay), [overlay]);
+  const group = fixtures.filter((f) => multi.includes(f.id));
   const selected = fixtures.find((f) => f.id === selectedId) ?? null;
   const storage = plan?.fixtures.filter((f) => f.storage) ?? [];
   const emptyFloor = fixtures.every((f) => f.category === "zone");
@@ -146,6 +196,13 @@ export default function LocationsPage() {
     setUndo((u) => [...u.slice(-49), { before, after }]);
     setRedo([]);
   };
+  /** Déplacement au clavier, rotation, alignement : contrôlé avant d'être envoyé (place occupée, hors du niveau). */
+  const applyChecked = (after: Geometry[], before: Geometry[]) => {
+    if (!floor) return;
+    const problem = placementProblem(fixtures, Object.fromEntries(after.map((g) => [g.id, g])), floor);
+    if (problem) return void toast.error(problemMessage(problem));
+    onGeometry(after, before);
+  };
   const doUndo = () => {
     const step = undo[undo.length - 1];
     if (!step) return;
@@ -168,7 +225,7 @@ export default function LocationsPage() {
       const pos = at ? { x: round2(Math.max(0, at.x - t.width / 2)), y: round2(Math.max(0, at.y - t.depth / 2)) } : {};
       const f = await api.planSaveFixture(null, { type_id: t.id, floor_id: floor.id, ...pos });
       setPlan((p) => p && { ...p, fixtures: [...p.fixtures, f], types: p.types.map((x) => (x.id === t.id ? { ...x, used: x.used + 1 } : x)) });
-      setSelectedId(f.id);
+      select(f.id);
       if (f.storage) toast.success(tl("{0} posé sur le plan. Double-cliquez dessus pour y ranger des produits.", [tm(f.name)]));
       // Le niveau a pu s'agrandir (plus de place libre).
       if (!at) load();
@@ -193,7 +250,7 @@ export default function LocationsPage() {
         color: f.custom_color,
       });
       setPlan((p) => p && { ...p, fixtures: [...p.fixtures, copy] });
-      setSelectedId(copy.id);
+      select(copy.id);
     } catch (e) {
       toast.error(e);
     }
@@ -255,14 +312,34 @@ export default function LocationsPage() {
         if (!pin) return;
       }
       await api.planDeleteFixture(f.id, pin);
-      setSelectedId(null);
+      select(null);
       load();
     } catch (e) {
       toast.error(e);
     }
   };
 
-  const rotate = (f: Fixture) => onGeometry([{ ...geometryOf(f), rotation: (f.rotation + 90) % 360 }], [geometryOf(f)]);
+  const rotate = (f: Fixture) => applyChecked([{ ...geometryOf(f), rotation: (f.rotation + 90) % 360 }], [geometryOf(f)]);
+  const rotateGroup = () => applyChecked(group.map((f) => ({ ...geometryOf(f), rotation: (f.rotation + 90) % 360 })), group.map(geometryOf));
+
+  /** Supprime les meubles sélectionnés (PIN d'un responsable demandé une fois s'ils contiennent des produits). */
+  const removeGroup = async () => {
+    const garnished = group.filter((f) => f.product_count > 0);
+    if (!(await confirm({ title: tl("Supprimer du plan"), message: tl("Supprimer les {0} meubles sélectionnés ?", [group.length]), danger: true, confirmLabel: tl("Supprimer") }))) return;
+    let pin: string | null = null;
+    if (garnished.length) {
+      pin = await askPin({ title: tl("Supprimer des meubles garnis"), level: "manager" });
+      if (!pin) return;
+    }
+    try {
+      for (const f of group) await api.planDeleteFixture(f.id, f.product_count ? pin : null);
+      toast.success(tl("{0} meuble(s) supprimé(s).", [group.length]));
+    } catch (e) {
+      toast.error(e);
+    }
+    select(null);
+    load();
+  };
 
   // Raccourcis du mode modification : Suppr, R, flèches, Ctrl+Z / Ctrl+Y, Ctrl+D.
   useEffect(() => {
@@ -278,6 +355,18 @@ export default function LocationsPage() {
         e.preventDefault();
         return doRedo();
       }
+      if (e.key === "Escape" && multi.length) return void setMulti([]);
+      if (group.length > 1) {
+        if (e.key === "Delete") return void removeGroup();
+        if (e.key.toLowerCase() === "r" && !e.ctrlKey) return rotateGroup();
+        const step = e.shiftKey ? 1 : 0.1;
+        const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+        if (d) {
+          e.preventDefault();
+          applyChecked(group.map((f) => ({ ...geometryOf(f), x: round2(f.x + d[0]), y: round2(f.y + d[1]) })), group.map(geometryOf));
+        }
+        return;
+      }
       if (!selected) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
         e.preventDefault();
@@ -289,7 +378,7 @@ export default function LocationsPage() {
       const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
       if (d) {
         e.preventDefault();
-        onGeometry([{ ...geometryOf(selected), x: round2(selected.x + d[0]), y: round2(selected.y + d[1]) }], [geometryOf(selected)]);
+        applyChecked([{ ...geometryOf(selected), x: round2(selected.x + d[0]), y: round2(selected.y + d[1]) }], [geometryOf(selected)]);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -365,8 +454,22 @@ export default function LocationsPage() {
             <button className={view === "walk" ? "active" : ""} onClick={() => setView("walk")} title={tl("Se promener dans les allées, à hauteur d'homme")}><Footprints size={15} />  {tl("Visite")}</button>
           </div>
         )}
+        {!edit && (
+          <DisplayBar
+            display={display}
+            onDisplay={(d) => {
+              setDisplay(d);
+              setMulti([]);
+            }}
+            canSales={isAdmin}
+            period={period}
+            onPeriod={setPeriod}
+            metric={metric}
+            onMetric={setMetric}
+          />
+        )}
         {plan.floors.map((f) => (
-          <button key={f.id} className={`chip ${f.id === floorId ? "active" : ""}`} onClick={() => { setFloorId(f.id); setSelectedId(null); }}>
+          <button key={f.id} className={`chip ${f.id === floorId ? "active" : ""}`} onClick={() => { setFloorId(f.id); select(null); }}>
             {tm(f.name)}
           </button>
         ))}
@@ -418,7 +521,7 @@ export default function LocationsPage() {
                 editable={edit && view === "3d"}
                 selectedId={selectedId}
                 openFixtureId={front}
-                onSelect={(f) => setSelectedId(f?.id ?? null)}
+                onSelect={(f) => select(f?.id ?? null)}
                 onOpen={(f) => f.storage && setFront(f.id)}
                 onGeometry={onGeometry}
                 onDropType={(id, x, y) => {
@@ -426,6 +529,7 @@ export default function LocationsPage() {
                   if (t) addFixture(t, { x, y });
                 }}
                 onUnavailable={() => setView("plan")}
+                tints={tints}
                 height="min(68vh, 720px)"
                 snapshotRef={snapshotRef}
               />
@@ -436,9 +540,16 @@ export default function LocationsPage() {
             fixtures={fixtures}
             editable={edit}
             selectedId={selectedId}
-            onSelect={(f) => setSelectedId(f?.id ?? null)}
+            selectedIds={multi}
+            onSelect={(f) => select(f?.id ?? null)}
+            onSelectMany={(ids) => {
+              setMulti(ids);
+              setSelectedId(ids.length === 1 ? ids[0] : null);
+            }}
             onOpen={(f) => f.storage && setFront(f.id)}
             onGeometry={onGeometry}
+            onBlocked={(m) => toast.error(m)}
+            overlay={overlay}
             onDropType={(id, x, y) => {
               const t = plan.types.find((x) => x.id === id);
               if (t) addFixture(t, { x, y });
@@ -448,6 +559,7 @@ export default function LocationsPage() {
             height="min(68vh, 720px)"
           />
           )}
+          <DisplayLegend display={display} status={status} fixtures={fixtures} max={sold.max} metric={metric} />
           <p className="muted small plan-hint">
             {view === "walk"
               ? tl("Visite : flèches (ou Z Q S D) pour marcher et tourner, glisser pour regarder autour, double-clic sur un meuble pour l'ouvrir.")
@@ -456,12 +568,18 @@ export default function LocationsPage() {
                   ? tl("Glissez un meuble de la palette dans la boutique, déplacez-le à la souris ou au doigt : il s'aligne tout seul sur les murs et ses voisins. R : tourner.")
                   : tl("Glisser : tourner autour ; molette ou deux doigts : zoomer ; clic droit : déplacer la vue. Double-clic sur un meuble : l'ouvrir et voir ses produits.")
                 : edit
-              ? tl("Glissez un meuble de la palette sur le plan (ou cliquez dessus), déplacez-le, agrandissez-le par son coin, tournez-le avec R. Flèches : déplacer de 10 cm (Maj : 1 m).")
-                  : tl("Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette : zoom ; glisser le fond : déplacer la vue.")}
+              ? tl("Glissez un meuble de la palette sur le plan (ou cliquez dessus), déplacez-le, agrandissez-le par son coin, tournez-le avec R. Flèches : déplacer de 10 cm (Maj : 1 m). Maj + clic ou cadre tracé avec Maj (appui long au doigt) : plusieurs meubles.")
+                  : tl("Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette ou deux doigts : zoom ; glisser le fond : déplacer la vue.")}
           </p>
         </div>
         <aside className="card plan-side">
-          {selected ? (
+          {display === "stock" ? (
+            <StockPanel fixture={selected} status={status} fixtures={fixtures} />
+          ) : display === "sales" ? (
+            <SalesPanel fixture={selected} map={sales} fixtures={fixtures} metric={metric} />
+          ) : edit && group.length > 1 ? (
+            <GroupPanel group={group} onApply={(next) => applyChecked(next, group.map(geometryOf))} onRotate={rotateGroup} onDelete={removeGroup} onClear={() => select(null)} />
+          ) : selected ? (
             <FixturePanel
               key={selected.id}
               fixture={selected}
@@ -472,6 +590,7 @@ export default function LocationsPage() {
               onDuplicate={() => duplicate(selected)}
               onRepeat={() => repeat(selected)}
               onDelete={() => remove(selected)}
+              onLabels={() => setLabelsFor(selected)}
             />
           ) : (
             <div className="plan-side-empty">
@@ -485,6 +604,7 @@ export default function LocationsPage() {
         </aside>
       </div>
 
+      {labelsFor && <FixtureLabels fixture={labelsFor} onClose={() => setLabelsFor(null)} />}
       {front && (
         <Modal title={tl("Vue de face et rangement")} onClose={() => setFront(null)} width={1180}>
           <FixtureFront fixtureId={front} editable onChanged={load} />
@@ -513,7 +633,7 @@ export default function LocationsPage() {
           onDone={(id) => {
             setModal(null);
             setFloorId(id);
-            setSelectedId(null);
+            select(null);
             if (webglAvailable()) setView("3d");
             load();
           }}
@@ -669,6 +789,7 @@ function FixturePanel({
   onDuplicate,
   onRepeat,
   onDelete,
+  onLabels,
 }: {
   fixture: Fixture;
   edit: boolean;
@@ -678,6 +799,7 @@ function FixturePanel({
   onDuplicate: () => void;
   onRepeat: () => void;
   onDelete: () => void;
+  onLabels: () => void;
 }) {
   const { toast } = useApp();
   const init = () => ({
@@ -733,6 +855,9 @@ function FixturePanel({
       )}
       {f.storage && (
         <button className="btn btn-primary btn-block" onClick={onOpen}><Eye size={16} />  {tl("Vue de face et rangement")}</button>
+      )}
+      {f.storage && f.product_count > 0 && (
+        <button className="btn btn-block" onClick={onLabels} title={tl("Prix, code-barres et case de chaque produit du meuble")}><Tag size={16} />  {tl("Étiquettes de rayon")}</button>
       )}
       {edit && (
         <>
