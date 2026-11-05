@@ -117,11 +117,16 @@ jobs:
       - name: Pile d'appels si le poste serveur s'est arrêté
         if: always()
         run: |
+          # Texte sur une ligne pour une annotation GitHub (lisible sans connexion).
+          oneline() { sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g'; }
+          ls -la /tmp/core.* 2>/dev/null || echo "::warning title=Fichier core::aucun"
           for c in /tmp/core.*; do
             [ -f "$c" ] || continue
             sudo chmod a+r "$c"
             gdb -q -batch -ex "bt 60" -ex "info threads" -ex "thread apply all bt 8" src-tauri/target/debug/gestimarket "$c" > e2e/out/pile-serveur.txt 2>&1 || true
+            echo "::error title=Pile d'appels du poste serveur::$(grep -E '^#[0-9]|^\* |^Thread|^Program terminated' e2e/out/pile-serveur.txt | head -60 | oneline)"
           done
+          echo "::warning title=Fin du journal du poste serveur::$(tail -8 e2e-app.log | oneline)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -131,7 +136,10 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "e2e-${{ github.run_number }}" e2e/out/* --target "${{ github.sha }}" --title "Test d'interface ${{ github.run_number }}" --notes "Captures Playwright sous Xvfb, résultats dans results.json." --prerelease
+        run: |
+          find e2e/out -type f -size 0 -delete
+          gh release create "e2e-${{ github.run_number }}" e2e/out/* --target "${{ github.sha }}" --title "Test d'interface ${{ github.run_number }}" --notes "Captures Playwright sous Xvfb, résultats dans results.json." --prerelease > /tmp/gh.txt 2>&1 \
+            || { echo "::error title=Publication des captures::$(tail -6 /tmp/gh.txt | tr '\n' ' ')"; exit 1; }
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

@@ -134,6 +134,9 @@ export function problems(m) {
 export async function phoneTour({ browser, url, adminToken, cashierToken, out, strict = false, check }) {
   const report = [];
   const errors = [];
+  // Dernier écran vu avec le poste serveur encore en vie (pour dater un arrêt net du serveur).
+  let lastAlive = "début de la visite";
+  let downAfter = null;
 
   const phone = async (token, userAgent = ANDROID) => {
     const ctx = await browser.newContext({
@@ -156,6 +159,10 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
     m.file = file;
     report.push(m);
     if (file) await page.screenshot({ path: `${out}/${file}`, fullPage: true });
+    if (!downAfter) {
+      if (await fetch(`${url}/api/ping`).then((r) => r.ok, () => false)) lastAlive = label;
+      else downAfter = lastAlive;
+    }
     const p = problems(m);
     if (strict) check(`téléphone ${PHONE_WIDTH} px : ${label}`, p.length === 0, p.join(" | "));
     else console.log(`[mobile] ${label} : ${p.length ? p.join(" | ") : "rien à signaler"}`);
@@ -341,7 +348,7 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
 
   // Le poste serveur a tenu toute la visite (une coupure ici se lit dans e2e-app.log).
   const alive = await fetch(`${url}/api/ping`).then((r) => r.ok, () => false);
-  check("version mobile : le poste serveur répond toujours après la visite", alive, alive ? "" : "voir e2e-app.log");
+  check("version mobile : le poste serveur répond toujours après la visite", alive, alive ? "" : `arrêté après « ${downAfter ?? lastAlive} » ; voir e2e-app.log`);
 
   fs.writeFileSync(`${out}/mobile-audit.json`, JSON.stringify(report, null, 2));
   return report;
