@@ -184,6 +184,13 @@ Chaque magasin garde son PC serveur ; un **tunnel Cloudflare** lui donne une adr
 - Sur le poste serveur, le test de l'adresse publique (`/api/ping`, toutes les 30 s) indique « Réseau local disponible », « Internet disponible » ou « indisponible », et « Les deux routes sont actives ».
 - Le widget FlutterFlow `GestiMarketWebView` (paramètres `shopCode`, `supabaseUrl`, `supabaseKey`) choisit le **réseau local d'abord**, sinon Internet, et se **reconnecte seul** quand le PC serveur redémarre (pages 502/530 du tunnel, coupures). Voir `supabase/APPLICATION_MOBILE.md`, section 5.
 
+### Sur téléphone : ce qui marche, ce que l'application ne peut pas faire
+
+- Toutes les pages tiennent dans la largeur d'un téléphone de 360 px : rien ne dépasse de l'écran, les grands tableaux défilent de côté dans leur cadre, rien ne reste caché sous les onglets du bas (vérifié par le test d'interface, page par page).
+- Dans un navigateur (Chrome…), **Exporter** télécharge le fichier CSV et **Importer** ouvre le sélecteur de fichiers.
+- Dans l'**application mobile** (WebView FlutterFlow), il n'y a ni boîte d'impression ni téléchargement : **Imprimer** et **Exporter** le disent (imprimer ou exporter depuis un PC de la boutique, ou ouvrir l'adresse de la boutique dans Chrome). La caméra en direct n'est pas donnée à la page : le scanner propose de prendre le code en photo.
+- Bouton flottant **MenuFlottant** (code collé dans FlutterFlow, `supabase/flutterflow/menu_flottant.dart`) : testé dans Flutter avec le même routeur que l'application (go_router 12.1.3), dossier `flutterflow-test` et workflow « Application mobile » : bulle visible sur la WebView, chaque choix ouvre la bonne page, retour Android, déconnexion, bulle déplaçable qui reste dans l'écran et garde sa place. Elle part du milieu du bord droit pour ne pas couvrir le bouton « Encaisser ».
+
 Guide complet : [`supabase/APPLICATION_MOBILE.md`](supabase/APPLICATION_MOBILE.md) · script SQL : [`supabase/gestimarket_mobile.sql`](supabase/gestimarket_mobile.sql) · widget : [`supabase/flutterflow/gestimarket_webview.dart`](supabase/flutterflow/gestimarket_webview.dart)
 
 ---
@@ -277,7 +284,8 @@ Traductions : les textes restent en français dans le code, entourés de `tl()` 
 | Job | Quand | Contenu |
 |---|---|---|
 | `test` | chaque envoi | `npm run typecheck`, contrôle des traductions anglaises et `cargo test` sous Ubuntu |
-| `e2e` | envoi sur `main` | compilation debug, GestiMarket en mode serveur sous Xvfb, `e2e/run.mjs` (Playwright) avec le faux tunnel et la fausse API Supabase de `e2e/mocks.mjs` ; captures publiées dans une pré-release `e2e-N` |
+| `e2e` | envoi sur `main` | compilation debug, GestiMarket en mode serveur sous Xvfb, `e2e/run.mjs` (Playwright) avec le faux tunnel et la fausse API Supabase de `e2e/mocks.mjs`, puis `e2e/mobile.mjs` : chaque page sur un téléphone de 360 px (administrateur et caissière) ; captures publiées dans une pré-release `e2e-N` |
+| `flutter` (workflow « Application mobile ») | changement dans `supabase/flutterflow` ou `flutterflow-test` | code collé dans FlutterFlow assemblé par `flutterflow-test/assemble.py`, `flutter analyze` et `flutter test` (bouton flottant avec go_router 12.1.3, fonction `isServerActive`) |
 | `release` | étiquette `v*` | installateurs Windows (`-setup.exe`, `.msi`), Linux (`.deb`, `.rpm`, `.AppImage`) et macOS, release publiée |
 
 Version portable Windows : `gestimarket.exe` seul (la compilation MSVC intègre `WebView2Loader`), extrait du `.msi` par `msiexec /a`.

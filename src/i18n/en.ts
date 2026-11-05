@@ -2231,4 +2231,5 @@ export const EN: Record<string, string> = {
   "L'application mobile ne peut pas enregistrer de fichier. Exportez depuis un PC de la boutique, ou ouvrez l'adresse de la boutique dans Chrome.": "The mobile app cannot save files. Export from a shop PC, or open the shop's address in Chrome.",
   "Fichier trop volumineux (20 Mo maximum).": "File too large (20 MB maximum).",
   "L'application mobile ne peut pas imprimer. Imprimez depuis un PC de la boutique, ou ouvrez l'adresse de la boutique dans Chrome.": "The mobile app cannot print. Print from a shop PC, or open the shop's address in Chrome.",
+  "L'application mobile ne donne pas la caméra en direct : prenez le code en photo avec le bouton ci-dessous, ou ouvrez l'adresse de la boutique dans Chrome.": "The mobile app does not give live camera access: take a photo of the code with the button below, or open the shop's address in Chrome.",
 };

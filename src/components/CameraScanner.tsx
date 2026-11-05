@@ -3,6 +3,7 @@ import { Camera, Check, Flashlight, ImageUp, Lock, ScanLine, SwitchCamera } from
 import { decodeCanvas, decodeImageFile, liveCameraAvailable, scanFeedback, secureUrl } from "../lib/scanner";
 import { Modal } from "./ui";
 import { hasNativeScanner, onNativeCode, requestNativeScan } from "../lib/native";
+import { inAppWebView } from "../lib/device";
 import { tl } from "../lib/i18n";
 
 /**
@@ -104,7 +105,9 @@ export function CameraScanner({
         const name = (e as { name?: string }).name;
         setError(
           name === "NotAllowedError"
-            ? tl("Accès à la caméra refusé. Autorisez la caméra pour ce site dans les réglages du navigateur.")
+            ? inAppWebView()
+              ? tl("L'application mobile ne donne pas la caméra en direct : prenez le code en photo avec le bouton ci-dessous, ou ouvrez l'adresse de la boutique dans Chrome.")
+              : tl("Accès à la caméra refusé. Autorisez la caméra pour ce site dans les réglages du navigateur.")
             : name === "NotFoundError"
               ? tl("Aucune caméra trouvée sur cet appareil.")
               : tl("Impossible de démarrer la caméra."),

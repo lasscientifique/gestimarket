@@ -85,7 +85,10 @@ function measure(opts = {}) {
   // Boutons et champs visibles à l'écran mais recouverts par une barre fixe (fenêtre ouverte : ceux de la fenêtre).
   const covered = [];
   const modal = document.querySelector(".modal");
-  const targets = !opts.covered ? [] : modal ? modal.querySelectorAll("button, a, input, select") : document.querySelectorAll(".content button, .content a, .content input, .content select, .pos-ticket button");
+  // En haut : seulement si la page n'a pas défilé (après un clic, un bouton passé sous la barre du haut est normal).
+  const scrolled = (document.scrollingElement?.scrollTop ?? 0) > 2;
+  const look = opts.covered === "bottom" || (opts.covered === "top" && (modal || !scrolled));
+  const targets = !look ? [] : modal ? modal.querySelectorAll("button, a, input, select") : document.querySelectorAll(".content button, .content a, .content input, .content select, .pos-ticket button");
   for (const el of targets) {
     if (skip(el) || !shown(el)) continue;
     const r = el.getBoundingClientRect();
@@ -335,6 +338,10 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
     await record(page, "connexion (téléphone sans session)", "m-connexion.png");
     await ctx.close();
   }
+
+  // Le poste serveur a tenu toute la visite (une coupure ici se lit dans e2e-app.log).
+  const alive = await fetch(`${url}/api/ping`).then((r) => r.ok, () => false);
+  check("version mobile : le poste serveur répond toujours après la visite", alive, alive ? "" : "voir e2e-app.log");
 
   fs.writeFileSync(`${out}/mobile-audit.json`, JSON.stringify(report, null, 2));
   return report;
