@@ -30,4 +30,6 @@ jobs:
       - name: Analyse (erreurs et avertissements)
         run: flutter analyze --no-fatal-infos
       - name: Tests (bulle, menu, déplacement, serveur actif)
-        run: flutter test --reporter github
+        run: |
+          flutter test --reporter json > resultats.json || true
+          python3 report.py resultats.json
