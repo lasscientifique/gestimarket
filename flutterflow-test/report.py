@@ -2,7 +2,7 @@
 import json
 import sys
 
-names, failures, ok = {}, [], None
+names, failures, ok, prints = {}, [], None, {}
 for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
     try:
         event = json.loads(line)
@@ -11,8 +11,13 @@ for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
     kind = event.get("type")
     if kind == "testStart":
         names[event["test"]["id"]] = event["test"]["name"]
+    elif kind == "print":
+        prints.setdefault(event.get("testID"), []).append(event.get("message", ""))
     elif kind == "error":
-        failures.append((names.get(event.get("testID"), "?"), event.get("error", ""), event.get("stackTrace", "")))
+        logs = "
+".join(prints.get(event.get("testID"), []))
+        failures.append((names.get(event.get("testID"), "?"), logs + "
+" + event.get("error", ""), event.get("stackTrace", "")))
     elif kind == "testDone" and not event.get("hidden"):
         print(("OK    " if event.get("result") == "success" else "ÉCHEC ") + names.get(event["testID"], "?"))
     elif kind == "done":
