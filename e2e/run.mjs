@@ -485,9 +485,11 @@ try {
   check("état du stock : stock bas du lait signalé sur le frigo", frState?.low_stock === 1 && frState?.alerts >= 1, JSON.stringify(frState));
   const frAlerts = await rpc("plan_fixture_alerts", { id: fridge.id }, admin);
   check("état du stock : produits à signaler du frigo", frAlerts.some((x) => x.name === "Lait UHT 1 L" && x.status === "low"), JSON.stringify(frAlerts));
+  // Le Coca a été modifié plus haut par l'API sans son emplacement : il est remis dans le frigo (emplacement principal).
+  await rpc("plan_put", { input: { product_id: coca.id, location_id: slots.find((s) => s.level === 3).id } }, admin).catch(() => null);
   const salesMap = await rpc("plan_sales_map", { from: today, to: today }, admin);
   const frSales = salesMap.fixtures.find((s) => s.fixture_id === fridge.id);
-  check("carte des ventes : le Coca vendu compte pour le frigo", frSales?.revenue > 0 && salesMap.total >= frSales.revenue, JSON.stringify(frSales));
+  check("carte des ventes : le Coca vendu compte pour le frigo", frSales?.revenue > 0 && salesMap.total >= frSales.revenue, JSON.stringify(salesMap));
 
   await pc.goto(`${SRV}/#/locations`);
   await pc.getByRole("button", { name: "Modifier le plan" }).waitFor({ timeout: 45_000 });
@@ -495,7 +497,7 @@ try {
   const displayBar = pc.locator(".plan-display");
   await displayBar.getByRole("button", { name: "État du stock" }).click();
   await seen(pc, "Plan : état du stock (légende)", "Stock bas");
-  await pc.locator(".map-fixture").filter({ hasText: "Réfrigérateur vitré FR1" }).locator("rect").first().click();
+  await pc.locator('.map-fixture[data-code="FR1"] rect').first().click();
   await seen(pc, "Plan : produits à signaler du frigo", "Lait UHT 1 L");
   await shot(pc, "23-plan-etat-du-stock.png");
   await displayBar.getByRole("button", { name: "Ventes", exact: true }).click();
@@ -507,8 +509,8 @@ try {
 
   // Plusieurs meubles : Maj + clic sur le frigo et la gondole, puis « Aligner en haut ».
   await pc.getByRole("button", { name: "Modifier le plan" }).click();
-  await pc.locator(".map-fixture").filter({ hasText: "FR1" }).locator("rect").first().click();
-  await pc.locator(".map-fixture").filter({ hasText: go.code }).locator("rect").first().click({ modifiers: ["Shift"] });
+  await pc.locator('.map-fixture[data-code="FR1"] rect').first().click();
+  await pc.locator(`.map-fixture[data-code="${go.code}"] rect`).first().click({ modifiers: ["Shift"] });
   await seen(pc, "Plan : deux meubles sélectionnés", "2 meubles sélectionnés");
   await pc.getByTitle("Aligner en haut").click();
   await pc.waitForTimeout(1500);
@@ -524,7 +526,7 @@ try {
   await server.evaluate(() => {
     window.__printerConfig = { printer: "XP-80C (test)", auto_print: true, open_drawer: false };
   });
-  await server.locator(".map-fixture").filter({ hasText: "FR1" }).locator("rect").first().click();
+  await server.locator('.map-fixture[data-code="FR1"] rect').first().click();
   await server.getByRole("button", { name: "Étiquettes de rayon" }).click();
   if (await seen(server, "Étiquettes de rayon : choix de l'imprimante à tickets", "Feuille (fenêtre d'impression)")) {
     await server.locator(".modal").getByRole("button", { name: "Imprimante à tickets", exact: true }).click();

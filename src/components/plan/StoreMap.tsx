@@ -500,6 +500,7 @@ export function StoreMap({
           return (
             <g
               key={f.id}
+              data-code={f.code}
               className={`map-fixture cat-${f.category}${sel ? " selected" : ""}${hl ? " highlight" : ""}${editable ? " editable" : ""}${bad ? " blocked" : ""}${dim ? " dim" : ""}`}
             >
               {ov?.title && <title>{ov.title}</title>}
