@@ -1,0 +1,8 @@
+# Code assemblé par assemble.py et fichiers de Flutter
+lib/menu_flottant.dart
+lib/is_server_active.dart
+.dart_tool/
+build/
+pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies

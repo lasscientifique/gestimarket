@@ -1,0 +1,33 @@
+# Application mobile FlutterFlow : tests du code personnalisé collé dans l'éditeur
+# (bouton flottant MenuFlottant, fonction isServerActive), avec go_router 12.1.3 comme FlutterFlow.
+name: Application mobile
+
+on:
+  push:
+    branches: [main, essai-mobile]
+    paths: ["supabase/flutterflow/**", "flutterflow-test/**", ".github/workflows/mobile.yml"]
+  pull_request:
+    paths: ["supabase/flutterflow/**", "flutterflow-test/**", ".github/workflows/mobile.yml"]
+  workflow_dispatch:
+
+jobs:
+  flutter:
+    name: Code FlutterFlow (Flutter)
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: flutterflow-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.32.x
+          cache: true
+      - name: Assemblage du code collé dans FlutterFlow
+        run: python3 assemble.py
+      - run: flutter pub get
+      - name: Analyse (erreurs et avertissements)
+        run: flutter analyze --no-fatal-infos
+      - name: Tests (bulle, menu, déplacement, serveur actif)
+        run: flutter test --reporter expanded

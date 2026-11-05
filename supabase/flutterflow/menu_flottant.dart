@@ -13,6 +13,8 @@
 // ContactEdenDev /contact ; accueil / (Mes boutiques avec une session, Demarrage sans session).
 // Correction du 5 novembre 2026 : la page affichée est la dernière de la pile (pages ouvertes par
 // pushNamed), et non l'adresse de base de go_router : la bulle apparaît et le menu change bien de page.
+// Elle part du milieu du bord droit, pour ne pas couvrir le bouton « Encaisser » de la caisse sur téléphone.
+// Testé dans Flutter avec go_router 12.1.3 (dossier flutterflow-test du dépôt GestiMarket).
 
 const _menuBrand = Color(0xFF0F766E);
 
@@ -151,7 +153,9 @@ class _BulleState extends State<_Bulle> {
         final media = MediaQuery.of(context);
         final ecran = media.size;
         final pos = _borner(
-          _BulleMenu.position ?? Offset(ecran.width - _taille - 16, ecran.height - _taille - media.padding.bottom - 110),
+          // Départ au milieu du bord droit : loin des barres de GestiMarket dans la WebView (barre du haut,
+          // onglets du bas, bouton « Encaisser » de la caisse).
+          _BulleMenu.position ?? Offset(ecran.width - _taille - 10, ecran.height * 0.42),
           ecran,
           media.padding,
         );
