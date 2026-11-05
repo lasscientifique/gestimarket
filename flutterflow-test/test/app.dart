@@ -29,7 +29,10 @@ GoRouter routeurFlutterFlow() => GoRouter(
     );
 
 Future<GoRouter> lancerApplication(WidgetTester tester) async {
-  await tester.binding.setSurfaceSize(ecranTelephone);
+  // Écran du téléphone (taille logique 390 x 844, densité 3) : lu par MediaQuery, comme sur un vrai téléphone.
+  tester.view.physicalSize = ecranTelephone * 3;
+  tester.view.devicePixelRatio = 3;
+  addTearDown(tester.view.reset);
   final routeur = routeurFlutterFlow();
   await tester.pumpWidget(MaterialApp.router(routerConfig: routeur));
   await tester.pumpAndSettle();
