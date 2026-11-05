@@ -327,6 +327,8 @@ pub struct ProductFilter {
     pub supplier_id: Option<i64>,
     pub location_id: Option<i64>,
     pub bloc: Option<String>,
+    /// Produits rangés dans un meuble du plan (emplacement principal ou autre).
+    pub fixture_id: Option<i64>,
     pub without_location: Option<bool>,
     /// Produits sans catégorie.
     pub without_category: Option<bool>,
@@ -395,6 +397,13 @@ pub fn list_products(conn: &Connection, f: &ProductFilter) -> AppResult<Vec<Prod
     }
     if let Some(b) = db::clean(&f.bloc) {
         q.and("l.bloc = ?", vec![db::text(b)]);
+    }
+    if let Some(fx) = f.fixture_id {
+        q.and(
+            "(p.location_id IN (SELECT id FROM locations WHERE fixture_id = ?)
+              OR EXISTS (SELECT 1 FROM product_locations pl JOIN locations l2 ON l2.id = pl.location_id WHERE pl.product_id = p.id AND l2.fixture_id = ?))",
+            vec![db::int(fx), db::int(fx)],
+        );
     }
     if f.without_category.unwrap_or(false) {
         q.and("p.category_id IS NULL", vec![]);

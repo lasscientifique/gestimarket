@@ -466,7 +466,7 @@ const READ: &[&str] = &[
     "list_users", "list_categories", "list_products", "get_product", "scan_code", "find_product_by_barcode",
     "list_locations", "list_stock_movements", "stock_summary", "list_suppliers", "list_customers", "customer_statement",
     "list_sales", "get_sale", "list_electronic_payments", "list_purchases", "get_purchase", "current_cash_session",
-    "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places", "plan_floor_fill", "plan_preview_layout",
+    "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places", "plan_floor_fill", "plan_floor_status", "plan_fixture_alerts", "plan_sales_map", "plan_preview_layout",
     "sale_quote", "list_returns", "get_return", "get_credit_note", "list_credit_notes", "list_promotions", "cash_x_report", "list_z_reports",
 ];
 

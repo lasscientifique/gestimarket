@@ -535,6 +535,10 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "plan_get" => run(Any, &|c, _| out(plan::get(c)?)),
         "plan_fixture_contents" => run(Any, &|c, _| out(plan::contents(c, arg(&a, "id")?)?)),
         "plan_floor_fill" => run(Any, &|c, _| out(plan::floor_fill(c, arg(&a, "floor_id")?)?)),
+        // Affichages du plan : état du stock des meubles (rupture, stock bas, péremption) et carte des ventes.
+        "plan_floor_status" => run(Any, &|c, _| out(plan::floor_status(c, arg(&a, "floor_id")?)?)),
+        "plan_fixture_alerts" => run(Any, &|c, _| out(plan::fixture_alerts(c, arg(&a, "id")?)?)),
+        "plan_sales_map" => run(Admin, &|c, _| out(plan::sales_map(c, &arg::<String>(&a, "from")?, &arg::<String>(&a, "to")?)?)),
         "plan_generate_layout" => run(Manager, &|c, u| out(plan::generate_layout(c, u, arg(&a, "input")?)?)),
         // Aperçu du plan proposé (rien n'est enregistré) : configuration et assistant.
         "plan_preview_layout" => run(Any, &|c, _| out(plan::preview_layout(c, arg(&a, "input")?)?)),
@@ -548,7 +552,7 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
         "plan_save_fixture" => run(Manager, &|c, u| match arg::<Option<i64>>(&a, "id")? {
             Some(id) => out(plan::update_fixture(c, u, id, arg(&a, "input")?)?),
-            None => out(plan::create_fixture(c, Some(u), arg(&a, "input")?)?),
+            None => out(plan::create_fixture_free(c, Some(u), arg(&a, "input")?)?),
         }),
         "plan_move_fixtures" => run(Manager, &|c, _| out(plan::move_fixtures(c, arg(&a, "items")?)?)),
         "plan_delete_fixture" => run(Manager, &|c, u| {

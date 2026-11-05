@@ -573,14 +573,15 @@ pub fn update_fixture(conn: &mut Connection, user: &SessionUser, id: i64, input:
         Some(_) => check_height(input.height)?,
         None => cur.custom_height,
     };
+    let rotation = norm_rotation(input.rotation.unwrap_or(cur.rotation));
+    if floor_id != cur.floor_id || x != cur.x || y != cur.y || w != cur.w || h != cur.h || rotation != cur.rotation {
+        check_places(&tx, &[(id, floor_id, rect_of(x, y, w, h, rotation))])?;
+    }
     tx.execute(
         "UPDATE fixtures SET floor_id = ?1, code = ?2, name = ?3, x = ?4, y = ?5, w = ?6, h = ?7, rotation = ?8, color = ?9,
                 levels = ?10, sections = ?11, notes = ?12, updated_at = ?13, height = ?15
          WHERE id = ?14",
-        params![
-            floor_id, code, name, x, y, w, h, norm_rotation(input.rotation.unwrap_or(cur.rotation)), color, levels, sections, notes,
-            db::now(), id, height
-        ],
+        params![floor_id, code, name, x, y, w, h, rotation, color, levels, sections, notes, db::now(), id, height],
     )?;
     if code != cur.code {
         tx.execute("UPDATE locations SET bloc = ?1 WHERE fixture_id = ?2", params![code, id])?;
@@ -607,13 +608,22 @@ pub struct Geometry {
 }
 
 /// Déplacements, redimensionnements et rotations (glisser-déposer, annuler / rétablir).
+/// Refusé si un meuble sortirait de son niveau ou chevaucherait un autre meuble (voir `check_places`).
 pub fn move_fixtures(conn: &mut Connection, items: Vec<Geometry>) -> AppResult<()> {
     let tx = conn.transaction()?;
+    let mut moves = Vec::new();
     for g in &items {
         check_size(g.w, g.h)?;
         if !g.x.is_finite() || !g.y.is_finite() || g.x.abs() > 1000.0 || g.y.abs() > 1000.0 {
             return invalid("Position invalide.");
         }
+        let floor: Option<i64> = tx.query_row("SELECT floor_id FROM fixtures WHERE id = ?1", [g.id], |r| r.get(0)).optional()?;
+        if let Some(floor_id) = floor {
+            moves.push((g.id, floor_id, rect_of(g.x, g.y, g.w, g.h, norm_rotation(g.rotation))));
+        }
+    }
+    check_places(&tx, &moves)?;
+    for g in &items {
         tx.execute(
             "UPDATE fixtures SET x = ?1, y = ?2, w = ?3, h = ?4, rotation = ?5, updated_at = ?6 WHERE id = ?7",
             params![g.x, g.y, g.w, g.h, norm_rotation(g.rotation), db::now(), g.id],
@@ -621,6 +631,153 @@ pub fn move_fixtures(conn: &mut Connection, items: Vec<Geometry>) -> AppResult<(
     }
     tx.commit()?;
     Ok(())
+}
+
+// ───────────────────────────── Places libres (chevauchements) ─────────────────────────────
+
+/// Emprise au sol : (x, y, largeur, profondeur) en mètres.
+type Rect = (f64, f64, f64, f64);
+
+/// Tolérance : deux meubles qui se touchent (ou presque) ne se chevauchent pas.
+const TOUCH: f64 = 0.02;
+
+/// Meuble d'un niveau, pour les contrôles de place.
+struct Spot {
+    id: i64,
+    floor_id: i64,
+    name: String,
+    /// Pièce, texte, mur, porte, fenêtre… : se pose librement, comme dans la vue 3D.
+    free: bool,
+    /// Gêne la pose d'un meuble : tout sauf les pièces, les textes et les portes.
+    obstacle: bool,
+    rect: Rect,
+}
+
+/// Emprise au sol d'un meuble posé au coin (x, y), de taille w × h, tourné d'un quart de tour ou non.
+fn rect_of(x: f64, y: f64, w: f64, h: f64, rot: i64) -> Rect {
+    footprint(x + w / 2.0, y + h / 2.0, w, h, rot)
+}
+
+fn clash(a: Rect, b: Rect) -> bool {
+    a.0 + TOUCH < b.0 + b.2 && b.0 + TOUCH < a.0 + a.2 && a.1 + TOUCH < b.1 + b.3 && b.1 + TOUCH < a.1 + a.3
+}
+
+fn inside(r: Rect, fw: f64, fd: f64) -> bool {
+    r.0 >= -TOUCH && r.1 >= -TOUCH && r.0 + r.2 <= fw + TOUCH && r.1 + r.3 <= fd + TOUCH
+}
+
+fn spots(conn: &Connection, filter: &str, value: i64) -> AppResult<Vec<Spot>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT f.id, f.floor_id, f.name, t.category, COALESCE(NULLIF(t.model, ''), t.code), f.x, f.y, f.w, f.h, f.rotation
+         FROM fixtures f JOIN fixture_types t ON t.id = f.type_id WHERE {filter}"
+    ))?;
+    let rows = stmt.query_map([value], |r| {
+        let category: String = r.get(3)?;
+        let model: String = r.get(4)?;
+        Ok(Spot {
+            id: r.get(0)?,
+            floor_id: r.get(1)?,
+            name: r.get(2)?,
+            free: category == "zone" || category == "batiment" || model == "texte",
+            obstacle: !(category == "zone" || model == "texte" || model == "porte"),
+            rect: rect_of(r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?),
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+/// Nouvelles places de meubles (id, niveau, emprise) : aucun meuble ne sort de son niveau ni n'en chevauche
+/// un autre. Les meubles déplacés ensemble sont contrôlés à leurs nouvelles places. Ce qui était déjà ainsi
+/// avant le déplacement (plan dessiné avant la 0.17) reste permis.
+fn check_places(conn: &Connection, moves: &[(i64, i64, Rect)]) -> AppResult<()> {
+    let moved: HashMap<i64, (i64, Rect)> = moves.iter().map(|&(id, floor, r)| (id, (floor, r))).collect();
+    let mut floors: Vec<i64> = moves.iter().map(|m| m.1).collect();
+    floors.sort_unstable();
+    floors.dedup();
+    for floor_id in floors {
+        let (fw, fd) = floor_size(conn, floor_id)?;
+        let floor_name: String = conn.query_row("SELECT name FROM store_floors WHERE id = ?1", [floor_id], |r| r.get(0))?;
+        let mut list = spots(conn, "f.floor_id = ?1", floor_id)?;
+        // Meubles qui arrivent d'un autre niveau.
+        for (&id, &(floor, _)) in &moved {
+            if floor == floor_id && !list.iter().any(|s| s.id == id) {
+                list.extend(spots(conn, "f.id = ?1", id)?);
+            }
+        }
+        // Place sur ce niveau après le déplacement, et avant.
+        let now = |s: &Spot| match moved.get(&s.id) {
+            Some(&(floor, r)) => (floor == floor_id).then_some(r),
+            None => Some(s.rect),
+        };
+        let was = |s: &Spot| (s.floor_id == floor_id).then_some(s.rect);
+        for s in &list {
+            let Some(&(floor, r)) = moved.get(&s.id) else { continue };
+            if floor != floor_id || s.free {
+                continue;
+            }
+            if !inside(r, fw, fd) && was(s).map_or(true, |w| inside(w, fw, fd)) {
+                return invalid(format!("{} sortirait du niveau « {} » : le meuble revient à sa place.", s.name, floor_name));
+            }
+            for o in &list {
+                if o.id == s.id || !o.obstacle {
+                    continue;
+                }
+                let Some(ro) = now(o) else { continue };
+                let before = matches!((was(s), was(o)), (Some(a), Some(b)) if clash(a, b));
+                if clash(r, ro) && !before {
+                    return invalid(format!("Place occupée par {} : le meuble revient à sa place.", o.name));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Place libre la plus proche de (x, y) pour un meuble w × h : recherche par pas de 10 cm jusqu'à 6 m,
+/// sinon la première place libre du niveau.
+fn nearest_free(conn: &Connection, floor_id: i64, w: f64, h: f64, rot: i64, x: f64, y: f64) -> AppResult<(f64, f64)> {
+    let (fw, fd) = floor_size(conn, floor_id)?;
+    let obstacles: Vec<Rect> = spots(conn, "f.floor_id = ?1", floor_id)?.into_iter().filter(|s| s.obstacle).map(|s| s.rect).collect();
+    let fits = |px: f64, py: f64| {
+        let r = rect_of(px, py, w, h, rot);
+        inside(r, fw, fd) && !obstacles.iter().any(|o| clash(r, *o))
+    };
+    if fits(x, y) {
+        return Ok((x, y));
+    }
+    let mut offsets: Vec<(i32, i32)> = (-60..=60).flat_map(|i| (-60..=60).map(move |j| (i, j))).filter(|&(i, j)| i * i + j * j <= 3600).collect();
+    offsets.sort_by_key(|&(i, j)| (i * i + j * j, j, i));
+    for (i, j) in offsets {
+        let (px, py) = (r2(x + f64::from(i) * 0.1), r2(y + f64::from(j) * 0.1));
+        if fits(px, py) {
+            return Ok((px, py));
+        }
+    }
+    free_spot(conn, floor_id, w, h)
+}
+
+/// Meuble posé par l'utilisateur (palette, dupliquer, répéter) : s'il tombe sur un autre meuble,
+/// il prend la place libre la plus proche.
+pub fn create_fixture_free(conn: &Connection, user: Option<&SessionUser>, mut input: FixtureInput) -> AppResult<Fixture> {
+    if let (Some(x), Some(y), Some(type_id)) = (input.x, input.y, input.type_id) {
+        let t = get_type(conn, type_id)?;
+        let model = if t.model.is_empty() { t.code.as_str() } else { t.model.as_str() };
+        if !(t.category == "zone" || t.category == "batiment" || model == "texte") {
+            let floor_id = match input.floor_id {
+                Some(f) => f,
+                None => conn.query_row("SELECT id FROM store_floors ORDER BY sort, id LIMIT 1", [], |r| r.get(0))?,
+            };
+            let (fw, fd) = floor_size(conn, floor_id)?;
+            let (w, h) = (input.w.unwrap_or(t.width), input.h.unwrap_or(t.depth));
+            check_size(w, h)?;
+            let (x, y) = (x.clamp(0.0, (fw - w).max(0.0)), y.clamp(0.0, (fd - h).max(0.0)));
+            let (x, y) = nearest_free(conn, floor_id, w, h, norm_rotation(input.rotation.unwrap_or(0)), x, y)?;
+            input.floor_id = Some(floor_id);
+            input.x = Some(x);
+            input.y = Some(y);
+        }
+    }
+    create_fixture(conn, user, input)
 }
 
 /// Supprime un meuble. Ses produits gardent leurs autres emplacements (l'un d'eux devient principal).
@@ -793,6 +950,269 @@ pub fn floor_fill(conn: &Connection, floor_id: i64) -> AppResult<Vec<CellFill>> 
         }
     }
     Ok(cells)
+}
+
+// ───────────────────────────── État du stock et ventes sur le plan ─────────────────────────────
+
+/// Produits d'un meuble à signaler : en rupture, en stock bas (stock ≤ stock minimum),
+/// qui périment dans les N jours du réglage (ou sont périmés).
+#[derive(Debug, Serialize)]
+pub struct FixtureStatus {
+    pub fixture_id: i64,
+    pub products: i64,
+    pub out_of_stock: i64,
+    pub low_stock: i64,
+    pub expiring: i64,
+}
+
+/// Case à signaler (vue 3D) : « out », « low » ou « expiring », le plus grave.
+#[derive(Debug, Serialize)]
+pub struct CellStatus {
+    pub fixture_id: i64,
+    pub level: i64,
+    pub section: i64,
+    pub status: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FloorStatus {
+    /// Délai d'alerte de péremption (Paramètres), en jours.
+    pub alert_days: i64,
+    pub fixtures: Vec<FixtureStatus>,
+    pub cells: Vec<CellStatus>,
+}
+
+/// Produits rangés (emplacement principal et autres) avec leur état : rupture, stock bas, péremption proche.
+/// Mêmes règles que le tableau de bord. ?2 : « +N days ».
+const PLACED_STATE: &str = "SELECT l.fixture_id, l.level, l.section, p.id,
+        (p.track_stock = 1 AND p.stock <= 0),
+        (p.track_stock = 1 AND p.stock > 0 AND p.stock <= p.min_stock),
+        (p.stock > 0 AND p.expiry_date IS NOT NULL AND p.expiry_date <> '' AND p.expiry_date <= date('now', 'localtime', ?2)),
+        p.name, p.unit, p.stock, p.min_stock, NULLIF(p.expiry_date, ''), l.etage, l.rangee
+    FROM (
+        SELECT id AS pid, location_id AS lid FROM products WHERE active = 1 AND location_id IS NOT NULL
+        UNION
+        SELECT pl.product_id, pl.location_id FROM product_locations pl JOIN products pp ON pp.id = pl.product_id WHERE pp.active = 1
+    ) x
+    JOIN locations l ON l.id = x.lid
+    JOIN fixtures f ON f.id = l.fixture_id
+    JOIN products p ON p.id = x.pid";
+
+/// Gravité : 3 rupture, 2 stock bas, 1 péremption proche, 0 rien à signaler.
+fn severity(out: bool, low: bool, expiring: bool) -> u8 {
+    if out {
+        3
+    } else if low {
+        2
+    } else if expiring {
+        1
+    } else {
+        0
+    }
+}
+
+fn severity_name(s: u8) -> &'static str {
+    match s {
+        3 => "out",
+        2 => "low",
+        _ => "expiring",
+    }
+}
+
+struct PlacedState {
+    fixture_id: i64,
+    level: i64,
+    section: i64,
+    product_id: i64,
+    out: bool,
+    low: bool,
+    expiring: bool,
+    name: String,
+    unit: String,
+    stock: f64,
+    min_stock: f64,
+    expiry_date: Option<String>,
+    etage: String,
+    rangee: String,
+}
+
+fn placed_states(conn: &Connection, filter: &str, value: i64) -> AppResult<(i64, Vec<PlacedState>)> {
+    let alert_days = settings::get_i64(conn, "expiry_alert_days")?.max(0);
+    let mut stmt = conn.prepare(&format!("{PLACED_STATE} WHERE {filter} ORDER BY l.fixture_id, l.level, l.section"))?;
+    let rows = stmt.query_map(params![value, format!("+{alert_days} days")], |r| {
+        Ok(PlacedState {
+            fixture_id: r.get(0)?,
+            level: r.get(1)?,
+            section: r.get(2)?,
+            product_id: r.get(3)?,
+            out: r.get::<_, Option<bool>>(4)?.unwrap_or(false),
+            low: r.get::<_, Option<bool>>(5)?.unwrap_or(false),
+            expiring: r.get::<_, Option<bool>>(6)?.unwrap_or(false),
+            name: r.get(7)?,
+            unit: r.get(8)?,
+            stock: r.get(9)?,
+            min_stock: r.get(10)?,
+            expiry_date: r.get(11)?,
+            etage: r.get::<_, Option<String>>(12)?.unwrap_or_default(),
+            rangee: r.get::<_, Option<String>>(13)?.unwrap_or_default(),
+        })
+    })?;
+    Ok((alert_days, rows.collect::<Result<Vec<_>, _>>()?))
+}
+
+/// État du stock des meubles d'un niveau (affichage « État du stock » du plan).
+pub fn floor_status(conn: &Connection, floor_id: i64) -> AppResult<FloorStatus> {
+    let (alert_days, rows) = placed_states(conn, "f.floor_id = ?1", floor_id)?;
+    // Un produit rangé dans deux cases d'un même meuble compte une fois pour le meuble.
+    let mut per: std::collections::BTreeMap<i64, [std::collections::HashSet<i64>; 4]> = std::collections::BTreeMap::new();
+    let mut cells: std::collections::BTreeMap<(i64, i64, i64), u8> = std::collections::BTreeMap::new();
+    for p in &rows {
+        let sets = per.entry(p.fixture_id).or_default();
+        sets[0].insert(p.product_id);
+        for (i, on) in [p.out, p.low, p.expiring].into_iter().enumerate() {
+            if on {
+                sets[i + 1].insert(p.product_id);
+            }
+        }
+        let s = severity(p.out, p.low, p.expiring);
+        if s > 0 {
+            let c = cells.entry((p.fixture_id, p.level, p.section)).or_insert(0);
+            *c = (*c).max(s);
+        }
+    }
+    Ok(FloorStatus {
+        alert_days,
+        fixtures: per
+            .into_iter()
+            .map(|(fixture_id, s)| FixtureStatus {
+                fixture_id,
+                products: s[0].len() as i64,
+                out_of_stock: s[1].len() as i64,
+                low_stock: s[2].len() as i64,
+                expiring: s[3].len() as i64,
+            })
+            .collect(),
+        cells: cells
+            .into_iter()
+            .map(|((fixture_id, level, section), s)| CellStatus { fixture_id, level, section, status: severity_name(s) })
+            .collect(),
+    })
+}
+
+/// Produit d'un meuble à signaler, avec sa case.
+#[derive(Debug, Serialize)]
+pub struct StockAlert {
+    pub product_id: i64,
+    pub name: String,
+    pub unit: String,
+    pub stock: f64,
+    pub min_stock: f64,
+    pub expiry_date: Option<String>,
+    /// « out », « low » ou « expiring » (le plus grave) ; `expiring` : péremption proche en plus.
+    pub status: &'static str,
+    pub expiring: bool,
+    pub etage: String,
+    pub rangee: String,
+}
+
+/// Produits à signaler d'un meuble : rupture, puis stock bas, puis péremption proche.
+pub fn fixture_alerts(conn: &Connection, fixture_id: i64) -> AppResult<Vec<StockAlert>> {
+    let (_, rows) = placed_states(conn, "l.fixture_id = ?1", fixture_id)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut list: Vec<(u8, StockAlert)> = Vec::new();
+    for p in rows {
+        let s = severity(p.out, p.low, p.expiring);
+        if s == 0 || !seen.insert(p.product_id) {
+            continue;
+        }
+        list.push((
+            s,
+            StockAlert {
+                product_id: p.product_id,
+                name: p.name,
+                unit: p.unit,
+                stock: p.stock,
+                min_stock: p.min_stock,
+                expiry_date: p.expiry_date,
+                status: severity_name(s),
+                expiring: p.expiring,
+                etage: p.etage,
+                rangee: p.rangee,
+            },
+        ));
+    }
+    list.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.name.to_lowercase().cmp(&b.1.name.to_lowercase())));
+    Ok(list.into_iter().map(|(_, a)| a).collect())
+}
+
+/// Ventes d'un meuble sur une période (produits attribués à leur emplacement principal actuel).
+#[derive(Debug, Serialize)]
+pub struct FixtureSales {
+    pub fixture_id: i64,
+    pub revenue: i64,
+    pub margin: i64,
+    pub quantity: f64,
+    /// Produits différents vendus.
+    pub products: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SalesMap {
+    pub from: String,
+    pub to: String,
+    /// Chiffre d'affaires de la période, et part des produits non rangés.
+    pub total: i64,
+    pub unplaced: i64,
+    pub fixtures: Vec<FixtureSales>,
+}
+
+/// Carte des ventes : chiffre d'affaires et marge de chaque meuble entre deux dates (AAAA-MM-JJ, incluses).
+pub fn sales_map(conn: &Connection, from: &str, to: &str) -> AppResult<SalesMap> {
+    let parse = |d: &str| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d");
+    let (Ok(start), Ok(end)) = (parse(from), parse(to)) else {
+        return invalid("Date invalide (format AAAA-MM-JJ).");
+    };
+    if start > end {
+        return invalid("La date de début est après la date de fin.");
+    }
+    let alloc = crate::services::reports::ALLOCATED;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT l.fixture_id, CAST(ROUND(SUM({alloc})) AS INTEGER),
+                CAST(ROUND(SUM({alloc} - COALESCE(si.base_quantity, si.quantity) * si.unit_cost)) AS INTEGER),
+                SUM(COALESCE(si.base_quantity, si.quantity)), COUNT(DISTINCT si.product_id)
+         FROM sale_items si
+         JOIN sales s ON s.id = si.sale_id
+         JOIN products p ON p.id = si.product_id
+         LEFT JOIN locations l ON l.id = p.location_id
+         WHERE s.status = 'completed' AND s.created_at >= ?1 AND s.created_at < date(?2, '+1 day')
+         GROUP BY l.fixture_id"
+    ))?;
+    let rows = stmt.query_map(params![from, to], |r| {
+        Ok((
+            r.get::<_, Option<i64>>(0)?,
+            FixtureSales {
+                fixture_id: 0,
+                revenue: r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                margin: r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                quantity: r.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+                products: r.get(4)?,
+            },
+        ))
+    })?;
+    let (mut total, mut unplaced, mut fixtures) = (0, 0, Vec::new());
+    for row in rows {
+        let (fixture, mut s) = row?;
+        total += s.revenue;
+        match fixture {
+            Some(id) => {
+                s.fixture_id = id;
+                fixtures.push(s);
+            }
+            None => unplaced += s.revenue,
+        }
+    }
+    fixtures.sort_by(|a, b| b.revenue.cmp(&a.revenue));
+    Ok(SalesMap { from: from.to_string(), to: to.to_string(), total, unplaced, fixtures })
 }
 
 // ───────────────────────────── Assistant « Créer ma boutique » ─────────────────────────────

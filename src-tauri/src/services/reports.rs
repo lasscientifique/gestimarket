@@ -99,8 +99,8 @@ fn by_day(conn: &Connection, from: NaiveDate, to: NaiveDate) -> AppResult<Vec<Da
     Ok(out)
 }
 
-/// Part de la remise globale répartie au prorata des lignes.
-const ALLOCATED: &str = "si.total * CASE WHEN s.subtotal > 0 THEN CAST(s.total AS REAL) / s.subtotal ELSE 0 END";
+/// Part du total payé d'une ligne de vente (remise du ticket répartie au prorata des lignes).
+pub(crate) const ALLOCATED: &str = "si.total * CASE WHEN s.subtotal > 0 THEN CAST(s.total AS REAL) / s.subtotal ELSE 0 END";
 
 fn top_products(conn: &Connection, from: &str, to: &str, limit: i64) -> AppResult<Vec<TopProduct>> {
     let mut stmt = conn.prepare(&format!(

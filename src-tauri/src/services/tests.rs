@@ -1653,3 +1653,76 @@ fn discounts_need_validation_and_sales_are_not_duplicated() {
     let d = &r.discounts_by_user[0];
     assert_eq!((d.label.as_str(), d.count, d.amount, d.approved), ("Caissière Test", 3, 2000, 1));
 }
+
+#[test]
+fn plan_refuses_overlaps_and_shows_stock_and_sales() {
+    let (mut conn, admin) = setup();
+    let floor = plan::save_floor(&conn, &admin, None, plan::FloorInput { name: "Salle test".into(), width: 10.0, depth: 6.0, wall_height: None, floor_style: None }).unwrap();
+    let types = plan::get(&conn).unwrap().types;
+    let ty = |code: &str| types.iter().find(|t| t.code == code).unwrap().id;
+    let new = |conn: &Connection, code: &str, x: f64, y: f64| {
+        plan::create_fixture(conn, Some(&admin), plan::FixtureInput { type_id: Some(ty(code)), floor_id: Some(floor), x: Some(x), y: Some(y), ..Default::default() }).unwrap()
+    };
+    let geo = |f: &plan::Fixture, x: f64, y: f64| plan::Geometry { id: f.id, x, y, w: f.w, h: f.h, rotation: f.rotation };
+    let go1 = new(&conn, "gondole", 1.0, 1.0);
+    let go2 = new(&conn, "gondole", 1.0, 3.0);
+    let zone = new(&conn, "zone_vente", 0.0, 0.0);
+
+    // Vue de dessus comme en 3D : chevauchement refusé, sortie du niveau refusée ; rien n'a bougé.
+    let err = plan::move_fixtures(&mut conn, vec![geo(&go2, 1.5, 1.5)]).unwrap_err().to_string();
+    assert!(err.contains(&format!("Place occupée par {}", go1.name)), "{err}");
+    let err = plan::move_fixtures(&mut conn, vec![geo(&go2, 8.0, 3.0)]).unwrap_err().to_string();
+    assert!(err.contains("sortirait du niveau « Salle test »"), "{err}");
+    assert_eq!((plan::get_fixture(&conn, go2.id).unwrap().x, plan::get_fixture(&conn, go2.id).unwrap().y), (1.0, 3.0));
+    // Une pièce se pose librement ; des meubles déplacés ensemble sont contrôlés à leurs nouvelles places.
+    plan::move_fixtures(&mut conn, vec![geo(&zone, 0.5, 0.0)]).unwrap();
+    plan::move_fixtures(&mut conn, vec![geo(&go1, 5.0, 3.0), geo(&go2, 5.0, 5.0)]).unwrap();
+    // Plan dessiné avant la 0.17 : deux meubles qui se chevauchaient déjà peuvent encore bouger.
+    conn.execute("UPDATE fixtures SET x = 5.5, y = 3.3 WHERE id = ?1", [go2.id]).unwrap();
+    plan::move_fixtures(&mut conn, vec![geo(&go2, 5.6, 3.3)]).unwrap();
+    // Une nouvelle taille passe par le même contrôle.
+    let err = plan::update_fixture(&mut conn, &admin, go1.id, plan::FixtureInput { w: Some(6.0), ..Default::default() }).unwrap_err().to_string();
+    assert!(err.contains("sortirait du niveau"), "{err}");
+    plan::move_fixtures(&mut conn, vec![geo(&go2, 1.0, 1.0)]).unwrap();
+
+    // Meuble posé sur un autre (dupliquer, palette) : il prend la place libre la plus proche.
+    let dup = plan::create_fixture_free(&conn, Some(&admin), plan::FixtureInput { type_id: Some(ty("gondole")), floor_id: Some(floor), x: Some(1.2), y: Some(1.2), ..Default::default() }).unwrap();
+    assert_eq!((dup.x, dup.y), (1.2, 1.9), "juste sous la gondole occupée");
+
+    // État du stock : rupture, stock bas, péremption proche (le plus grave colore la case).
+    let slots = plan::contents(&conn, go1.id).unwrap().slots;
+    let out = product(&mut conn, &admin, "Lait en poudre", 900, 1200, 0.0);
+    let low = product(&mut conn, &admin, "Sucre 1kg", 500, 700, 1.0);
+    let ok = product(&mut conn, &admin, "Riz 5kg", 3000, 3500, 10.0);
+    let exp = product(&mut conn, &admin, "Yaourt", 200, 300, 10.0);
+    conn.execute("UPDATE products SET expiry_date = date('now', 'localtime', '+3 days') WHERE id = ?1", [exp]).unwrap();
+    for (p, s) in [(out, 0), (low, 0), (ok, 1), (exp, 2)] {
+        plan::put(&mut conn, &admin, plan::PutInput { product_id: p, location_id: slots[s].id, from_location_id: None, primary: None }).unwrap();
+    }
+    let st = plan::floor_status(&conn, floor).unwrap();
+    assert_eq!(st.alert_days, 30);
+    let f = st.fixtures.iter().find(|f| f.fixture_id == go1.id).unwrap();
+    assert_eq!((f.products, f.out_of_stock, f.low_stock, f.expiring), (4, 1, 1, 1));
+    let cell = |s: usize| st.cells.iter().find(|c| c.fixture_id == go1.id && c.level == slots[s].level && c.section == slots[s].section).map(|c| c.status);
+    assert_eq!((cell(0), cell(1), cell(2)), (Some("out"), None, Some("expiring")));
+    let alerts = plan::fixture_alerts(&conn, go1.id).unwrap();
+    assert_eq!(
+        alerts.iter().map(|a| (a.name.as_str(), a.status)).collect::<Vec<_>>(),
+        vec![("Lait en poudre", "out"), ("Sucre 1kg", "low"), ("Yaourt", "expiring")]
+    );
+    let in_fixture = catalog::list_products(&conn, &catalog::ProductFilter { fixture_id: Some(go1.id), ..Default::default() }).unwrap();
+    assert_eq!(in_fixture.len(), 4, "étiquettes de rayon du meuble");
+
+    // Carte des ventes : chaque vente compte pour le meuble de l'emplacement principal ; un produit non rangé à part.
+    let caisse = cashier(&conn, &admin);
+    cash::open(&conn, &caisse, 0).unwrap();
+    let loose = product(&mut conn, &admin, "Pain", 100, 150, 20.0);
+    sales::create_sale(&mut conn, &caisse, sale_input(vec![(ok, 2.0), (loose, 4.0)], "cash", 10_000, None)).unwrap();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let map = plan::sales_map(&conn, &today, &today).unwrap();
+    assert_eq!((map.total, map.unplaced), (7600, 600));
+    let s = map.fixtures.iter().find(|s| s.fixture_id == go1.id).unwrap();
+    assert_eq!((s.revenue, s.margin, s.quantity, s.products), (7000, 1000, 2.0, 1));
+    assert!(plan::sales_map(&conn, "2026-13-01", &today).is_err());
+    assert!(plan::sales_map(&conn, &today, "2020-01-01").is_err());
+}
