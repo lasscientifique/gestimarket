@@ -4,7 +4,7 @@ name: Application mobile
 
 on:
   push:
-    branches: [main, essai-mobile]
+    branches: [main]
     paths: ["supabase/flutterflow/**", "flutterflow-test/**", ".github/workflows/mobile.yml"]
   pull_request:
     paths: ["supabase/flutterflow/**", "flutterflow-test/**", ".github/workflows/mobile.yml"]
