@@ -6,6 +6,8 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "../../api";
 import { isTauri } from "../../lib/transport";
+import { inAppWebView } from "../../lib/device";
+import { noFileInApp } from "../../lib/files";
 import { mediaUrl } from "../../lib/media";
 import type { Fixture, Floor } from "../../types";
 import { getLang, tl, tm } from "../../lib/i18n";
@@ -285,6 +287,10 @@ async function saveFile(name: string, dataUrl: string, kind: "png" | "pdf"): Pro
     if (!path) return false;
     await api.saveBinaryFile(path, base64);
     return true;
+  }
+  if (inAppWebView()) {
+    noFileInApp();
+    return false;
   }
   const a = document.createElement("a");
   a.href = dataUrl;

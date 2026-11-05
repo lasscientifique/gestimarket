@@ -1,7 +1,8 @@
 import type { CreditNote, Sale, SaleReturn, Settings, ZData } from "../types";
 import { barcodeSvg } from "../components/LabelsModal";
 import { dateTime, money, paymentLabelShop, qty } from "./format";
-import { ts } from "./i18n";
+import { inAppWebView, notify } from "./device";
+import { tl, ts } from "./i18n";
 import { mediaUrl } from "./media";
 import { receiptEscpos } from "./escpos";
 import { printerConfig, sendToPrinter } from "./printer";
@@ -71,8 +72,13 @@ export function receiptHtml(sale: Sale, settings: Settings): string {
   </div>`;
 }
 
-/** Imprime un contenu HTML via la boîte d'impression du système. */
+/** Imprime un contenu HTML via la boîte d'impression du système.
+ *  L'application mobile (WebView) n'a pas de boîte d'impression : on le dit au lieu de ne rien faire. */
 export function printHtml(html: string, widthMm?: number) {
+  if (inAppWebView()) {
+    notify("info", tl("L'application mobile ne peut pas imprimer. Imprimez depuis un PC de la boutique, ou ouvrez l'adresse de la boutique dans Chrome."));
+    return;
+  }
   const root = document.getElementById("print-root");
   if (!root) return;
   root.innerHTML = html;

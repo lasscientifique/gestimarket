@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   ChevronDown,
   ChevronRight,
@@ -22,7 +21,7 @@ import { Badge, Empty, Field, ImageField, Modal, PageHeader, StatCard, Thumb } f
 import { CategorySelect, subtreeIds } from "../components/CategorySelect";
 import { HelpTip } from "../components/Help";
 import { CataloguePicker } from "../components/BusinessType";
-import { exportCsv } from "../lib/files";
+import { exportCsv, pickTextFile } from "../lib/files";
 import { parseCsv } from "../lib/csv";
 import { toCsv } from "../lib/format";
 import type { Category } from "../types";
@@ -139,9 +138,9 @@ export default function CategoriesPage() {
 
   const doImport = async () => {
     try {
-      const path = await open({ multiple: false, filters: [{ name: "Fichier CSV", extensions: ["csv", "txt"] }] });
-      if (!path || Array.isArray(path)) return;
-      const rows = parseCsv(await api.readTextFile(path));
+      const picked = await pickTextFile();
+      if (!picked) return;
+      const rows = parseCsv(picked.text);
       // 1re colonne = chemin « A > B > C » ; ou plusieurs colonnes (catégorie, sous-catégorie, famille…).
       const paths = rows
         .filter((r, i) => !(i === 0 && /chemin|cat[ée]gorie/i.test(r[0] ?? "")))

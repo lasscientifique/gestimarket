@@ -163,6 +163,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [push],
   );
 
+  // Messages envoyés par du code hors composant (impression ou export impossible dans l'application mobile…).
+  useEffect(() => {
+    const onNotice = (e: Event) => {
+      const d = (e as CustomEvent<{ kind: ToastKind; message: string }>).detail;
+      if (d?.message) push(d.kind, d.message);
+    };
+    window.addEventListener("gm-toast", onNotice);
+    return () => window.removeEventListener("gm-toast", onNotice);
+  }, [push]);
+
   const [pinState, setPinState] = useState<(PinOptions & { resolve: (v: string | null) => void }) | null>(null);
   const askPin = useCallback((o: PinOptions) => new Promise<string | null>((resolve) => setPinState({ ...o, resolve })), []);
 

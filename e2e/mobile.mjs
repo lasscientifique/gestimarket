@@ -10,6 +10,8 @@ import fs from "node:fs";
 
 export const PHONE_WIDTH = 360;
 const ANDROID = "Mozilla/5.0 (Linux; Android 14; SM-A155F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36";
+// WebView Android de l'application FlutterFlow (« ; wv) ») : pas de boîte d'impression ni de téléchargement.
+const WEBVIEW = "Mozilla/5.0 (Linux; Android 14; SM-A155F Build/UP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0 Mobile Safari/537.36";
 
 // Pages de l'administrateur (tout le menu) et de la caissière (celle qui se sert le plus du téléphone).
 const ADMIN_PAGES = [
@@ -19,7 +21,9 @@ const ADMIN_PAGES = [
 const CASHIER_PAGES = ["pos", "my-dashboard", "sales", "cash", "returns", "customers", "finder", "poste"];
 
 // Mesures faites dans la page (sérialisées par Playwright : pas de variable extérieure).
-function measure() {
+// opts.covered : chercher les boutons cachés sous une barre fixe : "top" en haut de la page (barre du haut,
+// onglets des Paramètres), "bottom" en bas de la page (onglets du bas, barre de la caisse, pied de fenêtre).
+function measure(opts = {}) {
   const W = document.documentElement.clientWidth;
   const H = window.innerHeight;
   const drawerOpen = !!document.querySelector(".mobile-open");
@@ -70,9 +74,19 @@ function measure() {
     const r = el.getBoundingClientRect();
     return `${name(el)} [x ${Math.round(r.left)}→${Math.round(r.right)}]`;
   };
-  // Boutons et champs visibles à l'écran mais recouverts par une barre fixe.
+  // Contenu qui sort de son cadre sans le couper (texte qui passe sous le bouton voisin, par exemple).
+  const spill = [];
+  for (const el of document.querySelectorAll("button, .btn, .card, .kv, .stat-card, .line-info, .chip, .modal-body, .page-header, td, th")) {
+    if (skip(el) || !shown(el) || el.closest(".table-scroll, .table-wrap, .card.no-pad, .plan3d, svg")) continue;
+    const st = getComputedStyle(el);
+    if (st.overflowX !== "visible" || st.display === "table-cell" && el.closest("table")?.scrollWidth > el.closest("table")?.clientWidth) continue;
+    if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) spill.push(el);
+  }
+  // Boutons et champs visibles à l'écran mais recouverts par une barre fixe (fenêtre ouverte : ceux de la fenêtre).
   const covered = [];
-  for (const el of document.querySelectorAll(".content button, .content a, .content input, .content select, .modal button, .modal input, .pos-ticket button")) {
+  const modal = document.querySelector(".modal");
+  const targets = !opts.covered ? [] : modal ? modal.querySelectorAll("button, a, input, select") : document.querySelectorAll(".content button, .content a, .content input, .content select, .pos-ticket button");
+  for (const el of targets) {
     if (skip(el) || !shown(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.width < 4 || r.height < 4 || r.bottom <= 0 || r.top >= H || r.right <= 0 || r.left >= W) continue;
@@ -80,7 +94,7 @@ function measure() {
     const y = Math.min(H - 1, Math.max(0, r.top + r.height / 2));
     const hit = document.elementFromPoint(x, y);
     if (!hit || el.contains(hit) || hit.contains(el)) continue;
-    const bar = hit.closest(".mobile-topbar, .mobile-tabs, .pos-mobile-bar, .tabbar, .modal-footer, .licence-banner");
+    const bar = hit.closest(opts.covered === "top" ? ".mobile-topbar, .tabbar, .licence-banner" : ".mobile-tabs, .pos-mobile-bar, .modal-footer");
     if (bar && !bar.contains(el)) covered.push(`${name(el)} sous ${name(bar).slice(0, 40)}`);
   }
   // Cibles tactiles de moins de 30 px : à titre indicatif.
@@ -95,6 +109,7 @@ function measure() {
     pageScroll: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - W,
     outside: outer(outside).slice(0, 12).map(rect),
     cut: outer(cut).slice(0, 12).map(rect),
+    spill: outer(spill).slice(0, 8).map((el) => `${name(el).slice(0, 70)} (${el.scrollWidth} > ${el.clientWidth})`),
     covered: covered.slice(0, 8),
     small: small.length,
     smallSample: small.slice(0, 8),
@@ -107,6 +122,7 @@ export function problems(m) {
   if (m.pageScroll > 1) p.push(`la page défile de ${m.pageScroll} px vers la droite`);
   if (m.outside.length) p.push(`hors de l'écran : ${m.outside.join(" ; ")}`);
   if (m.cut.length) p.push(`coupé : ${m.cut.join(" ; ")}`);
+  if (m.spill?.length) p.push(`sort de son cadre : ${m.spill.join(" ; ")}`);
   if (m.covered.length) p.push(`caché sous une barre : ${m.covered.join(" ; ")}`);
   if (m.errors?.length) p.push(`erreurs : ${m.errors.join(" ; ")}`);
   return p;
@@ -116,9 +132,9 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
   const report = [];
   const errors = [];
 
-  const phone = async (token) => {
+  const phone = async (token, userAgent = ANDROID) => {
     const ctx = await browser.newContext({
-      viewport: { width: PHONE_WIDTH, height: 780 }, userAgent: ANDROID, isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: "fr-FR",
+      viewport: { width: PHONE_WIDTH, height: 780 }, userAgent, isMobile: true, hasTouch: true, deviceScaleFactor: 2, locale: "fr-FR", acceptDownloads: true,
     });
     if (token) await ctx.addInitScript((t) => sessionStorage.setItem("gm-token", t), token);
     const page = await ctx.newPage();
@@ -131,7 +147,7 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
     await page.waitForTimeout(ms);
   };
   const record = async (page, label, file) => {
-    const m = await page.evaluate(measure);
+    const m = await page.evaluate(measure, { covered: "top" });
     m.errors = errors.splice(0);
     m.label = label;
     m.file = file;
@@ -142,24 +158,34 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
     else console.log(`[mobile] ${label} : ${p.length ? p.join(" | ") : "rien à signaler"}`);
     return m;
   };
+  const scrollAll = (page, end) =>
+    page.evaluate((toEnd) => {
+      for (const el of [document.scrollingElement, document.body, document.querySelector(".content"), document.querySelector(".modal-body")]) {
+        if (el) el.scrollTop = toEnd ? el.scrollHeight : 0;
+      }
+    }, end);
   const go = async (page, hash) => {
     await page.evaluate((h) => (location.hash = h), hash);
     await settle(page);
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await scrollAll(page, false);
+  };
+  // Bas de la page ou de la fenêtre : plus rien ne doit rester caché sous une barre fixe.
+  const bottom = async (page, label) => {
+    await scrollAll(page, true);
+    await page.waitForTimeout(350);
+    const end = await page.evaluate(measure, { covered: "bottom" });
+    await scrollAll(page, false);
+    const ok = end.covered.length === 0;
+    if (!ok) report.push({ ...end, label: `${label} (bas)`, errors: [] });
+    if (strict) check(`téléphone ${PHONE_WIDTH} px : ${label}, bas de page dégagé`, ok, end.covered.join(" ; "));
+    else if (!ok) console.log(`[mobile] ${label} (bas) : ${end.covered.join(" ; ")}`);
   };
   // Chaque page en haut, puis tout en bas (dernier bouton au-dessus des onglets ?).
   const pages = async (page, who, list) => {
     for (const r of list) {
       await go(page, `#/${r}`);
       await record(page, `${who} : page ${r}`, `m-${who}-${r}.png`);
-      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-      await page.waitForTimeout(300);
-      const end = await page.evaluate(measure);
-      if (end.covered.length) {
-        report.push({ ...end, label: `${who} : page ${r} (bas)`, errors: [] });
-        if (strict) check(`téléphone ${PHONE_WIDTH} px : ${who} : page ${r} (bas)`, false, end.covered.join(" ; "));
-        else console.log(`[mobile] ${who} : page ${r} (bas) : ${end.covered.join(" ; ")}`);
-      }
+      await bottom(page, `${who} : page ${r}`);
     }
   };
 
@@ -203,9 +229,27 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
       await add.first().click();
       await settle(page, 800);
       await record(page, "fenêtre « Nouveau produit »", "m-admin-nouveau-produit.png");
+      await bottom(page, "fenêtre « Nouveau produit »");
       await page.keyboard.press("Escape");
       await page.waitForTimeout(400);
     }
+
+    // Fichiers dans le navigateur du téléphone (avant : boîte de dialogue du PC, en erreur).
+    const result = (label, ok, detail) => (strict ? check(`téléphone : ${label}`, ok, detail) : console.log(`[mobile] ${label} : ${ok ? "oui" : "NON"} ${detail}`));
+    await go(page, "#/products");
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 10_000 }).catch(() => null),
+      page.getByRole("button", { name: "Exporter", exact: true }).click(),
+    ]);
+    result("« Exporter » télécharge le fichier CSV", !!download && /\.csv$/.test(download.suggestedFilename()), download?.suggestedFilename() ?? "aucun téléchargement");
+    await go(page, "#/categories");
+    const [chooser] = await Promise.all([
+      page.waitForEvent("filechooser", { timeout: 10_000 }).catch(() => null),
+      page.getByRole("button", { name: "Importer", exact: true }).click(),
+    ]);
+    if (chooser) await chooser.setFiles({ name: "categories.csv", mimeType: "text/csv", buffer: Buffer.from(["Chemin", "Boissons > Sodas", ""].join("\n"), "utf-8") });
+    const imported = await page.locator(".toast").filter({ hasText: "catégorie(s) créée(s)" }).first().waitFor({ timeout: 10_000 }).then(() => true, () => false);
+    result("« Importer » ouvre le sélecteur de fichiers et importe les catégories", !!chooser && imported, chooser ? (imported ? "" : "pas de message d'import") : "pas de sélecteur de fichiers");
 
     // Plan de la boutique : vue de dessus, un meuble choisi, état du stock.
     await go(page, "#/locations");
@@ -243,6 +287,15 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
         await page.locator(".pmb-ticket").click();
         await page.waitForTimeout(700);
         await record(page, "caisse : ticket ouvert", "m-caisse-ticket.png");
+        const overlap = await page.evaluate(() =>
+          [...document.querySelectorAll(".pos-ticket .line")].filter((l) => {
+            const sub = l.querySelector(".line-sub")?.getBoundingClientRect();
+            const qty = l.querySelector(".qty-ctrl")?.getBoundingClientRect();
+            return sub && qty && sub.right > qty.left + 1;
+          }).length,
+        );
+        if (strict) check(`téléphone ${PHONE_WIDTH} px : ticket, prix et promotion à côté des boutons + / −`, overlap === 0, `${overlap} ligne(s) chevauchée(s)`);
+        else console.log(`[mobile] ticket : ${overlap} ligne(s) dont le prix passe sous les boutons + / −`);
         await page.locator(".ticket-close").first().click().catch(() => {});
         await page.waitForTimeout(500);
       }
@@ -250,10 +303,27 @@ export async function phoneTour({ browser, url, adminToken, cashierToken, out, s
         await page.locator(".pmb-pay").click();
         await settle(page, 800);
         await record(page, "caisse : paiement", "m-caisse-paiement.png");
+        await bottom(page, "caisse : paiement");
         await page.keyboard.press("Escape");
         await page.waitForTimeout(400);
       }
     }
+    await ctx.close();
+  }
+
+  // ── Application mobile (WebView) : impression et enregistrement impossibles, un message le dit.
+  {
+    const { ctx, page } = await phone(adminToken, WEBVIEW);
+    const result = (label, ok, detail) => (strict ? check(`application mobile : ${label}`, ok, detail) : console.log(`[mobile] application : ${label} : ${ok ? "oui" : "NON"} ${detail}`));
+    const said = (text) => page.locator(".toast").filter({ hasText: text }).first().waitFor({ timeout: 8000 }).then(() => true, () => false);
+    await page.goto(`${url}/#/reports`);
+    await settle(page, 2500);
+    await page.getByRole("button", { name: "Imprimer", exact: true }).click();
+    result("« Imprimer » explique que l'application n'imprime pas", await said("ne peut pas imprimer"), "");
+    await page.screenshot({ path: `${out}/m-application-imprimer.png` });
+    await go(page, "#/products");
+    await page.getByRole("button", { name: "Exporter", exact: true }).click();
+    result("« Exporter » explique que l'application n'enregistre pas de fichier", await said("ne peut pas enregistrer"), "");
     await ctx.close();
   }
 

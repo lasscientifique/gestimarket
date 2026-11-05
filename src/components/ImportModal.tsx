@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { FileUp, Download, CheckCircle2 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
-import { exportCsv } from "../lib/files";
+import { exportCsv, pickTextFile } from "../lib/files";
 import { normalizeHeader, parseCsv, parseDate } from "../lib/csv";
 import { parseNumber, toCsv, toMinor } from "../lib/format";
 import type { ImportResult, ImportRow } from "../types";
@@ -101,11 +100,10 @@ export function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: 
 
   const choose = async () => {
     try {
-      const path = await open({ multiple: false, filters: [{ name: "Fichier CSV", extensions: ["csv", "txt"] }] });
-      if (!path || Array.isArray(path)) return;
-      const text = await api.readTextFile(path);
-      setRows(parseCsv(text));
-      setFile(path.split(/[\\/]/).pop() ?? path);
+      const picked = await pickTextFile();
+      if (!picked) return;
+      setRows(parseCsv(picked.text));
+      setFile(picked.name);
       setResult(null);
     } catch (e) {
       toast.error(e);

@@ -4,6 +4,7 @@
  */
 import { useSyncExternalStore } from "react";
 import { rpc, getNetwork, isRemote, isTauri } from "./transport";
+import { inAppWebView } from "./device";
 import { tl } from "./i18n";
 
 
@@ -34,7 +35,7 @@ export function deviceLabel(): string {
   const net = getNetwork() as (ReturnType<typeof getNetwork> & { hostname?: string; os?: string }) | null;
   if (isTauri) return `${net?.hostname ?? "PC"}${net?.os ? ` (${net.os === "windows" ? "Windows" : net.os === "macos" ? "Mac" : net.os === "linux" ? "Linux" : net.os})` : ""}`;
   const ua = navigator.userAgent;
-  const app = /; wv\)|FlutterFlow|GestiMarketApp/i.test(ua) ? " · application" : "";
+  const app = inAppWebView() ? " · application" : "";
   if (/iPad|Macintosh.*Mobile|Macintosh.*Safari.*(?=.*Version)/.test(ua) && navigator.maxTouchPoints > 1) return `iPad${app}`;
   if (/iPhone/.test(ua)) return `iPhone${app}`;
   const android = ua.match(/Android[^;]*;\s*([^;)]+?)(?:\sBuild|\))/);

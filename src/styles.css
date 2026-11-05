@@ -1049,7 +1049,9 @@ input, select, textarea { border-radius: 10px; }
 }
 
 @media (max-width: 900px) {
-  html, body { overflow: auto; }
+  /* La page défile par le document (et non par body) : barre d'adresse qui se replie, retour en haut fiable. */
+  html, body, #root { height: auto; min-height: 100%; }
+  html, body { overflow: visible; }
   body { -webkit-text-size-adjust: 100%; }
   /* Évite le zoom automatique d'iOS sur les champs */
   input, select, textarea { font-size: 16px !important; }
@@ -1093,7 +1095,10 @@ input, select, textarea { border-radius: 10px; }
   .stat-card { padding: 12px; }
   .stat-value { font-size: 19px !important; }
   .card { padding: 14px; border-radius: 12px; }
-  .grid-2, .grid-2-1, .form-grid, .form-grid.three, .biz-grid, .feature-grid, .catalogue-grid { grid-template-columns: 1fr; }
+  /* Une seule colonne, qui ne s'élargit jamais au-delà de l'écran (minmax(0, …) : le contenu ne l'étire pas). */
+  .grid-2, .grid-2-1, .grid-plan, .form-grid, .form-grid.three, .biz-grid, .feature-grid, .catalogue-grid, .summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .summary-grid { gap: 14px; }
+  .card { min-width: 0; }
   .span-2 { grid-column: auto; }
   .toolbar { gap: 8px; }
   .toolbar select, .toolbar .segmented { flex: 1 1 100%; min-width: 0; }
@@ -1102,6 +1107,17 @@ input, select, textarea { border-radius: 10px; }
   .card.no-pad, .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .table { min-width: 640px; }
   .table.compact { min-width: 0; }
+  .table th, .table td { padding: 8px 10px; }
+  /* Tableau posé ailleurs que dans un cadre qui défile : il défile de côté lui-même, la page ne s'élargit pas. */
+  .table:not(.card.no-pad .table):not(.table-wrap .table):not(.table-scroll .table) { display: block; overflow-x: auto; min-width: 0; -webkit-overflow-scrolling: touch; }
+  /* Boutons et textes longs : à la ligne plutôt que hors de l'écran. */
+  .btn { max-width: 100%; }
+  .row-start .btn, .card > .btn, .input-group .btn { white-space: normal; text-align: center; }
+  .mono { overflow-wrap: anywhere; }
+  .kv > span { min-width: 0; overflow-wrap: break-word; }
+  .pie-layout { flex-wrap: wrap; justify-content: center; }
+  .pie-layout .bars { flex: 1 1 100% !important; min-width: 0; }
+  .hbar-top { flex-wrap: wrap; }
   .tabbar { border-radius: 12px; }
   .tree-row { padding-right: 6px; }
   .tree-actions { opacity: 1; }
@@ -1144,6 +1160,7 @@ input, select, textarea { border-radius: 10px; }
   .ticket-close { display: inline-flex; }
   .ticket-head { gap: 6px; }
   .line { grid-template-columns: minmax(0, 1fr) auto 64px auto; gap: 6px; }
+  .line-sub { flex-wrap: wrap; row-gap: 2px; }
   .line > .thumb { display: none; }
 
   /* Écrans de connexion */

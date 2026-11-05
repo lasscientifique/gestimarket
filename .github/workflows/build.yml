@@ -5,7 +5,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, essai-mobile]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
   # (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare).
   # Les captures sont publiées dans une pré-release « e2e-N » (dépôt public : lisibles sans connexion).
   e2e:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/essai-mobile'
     needs: test
     runs-on: ubuntu-22.04
     permissions:

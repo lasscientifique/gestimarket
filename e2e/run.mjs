@@ -546,7 +546,7 @@ try {
 
   // ── Version mobile : toutes les pages sur un téléphone de 360 px, par Internet (administrateur et caissière).
   const cashierToken = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;
-  await phoneTour({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, strict: process.env.MOBILE_STRICT === "1", check });
+  await phoneTour({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, strict: process.env.MOBILE_STRICT !== "0", check });
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

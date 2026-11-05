@@ -110,7 +110,12 @@ export function Layout({ children }: { children: ReactNode }) {
   // Téléphone / tablette : menu en tiroir, fermé après chaque navigation.
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-  useEffect(() => setMobileOpen(false), [location.pathname]);
+  // Chaque page s'ouvre en haut (sinon, sur téléphone, elle garde le défilement de la page précédente).
+  useEffect(() => {
+    setMobileOpen(false);
+    window.scrollTo(0, 0);
+    document.querySelector(".content")?.scrollTo(0, 0);
+  }, [location.pathname]);
   // Menu repliable : replié par défaut pour les caissiers (plus de place pour la caisse).
   const [collapsedPref, setCollapsed] = useState<boolean>(() => {
     try {

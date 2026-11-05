@@ -2228,4 +2228,7 @@ export const EN: Record<string, string> = {
   "Glissez un meuble de la palette sur le plan (ou cliquez dessus), déplacez-le, agrandissez-le par son coin, tournez-le avec R. Flèches : déplacer de 10 cm (Maj : 1 m). Maj + clic ou cadre tracé avec Maj (appui long au doigt) : plusieurs meubles.": "Drag a fixture from the palette onto the plan (or click it), move it, resize it by its corner, rotate it with R. Arrows: move by 10 cm (Shift: 1 m). Shift + click or a frame drawn with Shift (long press with a finger): several fixtures.",
   "Cliquez sur un meuble pour le sélectionner, double-cliquez pour voir ses étages et ranger des produits. Molette ou deux doigts : zoom ; glisser le fond : déplacer la vue.": "Click a fixture to select it, double-click to see its shelves and put products away. Wheel or two fingers: zoom; drag the background: move the view.",
   "Prix, code-barres et case de chaque produit du meuble": "Price, barcode and slot of each product in the fixture",
+  "L'application mobile ne peut pas enregistrer de fichier. Exportez depuis un PC de la boutique, ou ouvrez l'adresse de la boutique dans Chrome.": "The mobile app cannot save files. Export from a shop PC, or open the shop's address in Chrome.",
+  "Fichier trop volumineux (20 Mo maximum).": "File too large (20 MB maximum).",
+  "L'application mobile ne peut pas imprimer. Imprimez depuis un PC de la boutique, ou ouvrez l'adresse de la boutique dans Chrome.": "The mobile app cannot print. Print from a shop PC, or open the shop's address in Chrome.",
 };
