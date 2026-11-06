@@ -38,15 +38,19 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      # SDK Android déjà installé sur les machines Ubuntu de GitHub ($ANDROID_HOME) : on ajoute ce qui manque.
       - name: NDK et outils Android
         run: |
-          sdkmanager --install "ndk;$NDK_VERSION" "platform-tools" "build-tools;$BUILD_TOOLS" > /dev/null
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;$NDK_VERSION" "platform-tools" "build-tools;$BUILD_TOOLS" 2>&1 | tail -3
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          ls "$ANDROID_HOME/ndk"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -60,7 +64,9 @@ jobs:
           key: android-debug
       - run: npm ci
       - name: Projet Android
-        run: bash scripts/mobile/android-init.sh
+        run: |
+          set -o pipefail
+          bash scripts/mobile/android-init.sh 2>&1 | tee android-init.log
       - name: Compilation (debug, x86_64 pour l'émulateur)
         run: |
           set -o pipefail
@@ -72,8 +78,14 @@ jobs:
       - name: Erreurs de compilation (annotations)
         if: failure()
         run: |
+          touch android-init.log android-build.log
           msg=$(grep -E -B2 -A14 '^(error(\[E[0-9]+\])?:|FAILURE:|e: |\* What went wrong)' android-build.log | head -150 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          [ -n "$msg" ] || msg=$( (tail -25 android-init.log; echo ---; tail -40 android-build.log) | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Compilation Android::${msg:-voir le journal}"
+          mkdir -p e2e/out-android out
+          cp android-init.log android-build.log e2e/out-android/ 2>/dev/null || true
+          cp android-init.log out/android-apk-init.log 2>/dev/null || true
+          cp android-build.log out/android-apk-build.log 2>/dev/null || true
       - name: KVM pour l'émulateur
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -112,15 +124,19 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
+      # SDK Android déjà installé sur les machines Ubuntu de GitHub ($ANDROID_HOME) : on ajoute ce qui manque.
       - name: NDK et outils Android
         run: |
-          sdkmanager --install "ndk;$NDK_VERSION" "platform-tools" "build-tools;$BUILD_TOOLS" > /dev/null
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;$NDK_VERSION" "platform-tools" "build-tools;$BUILD_TOOLS" 2>&1 | tail -3
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          ls "$ANDROID_HOME/ndk"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -134,7 +150,9 @@ jobs:
           key: android-release
       - run: npm ci
       - name: Projet Android
-        run: bash scripts/mobile/android-init.sh
+        run: |
+          set -o pipefail
+          bash scripts/mobile/android-init.sh 2>&1 | tee android-init.log
       - name: Compilation (téléphones arm64 et armv7)
         run: |
           set -o pipefail
@@ -142,8 +160,14 @@ jobs:
       - name: Erreurs de compilation (annotations)
         if: failure()
         run: |
+          touch android-init.log android-build.log
           msg=$(grep -E -B2 -A14 '^(error(\[E[0-9]+\])?:|FAILURE:|e: |\* What went wrong)' android-build.log | head -150 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          [ -n "$msg" ] || msg=$( (tail -25 android-init.log; echo ---; tail -40 android-build.log) | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Compilation Android::${msg:-voir le journal}"
+          mkdir -p e2e/out-android out
+          cp android-init.log android-build.log e2e/out-android/ 2>/dev/null || true
+          cp android-init.log out/android-apk-init.log 2>/dev/null || true
+          cp android-build.log out/android-apk-build.log 2>/dev/null || true
       - name: Signature de l'APK
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -175,9 +199,10 @@ jobs:
           "$BT/aapt" dump badging "out/$NAME" | grep -E "^(package|sdkVersion|targetSdkVersion|native-code)"
           ls -la out
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: android-apk
-          path: out/*.apk
+          path: out/
 
   ios:
     runs-on: macos-15
@@ -198,8 +223,9 @@ jobs:
       - run: npm ci
       - name: Projet iOS
         run: |
+          set -o pipefail
           brew list xcodegen > /dev/null 2>&1 || brew install xcodegen
-          npx tauri ios init --ci --skip-targets-install
+          npx tauri ios init --ci --skip-targets-install 2>&1 | tee ios-build.log
           npx tauri icon src-tauri/icons/icon.png
           git checkout -- src-tauri/icons
           ls src-tauri/gen/apple
@@ -207,7 +233,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p e2e/out-ios
-          if ! npx tauri ios build --debug --target aarch64-sim --ci 2>&1 | tee ios-build.log; then
+          if ! npx tauri ios build --debug --target aarch64-sim --ci 2>&1 | tee -a ios-build.log; then
             echo "::warning title=iOS::tauri ios build a échoué, essai direct avec xcodebuild (sans signature)"
             PROJ=$(ls -d src-tauri/gen/apple/*.xcodeproj | head -1)
             SCHEME=$(xcodebuild -list -project "$PROJ" -json | python3 -c "import sys,json;print([s for s in json.load(sys.stdin)['project']['schemes'] if s.endswith('_iOS')][0])")
@@ -222,7 +248,10 @@ jobs:
       - name: Erreurs de compilation (annotations)
         if: failure()
         run: |
-          msg=$(grep -E -B2 -A12 '(^error(\[E[0-9]+\])?:|error: |\*\* BUILD FAILED)' ios-build.log | head -150 | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          touch ios-build.log
+          mkdir -p e2e/out-ios && cp ios-build.log e2e/out-ios/
+          msg=$(grep -E -B3 -A12 '(error(\[E[0-9]+\])?:|\*\* BUILD FAILED|Error |failed)' ios-build.log | head -150 | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          [ -n "$msg" ] || msg=$(tail -60 ios-build.log | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Compilation iOS::${msg:-voir le journal}"
       - name: Simulateur d'iPhone
         run: |
@@ -265,6 +294,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p files
+          printf 'android-test: %s\nandroid-apk: %s\nios: %s\n' "${{ needs.android-test.result }}" "${{ needs.android-apk.result }}" "${{ needs.ios.result }}" > files/resume.txt
           for d in dist/*/; do
             n=$(basename "$d")
             for f in "$d"*; do [ -f "$f" ] && [ -s "$f" ] && cp "$f" "files/$( [ "$(basename "$f")" = results.json ] && echo "$n-results.json" || basename "$f")"; done
