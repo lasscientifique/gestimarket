@@ -94,6 +94,7 @@ jobs:
       - name: Playwright (pilote Android)
         run: npm i --no-save playwright@1.49.1
       - name: Émulateur Android et scénario
+        timeout-minutes: 35
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -101,11 +102,14 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
+          emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: |
-            adb install -r e2e/out-android/GestiMarket-android-test-x86_64.apk
+            echo "émulateur démarré : $(date -u +%T)" >> e2e/out-android/progress.txt
+            timeout 300 adb install -r e2e/out-android/GestiMarket-android-test-x86_64.apk
+            echo "APK installé : $(date -u +%T)" >> e2e/out-android/progress.txt
             adb shell pm grant com.gestimarket.app android.permission.CAMERA || true
-            node e2e/android.mjs || { adb logcat -d -t 800 > e2e/out-android/logcat.txt; exit 1; }
+            timeout 900 node e2e/android.mjs || { adb logcat -d -t 800 > e2e/out-android/logcat.txt; exit 1; }
             adb logcat -d -t 400 > e2e/out-android/logcat.txt || true
       - name: Journal Android si échec
         if: failure()

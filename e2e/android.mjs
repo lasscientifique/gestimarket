@@ -18,9 +18,17 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const checks = [];
 const report = [];
+const t0 = Date.now();
+// Avancement écrit au fur et à mesure (publié même si le scénario reste bloqué).
+function step(label) {
+  const line = `${((Date.now() - t0) / 1000).toFixed(0).padStart(4)} s  ${label}`;
+  console.log(`[android] ${line}`);
+  fs.appendFileSync(`${OUT}/progress.txt`, line + "\n");
+}
 function check(name, ok, detail = "") {
   checks.push({ name, ok: !!ok, detail: String(detail) });
   console.log(`${ok ? "OK  " : "ÉCHEC"} ${name}${detail ? ` — ${detail}` : ""}`);
+  step(`${ok ? "OK" : "ÉCHEC"} ${name}`);
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,13 +67,36 @@ await new Promise((r) => server.listen(7979, "0.0.0.0", r));
 
 let device;
 let exitCode = 1;
+let finished = false;
+function finish() {
+  if (finished) return;
+  finished = true;
+  fs.writeFileSync(`${OUT}/results.json`, JSON.stringify({ checks, report }, null, 2));
+  const failed = checks.filter((c) => !c.ok);
+  console.log(`\n${checks.length - failed.length}/${checks.length} vérifications réussies sur Android`);
+  for (const f of failed) console.log(`::error title=Android : ${f.name.replace(/[:,]/g, " ")}::${(f.detail || "échec").replace(/\r?\n/g, " ").slice(0, 900)}`);
+}
+// Garde-fou : le scénario ne bloque jamais le job (12 minutes au plus).
+setTimeout(async () => {
+  check("scénario Android terminé en moins de 12 minutes", false, "bloqué : voir progress.txt");
+  if (device) await device.screenshot({ path: `${OUT}/a-bloque.png` }).catch(() => {});
+  finish();
+  process.exit(1);
+}, 12 * 60_000).unref();
 try {
+  step("recherche de l'émulateur");
   [device] = await _android.devices();
   check("émulateur Android trouvé", !!device, device ? `${device.model()} (${device.serial()})` : "aucun");
   await device.shell(`am force-stop ${PKG}`);
+  step("lancement de l'application");
   await device.shell(`monkey -p ${PKG} -c android.intent.category.LAUNCHER 1`);
+  await sleep(5000);
+  await device.screenshot({ path: `${OUT}/a-00-lancement.png` }).catch(() => {});
+  step("attente de la page de l'application (WebView)");
   const webview = await device.webView({ pkg: PKG }, { timeout: 180_000 });
+  step("WebView trouvée");
   const page = await webview.page();
+  page.setDefaultTimeout(30_000);
   const errors = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 300)));
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 300)));
@@ -180,10 +211,7 @@ try {
   check("scénario Android terminé", false, e?.stack ?? String(e));
   if (device) await device.screenshot({ path: `${OUT}/a-erreur.png` }).catch(() => {});
 } finally {
-  fs.writeFileSync(`${OUT}/results.json`, JSON.stringify({ checks, report }, null, 2));
-  const failed = checks.filter((c) => !c.ok);
-  console.log(`\n${checks.length - failed.length}/${checks.length} vérifications réussies sur Android`);
-  for (const f of failed) console.log(`::error title=Android : ${f.name.replace(/[:,]/g, " ")}::${(f.detail || "échec").replace(/\r?\n/g, " ").slice(0, 900)}`);
+  finish();
   await device?.close().catch(() => {});
   printer.close();
   server.close();
