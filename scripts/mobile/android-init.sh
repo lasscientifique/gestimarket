@@ -24,6 +24,7 @@ package $PKG
 
 import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -54,6 +55,7 @@ class MainActivity : TauriActivity() {
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
         val web = findWebView(content)
+        Log.i("GestiMarket", "bouton retour : page précédente possible = " + (web?.canGoBack() ?: "pas de WebView"))
         if (web != null && web.canGoBack()) {
           web.goBack()
         } else {

@@ -119,7 +119,7 @@ jobs:
         if: failure()
         run: |
           [ -f e2e/out-android/logcat.txt ] || exit 0
-          msg=$( (cat e2e/out-android/crash.txt 2>/dev/null | head -40; grep -E 'RustStdoutStderr|FATAL|panicked|AndroidRuntime|ANR in|Process com.gestimarket.app' e2e/out-android/logcat.txt | grep -v AppsFilter | tail -40) | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          msg=$( (cat e2e/out-android/crash.txt 2>/dev/null | head -40; grep -E ' GestiMarket|RustStdoutStderr|FATAL|panicked|AndroidRuntime|ANR in|Process com.gestimarket.app' e2e/out-android/logcat.txt | grep -v -E 'AppsFilter|s_glBindAttribLocation' | tail -40) | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::warning title=Journal Android (logcat)::${msg:-rien}"
       - uses: actions/upload-artifact@v4
         if: always()

@@ -232,6 +232,9 @@ try {
   // ── Retour arrière d'Android : revient à la page précédente sans fermer l'application
   await go("#/dashboard");
   await go("#/products");
+  // Champ de recherche actif : le 1er appui sur retour irait au clavier (comportement normal d'Android).
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  await sleep(500);
   await device.shell("input keyevent KEYCODE_BACK");
   await sleep(1500);
   const after = await page.evaluate(() => location.hash).catch(() => "(application fermée)");
