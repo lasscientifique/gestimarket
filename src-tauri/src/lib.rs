@@ -23,8 +23,14 @@ use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init());
+    // Téléphone et tablette : scanner natif (caméra) pour les codes-barres et QR codes.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    builder
         // Photos servies depuis la base : media://localhost/<id> (http://media.localhost/<id> sous Windows).
         .register_uri_scheme_protocol("media", |ctx, request| {
             let id: i64 = request
@@ -51,12 +57,19 @@ pub fn run() {
         })
         .setup(|app| {
             // Plusieurs boutiques sur ce PC : chacune a son dossier, sa base et sa fenêtre.
-            let slot = boutique::slot_from_args(std::env::args());
-            let Some(current) = boutique::acquire(slot) else {
-                // Déjà ouverte : on ne lance pas une deuxième fenêtre sur la même base.
-                eprintln!("La boutique {slot} est déjà ouverte sur ce PC.");
-                std::process::exit(0);
+            #[cfg(desktop)]
+            let (slot, current) = {
+                let slot = boutique::slot_from_args(std::env::args());
+                let Some(current) = boutique::acquire(slot) else {
+                    // Déjà ouverte : on ne lance pas une deuxième fenêtre sur la même base.
+                    eprintln!("La boutique {slot} est déjà ouverte sur ce PC.");
+                    std::process::exit(0);
+                };
+                (slot, current)
             };
+            // Téléphone et tablette : une seule boutique, et le système n'ouvre qu'une fois l'application.
+            #[cfg(mobile)]
+            let (slot, current) = (1u8, boutique::single());
             let root = app.path().app_data_dir()?;
             let dir = boutique::data_dir(&root, slot);
             std::fs::create_dir_all(&dir)?;
@@ -71,14 +84,21 @@ pub fn run() {
             }
             // Sauvegarde automatique, même sans dossier choisi : Documents\GestiMarket\Sauvegardes.
             // Dossier Documents ; à défaut (Linux sans dossiers utilisateur déclarés), ~/Documents.
-            let docs = app.path().document_dir().or_else(|_| app.path().home_dir().map(|h| h.join("Documents")));
-            if let Ok(docs) = docs {
-                let mut d = docs.join("GestiMarket").join("Sauvegardes");
-                if slot > 1 {
-                    d = d.join(format!("Boutique {slot}"));
+            #[cfg(desktop)]
+            {
+                let docs = app.path().document_dir().or_else(|_| app.path().home_dir().map(|h| h.join("Documents")));
+                if let Ok(docs) = docs {
+                    let mut d = docs.join("GestiMarket").join("Sauvegardes");
+                    if slot > 1 {
+                        d = d.join(format!("Boutique {slot}"));
+                    }
+                    services::backup::set_default_dir(d);
                 }
-                services::backup::set_default_dir(d);
             }
+            // Téléphone et tablette : copies dans le dossier de l'application (à enregistrer ailleurs
+            // depuis Paramètres → Sauvegarde, le téléphone pouvant être perdu).
+            #[cfg(mobile)]
+            services::backup::set_default_dir(dir.join("Sauvegardes"));
             if let Err(e) = services::backup::auto_backup(&conn, false) {
                 journal::error(format!("Sauvegarde automatique impossible : {e}"));
             }
@@ -89,15 +109,21 @@ pub fn run() {
 
             // Fenêtre principale (créée ici pour séparer les données de navigateur de chaque boutique).
             if let Some(cfg) = app.config().app.windows.iter().find(|w| w.label == "main").cloned() {
-                let mut title = if shop_name.trim().is_empty() {
-                    "GestiMarket — Gestion commerciale".to_string()
-                } else {
-                    format!("GestiMarket — {}", shop_name.trim())
-                };
-                if slot > 1 {
-                    title.push_str(&format!(" (boutique {slot})"));
+                let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?;
+                #[cfg(desktop)]
+                {
+                    let mut title = if shop_name.trim().is_empty() {
+                        "GestiMarket — Gestion commerciale".to_string()
+                    } else {
+                        format!("GestiMarket — {}", shop_name.trim())
+                    };
+                    if slot > 1 {
+                        title.push_str(&format!(" (boutique {slot})"));
+                    }
+                    builder = builder.title(title);
                 }
-                let mut builder = tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?.title(title);
+                #[cfg(mobile)]
+                let _ = &shop_name;
                 if let Some(d) = commands::webview_dir(app.handle()) {
                     builder = builder.data_directory(d);
                 }
@@ -110,7 +136,8 @@ pub fn run() {
             let config = net.get();
             journal::info(format!("Poste « {} » en mode {} (port {})", config.poste_name, config.mode, config.port));
             app.manage(net);
-            if config.mode == "server" {
+            // Le mode serveur est réservé au PC : Android et iOS arrêtent les applications en arrière-plan.
+            if config.mode == "server" && cfg!(desktop) {
                 network::start_server(app.handle().clone(), config.port);
                 // Application mobile : adresse du serveur publiée sur Supabase (si activé).
                 cloud::start(app.handle().clone(), config.port);

@@ -47,7 +47,7 @@ import { locationText, currencyDecimals, currencySymbol, minorToInput, money, pa
 import { printReceipt } from "../lib/receipt";
 import { afterSalePrint } from "../lib/printer";
 import { IDLE_DISPLAY, publishDisplay, type DisplayLine } from "../lib/display";
-import { isTauri, posteName } from "../lib/transport";
+import { isMobileApp, isTauri, posteName } from "../lib/transport";
 import type { CashSession, Category, CreditNote, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, QuoteLine, Sale } from "../types";
 import { locale, tl } from "../lib/i18n";
 
@@ -519,9 +519,12 @@ export default function PosPage() {
               <Users size={19} />
               {othersCount > 0 && <span className="count-pill">{othersCount}</span>}
             </button>
-            <button className={`btn btn-square ${displayOpen && isTauri ? "btn-active" : ""}`} onClick={toggleDisplay} title={tl("Écran client : afficher le panier au client (2ᵉ écran, TV, tablette)")}>
-              <MonitorSmartphone size={19} />
-            </button>
+            {/* Téléphone et tablette : pas de 2ᵉ écran (l'écran client s'ouvre ailleurs, depuis « Poste & réseau »). */}
+            {!isMobileApp && (
+              <button className={`btn btn-square ${displayOpen && isTauri ? "btn-active" : ""}`} onClick={toggleDisplay} title={tl("Écran client : afficher le panier au client (2ᵉ écran, TV, tablette)")}>
+                <MonitorSmartphone size={19} />
+              </button>
+            )}
             <PageHelpButton page="pos" />
           </div>
         </div>

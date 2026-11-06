@@ -3,7 +3,7 @@
  * Le serveur affiche ainsi les postes connectés ; ce poste sait s'il est bien relié (synchronisé).
  */
 import { useSyncExternalStore } from "react";
-import { rpc, getNetwork, isRemote, isTauri } from "./transport";
+import { rpc, getNetwork, isMobileApp, isRemote, isTauri } from "./transport";
 import { inAppWebView } from "./device";
 import { tl } from "./i18n";
 
@@ -33,6 +33,14 @@ export function posteId(): string {
 /** Type d'appareil déduit du navigateur. */
 export function deviceLabel(): string {
   const net = getNetwork() as (ReturnType<typeof getNetwork> & { hostname?: string; os?: string }) | null;
+  if (isMobileApp) {
+    // Application installée : modèle du téléphone (Android) ou iPhone / iPad.
+    const ua = navigator.userAgent;
+    if (/iPhone/.test(ua)) return "iPhone · GestiMarket";
+    if (/iPad/.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua))) return "iPad · GestiMarket";
+    const model = ua.match(/Android[^;]*;\s*([^;)]+?)(?:\sBuild|\))/);
+    return tl("{0} Android{1} · GestiMarket", [/Mobile/.test(ua) ? "Téléphone" : "Tablette", model ? ` (${model[1].trim()})` : ""]);
+  }
   if (isTauri) return `${net?.hostname ?? "PC"}${net?.os ? ` (${net.os === "windows" ? "Windows" : net.os === "macos" ? "Mac" : net.os === "linux" ? "Linux" : net.os})` : ""}`;
   const ua = navigator.userAgent;
   const app = inAppWebView() ? " · application" : "";
@@ -48,6 +56,7 @@ export function deviceLabel(): string {
 
 export function deviceKind(): "desktop" | "mobile" | "browser" | "display" {
   if (window.location.hash.startsWith("#/display")) return "display";
+  if (isMobileApp) return "mobile";
   if (isTauri) return "desktop";
   return /Android|iPhone|iPad|Mobile/.test(navigator.userAgent) || navigator.maxTouchPoints > 1 ? "mobile" : "browser";
 }

@@ -21,7 +21,9 @@ import type { BackupStatus, CloudStatus, Settings, TunnelStatus } from "../types
 import { PrinterSettings } from "../components/PrinterSettings";
 import { LANGS, tl, tm } from "../lib/i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { isTauri } from "../lib/transport";
+import { isMobileApp, isTauri } from "../lib/transport";
+import { appCacheDir, join } from "@tauri-apps/api/path";
+import { readFile, remove, writeFile } from "@tauri-apps/plugin-fs";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
@@ -98,7 +100,19 @@ export default function SettingsPage() {
         filters: [{ name: "Base SQLite", extensions: ["db"] }],
       });
       if (!path) return;
-      await api.backupDatabase(path);
+      if (isMobileApp) {
+        // Téléphone et tablette : copie faite dans le cache de l'application, puis écrite dans le fichier
+        // choisi (Drive, Fichiers, carte SD…), que seul le module fs sait ouvrir.
+        const tmp = await join(await appCacheDir(), `gestimarket-copie-${Date.now()}.db`);
+        await api.backupDatabase(tmp);
+        try {
+          await writeFile(path, await readFile(tmp));
+        } finally {
+          await remove(tmp).catch(() => undefined);
+        }
+      } else {
+        await api.backupDatabase(path);
+      }
       toast.success(tl("Sauvegarde réalisée avec succès."));
     } catch (e) {
       toast.error(e);
@@ -314,8 +328,18 @@ export default function SettingsPage() {
               {tl("Le rôle de chaque PC (serveur / client), la liste des appareils connectés et l'écran client se règlent depuis chaque poste, dans")}{" "}
               <Link to="/poste">{tl("Poste & réseau")}</Link>  {tl("(menu de gauche, accessible à tous).")}</p>
           </div>
-          <MobileAppSettings f={f} setF={setF} />
-          <InternetAddressSettings />
+          {isMobileApp && !isRemote() ? (
+            // Tablette en poste unique : ni application du propriétaire, ni adresse Internet (réservées au poste serveur d'un PC).
+            <div className="card">
+              <p className="muted" style={{ margin: 0 }}>
+                {tl("Cet appareil est un poste unique : l'application mobile du propriétaire et l'adresse Internet se règlent sur le poste serveur d'un PC.")}</p>
+            </div>
+          ) : (
+            <>
+              <MobileAppSettings f={f} setF={setF} />
+              <InternetAddressSettings />
+            </>
+          )}
         </>
       )}
 
@@ -326,6 +350,11 @@ export default function SettingsPage() {
         {isRemote() && <div className="alert alert-info">{tl("Ce poste est un client : les sauvegardes sont faites sur le poste serveur, dans le dossier ci-dessous (chemin du serveur).")}</div>}
         <p className="muted">
           {tl("Toutes les données (y compris les photos) sont dans une base locale. Choisissez un dossier de sauvegarde automatique, idéalement sur une clé USB, un disque externe ou un dossier synchronisé (Google Drive, OneDrive) : une copie est faite chaque jour.")}</p>
+        {isMobileApp && !isRemote() && (
+          <div className="alert alert-warning">
+            {tl("Sur téléphone ou tablette, les copies automatiques restent dans l'application : elles sont perdues avec l'appareil. Enregistrez souvent une copie ailleurs (Google Drive, iCloud, ordinateur) avec le bouton « Enregistrer une copie… ».")}</div>
+        )}
+        {!isMobileApp && (
         <div className="form-grid">
           <Field label={tl("Dossier des sauvegardes automatiques")} span={2}>
             <div className="input-group">
@@ -339,9 +368,12 @@ export default function SettingsPage() {
           </Field>
           <Field label={tl("Nombre de sauvegardes conservées")}><input inputMode="numeric" value={f.auto_backup_keep ?? "14"} onChange={set("auto_backup_keep")} /></Field>
         </div>
+        )}
         <div className="row-start">
           <button className="btn" onClick={runAuto} disabled={!settings.auto_backup_dir && !backupState?.dir}><DatabaseBackup size={16} />  {tl("Sauvegarder maintenant dans ce dossier")}</button>
-          {!isRemote() && <button className="btn" onClick={backup}><DatabaseBackup size={16} />  {tl("Copier sur une clé USB ou un autre disque…")}</button>}
+          {!isRemote() && (
+            <button className="btn" onClick={backup}><DatabaseBackup size={16} />  {isMobileApp ? tl("Enregistrer une copie…") : tl("Copier sur une clé USB ou un autre disque…")}</button>
+          )}
         </div>
         {backupState?.error && <div className="alert alert-danger" style={{ marginTop: 12 }}>{tl("La dernière sauvegarde automatique a échoué : {0}", [backupState.error])}</div>}
         {backupState?.is_default && backupState.dir && (
@@ -442,8 +474,8 @@ function JournalCard({ openWhatsApp }: { openWhatsApp: (e: React.MouseEvent) => 
         {tl("GestiMarket note ses démarrages et ses erreurs (sauvegarde, réseau, adresse Internet, licence) pendant 14 jours. Envoyez ce journal à Eden Dev : il aide à comprendre la panne.")}
       </p>
       <div className="row-start">
-        <button className="btn btn-primary" onClick={exportJournal}><FileText size={16} />  {tl("Enregistrer le journal")}</button>
-        <button className="btn" onClick={copyJournal}><Copy size={16} />  {tl("Copier les dernières lignes")}</button>
+        {!isMobileApp && <button className="btn btn-primary" onClick={exportJournal}><FileText size={16} />  {tl("Enregistrer le journal")}</button>}
+        <button className={isMobileApp ? "btn btn-primary" : "btn"} onClick={copyJournal}><Copy size={16} />  {tl("Copier les dernières lignes")}</button>
         <a className="btn" href={EDEN_LINKS.whatsapp} target="_blank" rel="noreferrer" onClick={openWhatsApp}><MessageCircle size={16} />  {tl("Ouvrir WhatsApp")}</a>
       </div>
       {saved && (

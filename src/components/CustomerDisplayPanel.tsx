@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { ExternalLink, MonitorSmartphone } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { HelpTip } from "./Help";
-import { getNetwork, isTauri, local, posteName } from "../lib/transport";
+import { getNetwork, isMobileApp, isTauri, local, posteName } from "../lib/transport";
 import { useLicense } from "../lib/license";
 import { tl } from "../lib/i18n";
 
@@ -38,7 +38,7 @@ export function CustomerDisplayPanel() {
   const url = displayUrl();
 
   useEffect(() => {
-    if (isTauri) local<typeof monitors>("list_monitors").then(setMonitors).catch(() => undefined);
+    if (isTauri && !isMobileApp) local<typeof monitors>("list_monitors").then(setMonitors).catch(() => undefined);
   }, []);
   useEffect(() => {
     if (url) QRCode.toDataURL(url, { margin: 1, width: 180 }).then(setQr).catch(() => setQr(""));
@@ -67,6 +67,8 @@ export function CustomerDisplayPanel() {
     <div className="card">
       <h3 className="card-title"><MonitorSmartphone size={18} />  {tl("Écran client de «")} {posteName()} » <HelpTip k="customer_display" /></h3>
       <p className="muted">{tl("Montre au client ses articles, les prix, le total, le montant reçu et la monnaie, avant qu'il paie.")}</p>
+      {/* Téléphone et tablette : pas de 2ᵉ écran ; l'écran client s'ouvre sur un autre appareil (lien ci-dessous). */}
+      {!isMobileApp && (<>
       <h4 className="section-title">{tl("Sur ce poste")}</h4>
       <div className="input-group" style={{ maxWidth: 620, flexWrap: "wrap" }}>
         {isTauri && (
@@ -90,6 +92,7 @@ export function CustomerDisplayPanel() {
             : tl("La fenêtre s'ouvre en plein écran sur l'écran secondaire.")
           : tl("Faites glisser la fenêtre sur l'écran tourné vers le client, puis plein écran (F11).")}{" "}
         {tl("Raccourci : bouton « Écran client » dans la caisse.")}</p>
+      </>)}
       <h4 className="section-title">{tl("Sur une TV, un projecteur, un autre PC ou une tablette")}</h4>
       {url ? (
         <div className="display-link">

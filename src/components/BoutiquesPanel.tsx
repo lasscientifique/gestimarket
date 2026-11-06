@@ -3,7 +3,7 @@ import { ExternalLink, Plus, RefreshCw, Store } from "lucide-react";
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
 import { Badge } from "./ui";
-import { isTauri } from "../lib/transport";
+import { isMobileApp, isTauri } from "../lib/transport";
 import type { BoutiquesInfo } from "../types";
 import { tl } from "../lib/i18n";
 
@@ -18,12 +18,13 @@ export function BoutiquesPanel({ compact }: { compact?: boolean }) {
 
   const load = () => api.listBoutiques().then(setInfo).catch(() => undefined);
   useEffect(() => {
-    if (!isTauri) return;
+    // Téléphone et tablette : une seule boutique par application.
+    if (!isTauri || isMobileApp) return;
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, []);
-  if (!isTauri || !info) return null;
+  if (!isTauri || isMobileApp || !info) return null;
 
   const open = async (slot: number) => {
     try {

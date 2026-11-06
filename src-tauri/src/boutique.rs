@@ -20,7 +20,7 @@ const GUARD_BASE: u16 = 47870;
 /// Boutique de cette instance, et son verrou (tenu tant que l'application est ouverte).
 pub struct Current {
     pub slot: u8,
-    _guard: TcpListener,
+    _guard: Option<TcpListener>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,7 +70,14 @@ fn guard_addr(slot: u8) -> SocketAddr {
 
 /// Réserve la boutique pour cette instance. `None` si elle est déjà ouverte.
 pub fn acquire(slot: u8) -> Option<Current> {
-    TcpListener::bind(guard_addr(slot)).ok().map(|l| Current { slot, _guard: l })
+    TcpListener::bind(guard_addr(slot)).ok().map(|l| Current { slot, _guard: Some(l) })
+}
+
+/// Téléphone et tablette : une seule boutique, sans verrou (le système n'ouvre l'application qu'une fois,
+/// et une application rouverte dans le même processus ne doit pas se croire déjà ouverte).
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn single() -> Current {
+    Current { slot: 1, _guard: None }
 }
 
 pub fn is_open(slot: u8) -> bool {

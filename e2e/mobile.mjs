@@ -23,7 +23,7 @@ const CASHIER_PAGES = ["pos", "my-dashboard", "sales", "cash", "returns", "custo
 // Mesures faites dans la page (sérialisées par Playwright : pas de variable extérieure).
 // opts.covered : chercher les boutons cachés sous une barre fixe : "top" en haut de la page (barre du haut,
 // onglets des Paramètres), "bottom" en bas de la page (onglets du bas, barre de la caisse, pied de fenêtre).
-function measure(opts = {}) {
+export function measure(opts = {}) {
   const W = document.documentElement.clientWidth;
   const H = window.innerHeight;
   const drawerOpen = !!document.querySelector(".mobile-open");

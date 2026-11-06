@@ -618,4 +618,11 @@ export const EN_MESSAGES: Record<string, string> = {
   "La date de début est après la date de fin.": "The start date is after the end date.",
   "Place occupée par {} : le meuble revient à sa place.": "Space taken by {}: the fixture goes back to its place.",
   "{} sortirait du niveau « {} » : le meuble revient à sa place.": "{} would go outside the level “{}”: the fixture goes back to its place.",
+  "Impression interrompue ({}) : {}": "Printing interrupted ({}): {}",
+  "Imprimante réseau {} injoignable : {}. Vérifiez qu'elle est allumée et sur le même Wi-Fi.": "Network printer {} unreachable: {}. Check that it is on and on the same Wi-Fi.",
+  "Plusieurs boutiques : sur PC seulement.": "Several shops: on PC only.",
+  "Sur téléphone ou tablette, copiez le journal et collez-le dans WhatsApp.": "On a phone or tablet, copy the log and paste it into WhatsApp.",
+  "Sur téléphone ou tablette, indiquez l'adresse IP de l'imprimante réseau (ex. 192.168.1.50).": "On a phone or tablet, enter the network printer's IP address (e.g. 192.168.1.50).",
+  "Sur téléphone ou tablette, ouvrez l'écran client sur un autre appareil avec le lien affiché.": "On a phone or tablet, open the customer display on another device with the link shown.",
+  "Un téléphone ou une tablette ne peut pas être poste serveur : choisissez « Poste client » ou « Poste unique ».": "A phone or tablet cannot be the server station: choose “Client PC” or “Single station”.",
 };

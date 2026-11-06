@@ -25,16 +25,21 @@ export function setDeviceToken(token: string | null) {
 export function deviceLabel(): string {
   const ua = navigator.userAgent;
   if (/iPhone/i.test(ua)) return "iPhone";
-  if (/iPad/i.test(ua)) return "iPad";
+  if (/iPad/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return "iPad";
   if (/Android/i.test(ua)) return /Mobile/i.test(ua) ? "Téléphone Android" : "Tablette Android";
   if (/Windows/i.test(ua)) return "PC Windows";
   if (/Mac OS/i.test(ua)) return "Mac";
   return "Téléphone";
 }
 
-/** Application mobile GestiMarket (WebView Android ou iOS) : la WebView n'imprime pas et ne télécharge pas. */
+/**
+ * Application mobile FlutterFlow (WebView Android ou iOS) : la WebView n'imprime pas et ne télécharge pas.
+ * L'application GestiMarket installée (Tauri Android / iOS) n'en fait pas partie : elle a ses propres
+ * fichiers, son scanner et son imprimante réseau, même si sa WebView Android se présente aussi en « wv ».
+ */
 export function inAppWebView(): boolean {
   if (typeof navigator === "undefined") return false;
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) return false;
   const ua = navigator.userAgent;
   return /; wv\)|FlutterFlow|GestiMarketApp/i.test(ua) || (/iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua));
 }

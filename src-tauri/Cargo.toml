@@ -4,7 +4,7 @@ version = "0.17.2"
 description = "GestiMarket — logiciel de gestion de supermarché et de boutiques"
 authors = ["GestiMarket"]
 edition = "2021"
-rust-version = "1.89"
+rust-version = "1.90"
 
 [lib]
 name = "gestimarket_lib"
@@ -16,6 +16,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# Fichiers choisis dans les boîtes de dialogue d'Android (adresses « content:// ») et d'iOS : export, import, sauvegarde.
+tauri-plugin-fs = "2"
+# Liens WhatsApp, e-mail et appel (Paramètres → Développeur Eden Dev) sur téléphone et tablette.
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.37", features = ["bundled", "backup"] }
@@ -38,6 +42,10 @@ sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+
+# Android et iOS : lecture des codes-barres et QR codes par la caméra du téléphone (vue native).
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
 
 # Le hachage Argon2 est très lent sans optimisation : on optimise ces dépendances même en debug.
 [profile.dev.package.argon2]

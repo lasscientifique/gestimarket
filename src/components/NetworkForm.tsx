@@ -1,17 +1,37 @@
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
-import { Monitor, Server, Laptop, Wifi, CheckCircle2, RotateCw } from "lucide-react";
+import { Monitor, Server, Laptop, Wifi, CheckCircle2, RotateCw, ScanLine } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { getNetwork, local, pingServer, type NetworkConfig } from "../lib/transport";
+import { getNetwork, isMobileApp, local, pingServer, type NetworkConfig } from "../lib/transport";
+import { hasNativeScanner, onNativeCode, requestNativeScan } from "../lib/native";
 import { Field } from "./ui";
 import { HelpTip } from "./Help";
 import { tl } from "../lib/i18n";
 
-const MODES: { id: NetworkConfig["mode"]; title: string; text: string; icon: React.ReactNode }[] = [
-  { id: "local", title: tl("Poste unique"), text: tl("Une seule caisse : la base de données est sur ce PC."), icon: <Monitor size={22} /> },
-  { id: "server", title: tl("Poste serveur"), text: tl("Ce PC garde la base et la partage aux autres caisses du réseau (Wi-Fi ou câble)."), icon: <Server size={22} /> },
-  { id: "client", title: tl("Poste client"), text: tl("Ce PC travaille sur la base du poste serveur."), icon: <Laptop size={22} /> },
-];
+const MODES: { id: NetworkConfig["mode"]; title: string; text: string; icon: React.ReactNode }[] = isMobileApp
+  ? [
+      // Téléphone et tablette : jamais serveur (le système arrête les applications en arrière-plan).
+      { id: "client", title: tl("Poste client"), text: tl("Cet appareil travaille sur la base du poste serveur de la boutique (Wi-Fi ou adresse Internet)."), icon: <Laptop size={22} /> },
+      { id: "local", title: tl("Poste unique"), text: tl("Toute la boutique sur cet appareil, même sans Internet. Pensez à enregistrer des sauvegardes ailleurs."), icon: <Monitor size={22} /> },
+    ]
+  : [
+      { id: "local", title: tl("Poste unique"), text: tl("Une seule caisse : la base de données est sur ce PC."), icon: <Monitor size={22} /> },
+      { id: "server", title: tl("Poste serveur"), text: tl("Ce PC garde la base et la partage aux autres caisses du réseau (Wi-Fi ou câble)."), icon: <Server size={22} /> },
+      { id: "client", title: tl("Poste client"), text: tl("Ce PC travaille sur la base du poste serveur."), icon: <Laptop size={22} /> },
+    ];
+
+/**
+ * Adresse lue dans le QR code du poste serveur. Le QR donne l'adresse https (port + 1, certificat du PC,
+ * refusé par l'application) : on garde l'adresse http du même PC. Une adresse Internet https reste telle quelle.
+ */
+export function serverFromQr(text: string): string | null {
+  const m = text.trim().match(/^(https?):\/\/([^/:#?\s]+)(?::(\d+))?/i);
+  if (!m) return null;
+  const [, scheme, host, port] = m;
+  const privateIp = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+  if (scheme.toLowerCase() === "https" && privateIp) return `http://${host}:${port ? Number(port) - 1 : 7878}`;
+  return `${scheme.toLowerCase()}://${host}${port ? `:${port}` : ""}`;
+}
 
 /** Choix du mode multi-postes. Enregistrer redémarre l'application. */
 export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compact?: boolean }) {
@@ -24,6 +44,21 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
   useEffect(() => {
     if (info) setC(info.config);
   }, [info]);
+
+  // Application installée : l'adresse du serveur se lit dans le QR code affiché sur le poste serveur.
+  const [scanQr, setScanQr] = useState(false);
+  useEffect(() => {
+    if (!scanQr) return;
+    const off = onNativeCode((code) => {
+      setScanQr(false);
+      const url = serverFromQr(code);
+      if (url) setC((prev) => ({ ...prev, server_url: url }));
+      else toast.error(tl("Ce QR code ne contient pas l'adresse d'un poste serveur GestiMarket."));
+    });
+    requestNativeScan(tl("Adresse du poste serveur"));
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanQr]);
 
   const testServer = async () => {
     setTest(null);
@@ -38,6 +73,7 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
   const save = async () => {
     if (c.mode === "client" && !c.server_url.trim()) return toast.error(tl("Indiquez l'adresse du poste serveur."));
     if (!(await confirm({ title: tl("Changer le mode réseau"), message: tl("L'application va redémarrer pour appliquer le nouveau mode."), confirmLabel: tl("Enregistrer et redémarrer") }))) return;
+    if (isMobileApp && c.mode === "server") return toast.error(tl("Un téléphone ou une tablette ne peut pas être poste serveur."));
     // Poste qui détient la base (serveur / poste unique) : code PIN d'un responsable, sauf administrateur connecté.
     let pin: string | null = null;
     if (user && user.role !== "admin" && info?.config.mode !== "client") {
@@ -48,7 +84,9 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
     try {
       await local("save_network_config", { config: c, pin });
       onSaved?.();
-      await local("restart_app");
+      // Téléphone et tablette : rien à relancer côté Rust, l'interface se recharge dans le nouveau mode.
+      if (isMobileApp) window.location.reload();
+      else await local("restart_app");
     } catch (e) {
       toast.error(e);
       setBusy(false);
@@ -83,6 +121,9 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
           <Field label={tl("Adresse du poste serveur")} hint={tl("Affichée sur le poste serveur (Paramètres → Réseau). Ex. 192.168.1.10:7878")}>
             <div className="input-group">
               <input value={c.server_url} onChange={(e) => setC({ ...c, server_url: e.target.value })} placeholder="192.168.1.10:7878" />
+              {isMobileApp && hasNativeScanner() && (
+                <button className="btn" type="button" onClick={() => setScanQr(true)} title={tl("Scanner le QR code du poste serveur")}><ScanLine size={16} /></button>
+              )}
               <button className="btn" type="button" onClick={testServer}><Wifi size={16} />  {tl("Tester")}</button>
             </div>
           </Field>

@@ -6,6 +6,7 @@ import { tl, ts } from "./i18n";
 import { mediaUrl } from "./media";
 import { receiptEscpos } from "./escpos";
 import { printerConfig, sendToPrinter } from "./printer";
+import { isMobileApp } from "./transport";
 
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -75,6 +76,11 @@ export function receiptHtml(sale: Sale, settings: Settings): string {
 /** Imprime un contenu HTML via la boîte d'impression du système.
  *  L'application mobile (WebView) n'a pas de boîte d'impression : on le dit au lieu de ne rien faire. */
 export function printHtml(html: string, widthMm?: number) {
+  // Application installée sur téléphone ou tablette : pas de fenêtre d'impression du système.
+  if (isMobileApp) {
+    notify("info", tl("Sur téléphone ou tablette, les tickets sortent sur une imprimante réseau (Paramètres → Ventes). Les autres documents s'impriment depuis un PC de la boutique."));
+    return;
+  }
   if (inAppWebView()) {
     notify("info", tl("L'application mobile ne peut pas imprimer. Imprimez depuis un PC de la boutique, ou ouvrez l'adresse de la boutique dans Chrome."));
     return;

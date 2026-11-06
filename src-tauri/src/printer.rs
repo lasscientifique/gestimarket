@@ -45,7 +45,46 @@ pub fn send(printer: &str, data: &[u8]) -> Result<(), String> {
     if data.is_empty() || data.len() > 2_000_000 {
         return Err("Ticket à imprimer invalide.".into());
     }
+    if let Some(target) = network_target(printer) {
+        return send_tcp(&target, data);
+    }
+    if cfg!(mobile) {
+        return Err("Sur téléphone ou tablette, indiquez l'adresse IP de l'imprimante réseau (ex. 192.168.1.50).".into());
+    }
     sys::send(printer.trim(), data)
+}
+
+/// Imprimante à tickets réseau (Wi-Fi ou câble, ESC/POS sur le port 9100) : « 192.168.1.50 »,
+/// « 192.168.1.50:9100 » ou « tcp://nom-ou-adresse:9100 ». `None` pour une imprimante du système.
+pub fn network_target(printer: &str) -> Option<String> {
+    let p = printer.trim();
+    if let Some(rest) = p.strip_prefix("tcp://") {
+        let rest = rest.trim_end_matches('/');
+        if rest.is_empty() || rest.contains(char::is_whitespace) {
+            return None;
+        }
+        return Some(if rest.rsplit_once(':').is_some_and(|(_, port)| port.parse::<u16>().is_ok()) { rest.to_string() } else { format!("{rest}:9100") });
+    }
+    if let Ok(addr) = p.parse::<std::net::SocketAddr>() {
+        return Some(addr.to_string());
+    }
+    p.parse::<std::net::IpAddr>().ok().map(|ip| std::net::SocketAddr::new(ip, 9100).to_string())
+}
+
+/// Envoie le ticket à une imprimante réseau, sans pilote (commandes ESC/POS brutes).
+fn send_tcp(target: &str, data: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+    let unreachable = |e: String| format!("Imprimante réseau {target} injoignable : {e}. Vérifiez qu'elle est allumée et sur le même Wi-Fi.");
+    let addr = target
+        .to_socket_addrs()
+        .map_err(|e| unreachable(e.to_string()))?
+        .next()
+        .ok_or_else(|| unreachable("adresse inconnue".into()))?;
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(|e| unreachable(e.to_string()))?;
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(15)));
+    stream.write_all(data).and_then(|_| stream.flush()).map_err(|e| format!("Impression interrompue ({target}) : {e}"))
 }
 
 #[cfg(windows)]
@@ -151,6 +190,10 @@ mod sys {
     use std::process::{Command, Stdio};
 
     pub fn list() -> Vec<String> {
+        // Téléphone et tablette : pas de file d'impression du système, seulement des imprimantes réseau.
+        if cfg!(mobile) {
+            return Vec::new();
+        }
         Command::new("lpstat")
             .arg("-e")
             .output()
@@ -189,5 +232,35 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         assert!(send("", b"x").is_err());
         assert!(send("XP-80C", b"").is_err());
+    }
+
+    #[test]
+    fn imprimante_reseau_adresse_et_envoi() {
+        assert_eq!(network_target("192.168.1.50").as_deref(), Some("192.168.1.50:9100"));
+        assert_eq!(network_target(" 192.168.1.50:9101 ").as_deref(), Some("192.168.1.50:9101"));
+        assert_eq!(network_target("tcp://imprimante.local").as_deref(), Some("imprimante.local:9100"));
+        assert_eq!(network_target("tcp://10.0.0.7:9100/").as_deref(), Some("10.0.0.7:9100"));
+        assert_eq!(network_target("XP-80C"), None);
+        assert_eq!(network_target("EPSON TM-T20II Receipt"), None);
+        assert_eq!(network_target("tcp://"), None);
+
+        // Fausse imprimante réseau : les octets du ticket arrivent tels quels.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let reader = std::thread::spawn(move || {
+            use std::io::Read;
+            let (mut s, _) = listener.accept().unwrap();
+            let mut got = Vec::new();
+            s.read_to_end(&mut got).unwrap();
+            got
+        });
+        let ticket = b"\x1b@Bonjour\n\x1dV\x00";
+        send(&addr, ticket).unwrap();
+        assert_eq!(reader.join().unwrap(), ticket.to_vec());
+
+        // Imprimante éteinte : message clair, sans attendre indéfiniment.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().to_string();
+        let err = send(&closed, ticket).unwrap_err();
+        assert!(err.contains("injoignable"), "{err}");
     }
 }

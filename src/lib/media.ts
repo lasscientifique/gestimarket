@@ -1,6 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { api } from "../api";
-import { getToken, isRemote, isTauri, remoteUrl } from "./transport";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readFile } from "@tauri-apps/plugin-fs";
+import { chosenName } from "./files";
+import { getToken, isMobileApp, isRemote, isTauri, remoteUrl } from "./transport";
 
 /** URL d'une photo stockée dans la base (servie par le protocole « media » côté Rust). */
 export function mediaUrl(id: number | null | undefined): string | undefined {
@@ -20,6 +23,7 @@ export function mediaUrl(id: number | null | undefined): string | undefined {
 
 /** Ouvre le sélecteur de fichiers et retourne l'image choisie. */
 export function pickImageFile(): Promise<File | null> {
+  if (isMobileApp) return pickImageInApp();
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
@@ -74,4 +78,14 @@ export async function chooseAndUploadImage(opts: { maxSize?: number; keepPng?: b
   if (!file) return null;
   const { mime, data } = await compressImage(file, opts.maxSize ?? 600, opts.keepPng ?? false);
   return api.uploadImage(mime, data);
+}
+
+/** Application installée sur téléphone ou tablette : galerie ou fichiers du système, lus par le module fs. */
+async function pickImageInApp(): Promise<File | null> {
+  const path = await open({ multiple: false, filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }] });
+  if (!path || Array.isArray(path)) return null;
+  const name = chosenName(path);
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : ext === "gif" ? "image/gif" : "image/jpeg";
+  return new File([await readFile(path)], name, { type });
 }

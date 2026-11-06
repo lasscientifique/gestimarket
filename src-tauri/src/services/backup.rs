@@ -42,6 +42,10 @@ pub fn backup_to(conn: &Connection, path: &Path) -> AppResult<()> {
     if path.as_os_str().is_empty() {
         return invalid("Chemin de sauvegarde invalide.");
     }
+    // Copie de passage de l'application mobile (dossier de cache, pas forcément encore créé).
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let tmp = PathBuf::from(tmp);

@@ -4,7 +4,9 @@
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State};
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 use crate::error::{invalid, AppError, AppResult};
 use crate::network::{self, NetworkConfig, NetworkState};
@@ -26,13 +28,28 @@ pub async fn rpc(state: State<'_, AppState>, cmd: String, args: Option<Value>) -
 /// Contact Eden Dev (Paramètres → Développeur Eden Dev) : ouvre la messagerie, WhatsApp ou l'appel
 /// avec le programme par défaut de ce PC. Seules ces trois adresses fixes peuvent être ouvertes.
 #[tauri::command]
-pub async fn open_contact(kind: String) -> AppResult<()> {
+pub async fn open_contact(app: AppHandle, kind: String) -> AppResult<()> {
     let url = match kind.as_str() {
         "email" => "mailto:lasscientifique@gmail.com",
         "whatsapp" => "https://wa.me/22376593676",
         "phone" => "tel:+22376593676",
         _ => return invalid("Contact inconnu."),
     };
+    open_url(&app, url)
+}
+
+/// Téléphone et tablette : WhatsApp, la messagerie ou le téléphone, ouverts par le système.
+#[cfg(mobile)]
+fn open_url(app: &AppHandle, url: &str) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| AppError::Validation(format!("Impossible d'ouvrir le lien : {e}")))
+}
+
+/// PC : programme par défaut du système.
+#[cfg(desktop)]
+fn open_url(_app: &AppHandle, url: &str) -> AppResult<()> {
     #[cfg(windows)]
     let mut cmd = {
         use std::os::windows::process::CommandExt;
@@ -67,6 +84,9 @@ pub async fn journal_text() -> AppResult<String> {
 /// puis montre le fichier dans l'explorateur, prêt à être glissé dans WhatsApp ou un e-mail.
 #[tauri::command]
 pub async fn journal_export(app: AppHandle) -> AppResult<String> {
+    if cfg!(mobile) {
+        return invalid("Sur téléphone ou tablette, copiez le journal et collez-le dans WhatsApp.");
+    }
     let docs = app.path().document_dir().or_else(|_| app.path().home_dir().map(|h| h.join("Documents"))).map_err(internal)?;
     let dir = docs.join("GestiMarket");
     std::fs::create_dir_all(&dir)?;
@@ -205,6 +225,9 @@ pub async fn save_network_config(
     pin: Option<String>,
 ) -> AppResult<()> {
     let current = net.get();
+    if config.mode == "server" && cfg!(mobile) {
+        return invalid("Un téléphone ou une tablette ne peut pas être poste serveur : choisissez « Poste client » ou « Poste unique ».");
+    }
     if config.mode == "server" && current.mode != "server" && !crate::license::allows("server") {
         return invalid("Le mode serveur (autres PC, téléphones, tablettes) est inclus à partir de la formule PRO : voir « Abonnement & licence ».");
     }
@@ -227,9 +250,14 @@ pub async fn save_network_config(
     Ok(())
 }
 
+/// Relance l'application (nouveau mode réseau). Sur téléphone et tablette, l'interface se recharge elle-même :
+/// rien à relancer côté Rust (pas de serveur sur mobile).
 #[tauri::command]
 pub async fn restart_app(app: AppHandle) {
+    #[cfg(desktop)]
     app.restart();
+    #[cfg(mobile)]
+    let _ = app;
 }
 
 // ───────────────────────────── Écran client ─────────────────────────────
@@ -243,6 +271,7 @@ pub struct MonitorInfo {
     pub primary: bool,
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn list_monitors(app: AppHandle) -> AppResult<Vec<MonitorInfo>> {
     let primary = app.primary_monitor().map_err(internal)?.and_then(|m| m.name().cloned());
@@ -262,6 +291,7 @@ pub async fn list_monitors(app: AppHandle) -> AppResult<Vec<MonitorInfo>> {
 }
 
 /// Ouvre (ou ferme) la fenêtre « écran client » sur le 2ᵉ moniteur, en plein écran.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn toggle_customer_display(app: AppHandle, monitor: Option<usize>, poste: String) -> AppResult<bool> {
     if let Some(w) = app.get_webview_window("display") {
@@ -294,6 +324,20 @@ pub async fn toggle_customer_display(app: AppHandle, monitor: Option<usize>, pos
     }
     builder.build().map_err(internal)?;
     Ok(true)
+}
+
+/// Téléphone et tablette : pas de 2ᵉ écran. L'écran client s'ouvre sur un autre appareil, par son lien.
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn list_monitors() -> AppResult<Vec<MonitorInfo>> {
+    Ok(Vec::new())
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn toggle_customer_display(monitor: Option<usize>, poste: String) -> AppResult<bool> {
+    let _ = (monitor, poste);
+    invalid("Sur téléphone ou tablette, ouvrez l'écran client sur un autre appareil avec le lien affiché.")
 }
 
 // ───────────────────────────── Plusieurs boutiques ─────────────────────────────
@@ -335,6 +379,9 @@ pub async fn list_boutiques(app: AppHandle, current: State<'_, crate::boutique::
 /// Ouvre une autre boutique de ce PC dans sa propre fenêtre (elle demande sa propre connexion).
 #[tauri::command]
 pub async fn open_boutique(app: AppHandle, current: State<'_, crate::boutique::Current>, slot: u8) -> AppResult<String> {
+    if cfg!(mobile) {
+        return invalid("Plusieurs boutiques : sur PC seulement.");
+    }
     let root = boutiques_root(&app)?;
     if !(1..=crate::boutique::MAX).contains(&slot) || (slot > 1 && !crate::boutique::data_dir(&root, slot).exists()) {
         return invalid("Cette boutique n'existe pas sur ce PC.");
@@ -353,6 +400,9 @@ pub async fn open_boutique(app: AppHandle, current: State<'_, crate::boutique::C
 /// Réservé à l'administrateur connecté sur ce PC.
 #[tauri::command]
 pub async fn create_boutique(app: AppHandle, state: State<'_, AppState>) -> AppResult<u8> {
+    if cfg!(mobile) {
+        return invalid("Plusieurs boutiques : sur PC seulement.");
+    }
     let Some(admin) = state.user(&Origin::Local).filter(|u| u.is_admin()) else {
         return invalid("Seul l'administrateur peut créer une nouvelle boutique.");
     };

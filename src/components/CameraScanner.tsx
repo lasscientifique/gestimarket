@@ -4,6 +4,7 @@ import { decodeCanvas, decodeImageFile, liveCameraAvailable, scanFeedback, secur
 import { Modal } from "./ui";
 import { hasNativeScanner, onNativeCode, requestNativeScan } from "../lib/native";
 import { inAppWebView } from "../lib/device";
+import { isMobileApp } from "../lib/transport";
 import { tl } from "../lib/i18n";
 
 /**
@@ -39,6 +40,13 @@ export function CameraScanner({
   const [count, setCount] = useState(0);
   const [photoBusy, setPhotoBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const accept = async (code: string) => {
     const now = Date.now();
@@ -51,6 +59,8 @@ export function CameraScanner({
     setStatus({ code, ok });
     if (ok) setCount((c) => c + 1);
     if (ok && !continuous) onClose();
+    // Application installée, caisse : la caméra se rouvre pour l'article suivant (retour arrière pour finir).
+    if (ok && continuous && isMobileApp) window.setTimeout(() => alive.current && requestNativeScan(title), 700);
   };
 
   // Scanner natif de l'application mobile

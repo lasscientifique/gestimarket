@@ -10,6 +10,16 @@ import { tl } from "./i18n";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/**
+ * Application GestiMarket installée sur un téléphone ou une tablette (Tauri Android / iOS) :
+ * pas de mode serveur, ni de 2ᵉ écran, ni de plusieurs boutiques ; scanner natif ; fichiers par le système.
+ * (Un iPad se présente comme un Mac : on le reconnaît à son écran tactile.)
+ */
+export const isMobileApp =
+  isTauri &&
+  typeof navigator !== "undefined" &&
+  (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1));
+
 export interface NetworkConfig {
   mode: "local" | "server" | "client";
   poste_name: string;
