@@ -194,7 +194,8 @@ try {
   // ── Poste & réseau : poste client ou poste unique, jamais serveur ; pas de « plusieurs boutiques »
   await go("#/poste");
   const modes = await page.locator(".mode-card").allInnerTexts();
-  check("mode réseau : poste client et poste unique proposés, pas de poste serveur", modes.length === 2 && !modes.some((t) => /serveur/i.test(t)), modes.map((t) => t.split("\n")[0]).join(", "));
+  const titles = modes.map((t) => t.split("\n")[0].trim());
+  check("mode réseau : poste client et poste unique proposés, pas de poste serveur", titles.length === 2 && !titles.includes("Poste serveur"), titles.join(", "));
   const refused = await invoke("save_network_config", { config: { ...info.config, mode: "server" }, pin: PIN }).then(() => "accepté", (e) => String(e));
   check("mode serveur refusé par Rust sur le téléphone", refused.includes("poste serveur"), refused);
 
@@ -234,8 +235,10 @@ try {
   await device.shell("input keyevent KEYCODE_BACK");
   await sleep(1500);
   const after = await page.evaluate(() => location.hash).catch(() => "(application fermée)");
-  console.log(`[android] retour arrière : ${after}`);
   report.push({ label: "retour arrière Android", hash: after });
+  const stillOpen = !!String(await device.shell(`pidof ${PKG}`).catch(() => "")).trim();
+  check("bouton retour d'Android : page précédente, application toujours ouverte", after.startsWith("#/dashboard") && stillOpen, `${after} ; ${stillOpen ? "ouverte" : "fermée"}`);
+  await shot("a-retour-arriere.png");
 
   check("aucune erreur JavaScript pendant la visite", errors.length === 0, errors.slice(0, 3).join(" | "));
   exitCode = checks.every((c) => c.ok) ? 0 : 1;

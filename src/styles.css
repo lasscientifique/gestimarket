@@ -1169,7 +1169,7 @@ input, select, textarea { border-radius: 10px; }
 
   /* Écrans de connexion */
   .auth-card, .auth-card.wide, .auth-card.xwide { width: 100%; min-width: 0; padding: 22px 16px; border-radius: 16px; }
-  .auth-page { padding: calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); place-items: start stretch; grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100dvh; }
+  .auth-page { padding: calc(60px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left)); place-items: start stretch; grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100dvh; }
   .auth-shell { grid-template-columns: minmax(0, 1fr) !important; min-height: 0; border-radius: 20px; }
   .auth-shell .auth-card { width: auto; padding: 20px 16px; }
   .auth-hero { padding: 18px 20px !important; }
@@ -1286,7 +1286,7 @@ input, select, textarea { border-radius: 10px; }
 .lang-switch { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); color: #fff; }
 .lang-switch button { border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px; cursor: pointer; opacity: 0.8; }
 .lang-switch button.active { background: #fff; color: #0f172a; opacity: 1; font-weight: 650; }
-.auth-lang { position: fixed; top: 14px; right: 16px; z-index: 5; }
+.auth-lang { position: fixed; top: calc(14px + env(safe-area-inset-top)); right: calc(16px + env(safe-area-inset-right)); z-index: 5; }
 .lang-btn { width: auto; padding: 0 6px; gap: 3px; }
 .lang-code { font-size: 10.5px; font-weight: 750; letter-spacing: 0.04em; }
 
