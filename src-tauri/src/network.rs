@@ -7,7 +7,7 @@
 //! Le serveur sert aussi l'application aux navigateurs du réseau (tablette, téléphone, TV de l'écran client).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -111,8 +111,17 @@ pub fn hostname() -> String {
         .unwrap_or_else(|| "PC".into())
 }
 
-/// Démarre le serveur HTTP du poste serveur.
+/// Poignée de l'application partagée par les requêtes du serveur.
+///
+/// Une `AppHandle` ne se clone pas sur les fils du serveur : elle contient un compteur `Rc` non atomique
+/// (fenêtres de tao, sous Windows comme sous Linux). Clonée puis relâchée à chaque requête, en parallèle,
+/// elle corrompait la mémoire et arrêtait net le poste serveur (test d'interface, visite téléphone).
+/// Une seule `AppHandle`, créée sur le fil principal, est gardée dans un `Arc`, qui se clone sans risque.
+type App = Arc<AppHandle>;
+
+/// Démarre le serveur HTTP du poste serveur (appelé sur le fil principal).
 pub fn start_server(app: AppHandle, port: u16) {
+    let app: App = Arc::new(app);
     tauri::async_runtime::spawn(async move {
         let router = Router::new()
             .route("/rpc/{cmd}", post(rpc_handler))
@@ -236,7 +245,7 @@ fn remote_args(body: &[u8], ip: String, route: &str) -> Result<Value, &'static s
 }
 
 async fn rpc_handler(
-    State(app): State<AppHandle>,
+    State(app): State<App>,
     Path(cmd): Path<String>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
@@ -275,7 +284,7 @@ async fn rpc_handler(
 
 /// Photos (produits, logo, QR code). Depuis Internet, une session est exigée (`?t=<jeton>`).
 async fn media_handler(
-    State(app): State<AppHandle>,
+    State(app): State<App>,
     Path(id): Path<String>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
@@ -301,14 +310,14 @@ async fn media_handler(
     }
 }
 
-async fn ping_handler(State(app): State<AppHandle>) -> Response {
+async fn ping_handler(State(app): State<App>) -> Response {
     let state = app.state::<AppState>();
     let name = { let conn = state.conn(); crate::services::settings::get(&conn, "shop_name").unwrap_or_default() };
     Json(json!({ "app": "GestiMarket", "shop_name": name, "version": env!("CARGO_PKG_VERSION") })).into_response()
 }
 
 /// Sert l'interface (fichiers intégrés à l'application) aux navigateurs du réseau.
-async fn asset_handler(State(app): State<AppHandle>, uri: Uri) -> Response {
+async fn asset_handler(State(app): State<App>, uri: Uri) -> Response {
     let path = match uri.path() {
         "/" | "" => "index.html".to_string(),
         p => p.trim_start_matches('/').to_string(),
