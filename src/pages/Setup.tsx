@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Printer, Store, Plus, X, RefreshCw, Users, WandSparkles } from "lucide-react";
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
-import { isTauri } from "../lib/transport";
+import { isMobileApp, isTauri } from "../lib/transport";
 import { Modal } from "../components/ui";
 import { NetworkForm } from "../components/NetworkForm";
 import { BusinessTypeGrid, useBusinessProfiles } from "../components/BusinessType";
@@ -208,7 +208,9 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
           </div>
           <h1>{tl("Bienvenue dans GestiMarket")}</h1>
           <p className="muted">
-            {tl("Étape 1 : le compte de votre boutique chez Eden Dev (abonnement et licence). Internet est nécessaire pour cette étape seulement. Vos ventes, produits et clients restent sur ce PC.")}</p>
+            {isMobileApp
+              ? tl("Étape 1 : le compte de votre boutique chez Eden Dev (abonnement et licence). Internet est nécessaire pour cette étape seulement. Vos ventes, produits et clients restent sur cet appareil.")
+              : tl("Étape 1 : le compte de votre boutique chez Eden Dev (abonnement et licence). Internet est nécessaire pour cette étape seulement. Vos ventes, produits et clients restent sur ce PC.")}</p>
           <div className="alert alert-info">
             {tl("Vous ajoutez une caisse supplémentaire à un magasin déjà équipé ?")}{" "}
             <button type="button" className="link-btn" onClick={() => setJoinOpen(true)}>{tl("Se connecter au poste serveur")}</button>

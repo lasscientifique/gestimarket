@@ -148,16 +148,22 @@ try {
   check("application Android : mode poste unique au premier lancement", info.config.mode === "local", info.config.mode);
   check("interface : application installée reconnue (pas de WebView FlutterFlow)", await page.evaluate(() => "__TAURI_INTERNALS__" in window && /Android/.test(navigator.userAgent)));
 
+  let team = [];
   if (await rpc("needs_setup")) {
-    await rpc("initial_setup", {
+    const r = await rpc("initial_setup", {
       input: { shop_name: "Boutique Android", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin Android", username: "admin", pin: PIN },
     });
+    team = r?.team ?? [];
   }
   const lic = await rpc("license_status");
   check("identifiant de l'appareil pour la licence", /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(lic.pc_id), lic.pc_id);
   await rpc("license_import", { text: await testLicense(lic.pc_id) });
   const coca = await rpc("save_product", { id: null, input: { name: "Coca-Cola 33 cl", purchase_price: 300, sale_price: 500, initial_stock: 48 } });
   check("base SQLite du téléphone : produit créé avec un code-barres", coca?.id > 0 && !!coca?.barcode, coca?.barcode);
+  // Seule une caissière encaisse : connexion de la caissière de l'équipe par défaut, vente, puis retour à l'administrateur.
+  const caisse = team.find((m) => m.role === "cashier");
+  check("équipe par défaut : une caissière avec son PIN", !!caisse?.pin, team.map((m) => m.username).join(", "));
+  if (caisse) await rpc("login", { username: caisse.username, pin: caisse.pin });
   await rpc("open_cash_session", { amount: 0 }).catch(() => null);
   const sale = await rpc("create_sale", {
     input: {
@@ -166,6 +172,7 @@ try {
     },
   }).then((v) => v, (e) => ({ error: String(e) }));
   check("vente enregistrée sur le téléphone (2 × 500 = 1 000)", sale?.total === 1000, sale?.error ?? sale?.total);
+  await rpc("login", { username: "admin", pin: PIN });
   const stock = (await rpc("get_product", { id: coca.id })).stock;
   check("stock du téléphone décompté (48 → 46)", stock === 46, stock);
 

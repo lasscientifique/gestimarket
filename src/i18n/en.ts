@@ -2249,4 +2249,5 @@ export const EN: Record<string, string> = {
   "Cet appareil est un poste unique : l'application mobile du propriétaire et l'adresse Internet se règlent sur le poste serveur d'un PC.": "This device is a single station: the owner's mobile app and the Internet address are set up on a PC server station.",
   "Sur téléphone ou tablette, les copies automatiques restent dans l'application : elles sont perdues avec l'appareil. Enregistrez souvent une copie ailleurs (Google Drive, iCloud, ordinateur) avec le bouton « Enregistrer une copie… ».": "On a phone or tablet, automatic copies stay inside the app: they are lost with the device. Often save a copy elsewhere (Google Drive, iCloud, computer) with the “Save a copy…” button.",
   "Enregistrer une copie…": "Save a copy…",
+  "Étape 1 : le compte de votre boutique chez Eden Dev (abonnement et licence). Internet est nécessaire pour cette étape seulement. Vos ventes, produits et clients restent sur cet appareil.": "Step 1: your shop's account with Eden Dev (subscription and licence). Internet is needed for this step only. Your sales, products and customers stay on this device.",
 };
