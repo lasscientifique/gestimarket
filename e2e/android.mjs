@@ -95,8 +95,26 @@ try {
   step("attente de la page de l'application (WebView)");
   const webview = await device.webView({ pkg: PKG }, { timeout: 180_000 });
   step("WebView trouvée");
-  const page = await webview.page();
+  // L'application tient-elle ? (processus vivant, écran) : une capture toutes les 5 s pendant 30 s.
+  const alive = async () => String(await device.shell(`pidof ${PKG}`).catch(() => "")).trim();
+  for (let i = 1; i <= 6; i++) {
+    await sleep(5000);
+    const pid = await alive();
+    step(`après ${i * 5} s : processus ${pid || "ARRÊTÉ"}`);
+    await device.screenshot({ path: `${OUT}/a-00-${String(i * 5).padStart(2, "0")}s.png` }).catch(() => {});
+    if (!pid) {
+      fs.writeFileSync(`${OUT}/crash.txt`, String(await device.shell("logcat -d -b crash").catch(() => "")));
+      throw new Error("l'application s'est fermée juste après son lancement (voir crash.txt et logcat.txt)");
+    }
+  }
+  const page = await Promise.race([
+    webview.page(),
+    sleep(60_000).then(() => {
+      throw new Error("la page de l'application ne répond pas (60 s)");
+    }),
+  ]);
   page.setDefaultTimeout(30_000);
+  step("page de l'application ouverte");
   const errors = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text().slice(0, 300)));
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 300)));
@@ -105,7 +123,14 @@ try {
   await sleep(3000);
   await device.screenshot({ path: `${OUT}/a-01-premier-lancement.png` });
 
-  const invoke = (cmd, args = {}) => page.evaluate(([c, a]) => window.__TAURI_INTERNALS__.invoke(c, a), [cmd, args]);
+  // Appel Tauri depuis la page, avec délai : une application bloquée ne fige pas le scénario.
+  const invoke = (cmd, args = {}) =>
+    Promise.race([
+      page.evaluate(([c, a]) => window.__TAURI_INTERNALS__.invoke(c, a), [cmd, args]),
+      sleep(60_000).then(async () => {
+        throw new Error(`« ${cmd} » sans réponse depuis 60 s (processus ${(await alive()) || "arrêté"})`);
+      }),
+    ]);
   const rpc = (cmd, args = {}) => invoke("rpc", { cmd, args });
   const settle = async (ms = 1500) => {
     await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});

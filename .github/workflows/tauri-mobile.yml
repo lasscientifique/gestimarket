@@ -106,16 +106,18 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: |
             echo "émulateur démarré : $(date -u +%T)" >> e2e/out-android/progress.txt
+            adb logcat -G 16M || true
+            adb logcat -c || true
             timeout 300 adb install -r e2e/out-android/GestiMarket-android-test-x86_64.apk
             echo "APK installé : $(date -u +%T)" >> e2e/out-android/progress.txt
             adb shell pm grant com.gestimarket.app android.permission.CAMERA || true
-            timeout 900 node e2e/android.mjs || { adb logcat -d -t 800 > e2e/out-android/logcat.txt; exit 1; }
-            adb logcat -d -t 400 > e2e/out-android/logcat.txt || true
+            timeout 900 node e2e/android.mjs || { adb logcat -d > e2e/out-android/logcat.txt; adb logcat -d -b crash > e2e/out-android/crash.txt; exit 1; }
+            adb logcat -d > e2e/out-android/logcat.txt || true
       - name: Journal Android si échec
         if: failure()
         run: |
           [ -f e2e/out-android/logcat.txt ] || exit 0
-          msg=$(grep -i -E 'gestimarket|tauri|RustStdoutStderr|FATAL|panicked' e2e/out-android/logcat.txt | tail -40 | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          msg=$( (cat e2e/out-android/crash.txt 2>/dev/null | head -40; grep -E 'RustStdoutStderr|FATAL|panicked|AndroidRuntime|ANR in|Process com.gestimarket.app' e2e/out-android/logcat.txt | grep -v AppsFilter | tail -40) | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::warning title=Journal Android (logcat)::${msg:-rien}"
       - uses: actions/upload-artifact@v4
         if: always()
@@ -244,7 +246,9 @@ jobs:
             xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration debug -sdk iphonesimulator -arch arm64 \
               -derivedDataPath build-ios CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build 2>&1 | tee -a ios-build.log | tail -40
           fi
-          APP=$(find src-tauri/gen/apple build-ios -name "*.app" -path "*simulator*" -type d 2>/dev/null | head -1)
+          set +e +o pipefail
+          # tauri ios build : src-tauri/gen/apple/build/arm64-sim/GestiMarket.app ; xcodebuild : build-ios/…/debug-iphonesimulator.
+          APP=$(ls -d src-tauri/gen/apple/build/arm64-sim/*.app 2>/dev/null | head -1)
           [ -n "$APP" ] || APP=$(find src-tauri/gen/apple build-ios -name "*.app" -type d 2>/dev/null | grep -v -i "\.xctest" | head -1)
           echo "Application : $APP"
           [ -n "$APP" ] && echo "APP=$APP" >> "$GITHUB_ENV"
