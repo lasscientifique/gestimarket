@@ -124,7 +124,8 @@ jobs:
             [ -f "$c" ] || continue
             sudo chmod a+r "$c"
             gdb -q -batch -ex "bt 60" -ex "info threads" -ex "thread apply all bt 8" src-tauri/target/debug/gestimarket "$c" > e2e/out/pile-serveur.txt 2>&1 || true
-            echo "::error title=Pile d'appels du poste serveur::$(grep -E '^#[0-9]|^\* |^Thread|^Program terminated' e2e/out/pile-serveur.txt | head -60 | oneline)"
+            # Fil arrêté et sa pile d'abord ; lignes raccourcies (les types génériques Rust dépassent la taille d'une annotation).
+            echo "::error title=Pile d'appels du poste serveur::$(grep -E '^Program terminated|^\[Current thread|^#[0-9]|^\* ' e2e/out/pile-serveur.txt | cut -c1-200 | head -70 | oneline)"
           done
           echo "::warning title=Fin du journal du poste serveur::$(tail -8 e2e-app.log | oneline)"
       - uses: actions/upload-artifact@v4
