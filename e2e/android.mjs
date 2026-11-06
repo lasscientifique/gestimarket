@@ -234,13 +234,21 @@ try {
   await go("#/products");
   // Champ de recherche actif : le 1er appui sur retour irait au clavier (comportement normal d'Android).
   await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
-  await sleep(500);
-  await device.shell("input keyevent KEYCODE_BACK");
-  await sleep(1500);
-  const after = await page.evaluate(() => location.hash).catch(() => "(application fermée)");
-  report.push({ label: "retour arrière Android", hash: after });
+  await sleep(1000);
+  // Jusqu'à 2 appuis (le 1er peut fermer le clavier), en laissant au téléphone le temps de changer de page.
+  let after = "";
+  let presses = 0;
+  for (; presses < 2 && !after.startsWith("#/dashboard"); presses++) {
+    await device.shell("input keyevent KEYCODE_BACK");
+    for (let i = 0; i < 16; i++) {
+      await sleep(500);
+      after = await page.evaluate(() => location.hash).catch(() => "(application fermée)");
+      if (after.startsWith("#/dashboard") || after.startsWith("(")) break;
+    }
+  }
+  report.push({ label: "retour arrière Android", hash: after, presses });
   const stillOpen = !!String(await device.shell(`pidof ${PKG}`).catch(() => "")).trim();
-  check("bouton retour d'Android : page précédente, application toujours ouverte", after.startsWith("#/dashboard") && stillOpen, `${after} ; ${stillOpen ? "ouverte" : "fermée"}`);
+  check("bouton retour d'Android : page précédente, application toujours ouverte", after.startsWith("#/dashboard") && stillOpen, `${after} ; ${presses} appui(s) ; ${stillOpen ? "ouverte" : "fermée"}`);
   await shot("a-retour-arriere.png");
 
   check("aucune erreur JavaScript pendant la visite", errors.length === 0, errors.slice(0, 3).join(" | "));

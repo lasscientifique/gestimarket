@@ -17,6 +17,7 @@ fi
 # Écran : le modèle de Tauri dessine la page sous la barre d'état (heure, batterie) et la barre de navigation.
 # GestiMarket garde sa page entre les barres du système et au-dessus du clavier (marges = taille des barres),
 # sur fond sombre comme sa barre du haut, avec des icônes claires.
+# Le bouton retour est géré par Tauri (2.9 et plus) : page précédente, sinon fermeture de l'application.
 MA=$(find src-tauri/gen/android/app/src/main -name MainActivity.kt | head -1)
 PKG=$(head -1 "$MA" | sed 's/^package //')
 cat > "$MA" <<KOTLIN
@@ -24,11 +25,7 @@ package $PKG
 
 import android.graphics.Color
 import android.os.Bundle
-import android.util.Log
 import android.view.View
-import android.view.ViewGroup
-import android.webkit.WebView
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -51,30 +48,6 @@ class MainActivity : TauriActivity() {
       view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
       WindowInsetsCompat.CONSUMED
     }
-    // Bouton retour : page précédente de GestiMarket ; à la première page, comportement normal d'Android.
-    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-      override fun handleOnBackPressed() {
-        val web = findWebView(content)
-        Log.i("GestiMarket", "bouton retour : page précédente possible = " + (web?.canGoBack() ?: "pas de WebView"))
-        if (web != null && web.canGoBack()) {
-          web.goBack()
-        } else {
-          isEnabled = false
-          onBackPressedDispatcher.onBackPressed()
-          isEnabled = true
-        }
-      }
-    })
-  }
-
-  private fun findWebView(view: View?): WebView? {
-    if (view is WebView) return view
-    if (view is ViewGroup) {
-      for (i in 0 until view.childCount) {
-        findWebView(view.getChildAt(i))?.let { return it }
-      }
-    }
-    return null
   }
 }
 KOTLIN
