@@ -45,6 +45,8 @@ pub struct Dashboard {
     pub month_margin: i64,
     pub month_count: i64,
     pub customers_debt: i64,
+    /// Fonds déposés par les clients (argent gardé pour eux).
+    pub customers_funds: i64,
     pub stock: stock::StockSummary,
     pub daily: Vec<DayPoint>,
     pub top_products: Vec<TopProduct>,
@@ -154,6 +156,12 @@ pub fn dashboard(conn: &Connection) -> AppResult<Dashboard> {
         [],
         |r| r.get(0),
     )?;
+    // Fonds déposés par les clients : argent gardé pour eux (pas du chiffre d'affaires).
+    let customers_funds: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(-balance), 0) FROM customers WHERE balance < 0",
+        [],
+        |r| r.get(0),
+    )?;
 
     let mut stmt = conn.prepare(
         "SELECT id, name, unit, stock, min_stock FROM products
@@ -190,6 +198,7 @@ pub fn dashboard(conn: &Connection) -> AppResult<Dashboard> {
         month_margin,
         month_count,
         customers_debt,
+        customers_funds,
         stock: stock::summary(conn)?,
         daily: by_day(conn, today - Duration::days(13), today)?,
         top_products: top_products(conn, &seven_days_ago, &today_s, 6)?,

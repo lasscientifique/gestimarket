@@ -9,6 +9,10 @@ use crate::state::SessionUser;
 /// Moyens de paiement réels (le crédit est le reste non payé, il n'est pas un « paiement »).
 pub const PAYMENT_METHODS: &[&str] = &["cash", "orange_money", "mobile_money", "card", "other"];
 
+/// Moyens de paiement propres au client : fonds de son compte (« account », puis dette dans la limite
+/// de son plafond) et bonus du programme client fidèle (« loyalty »).
+pub const ACCOUNT_METHODS: &[&str] = &["account", "loyalty"];
+
 /// Opérateur de mobile money configuré en caisse (paramètre « mobile_operators », liste JSON).
 /// Ses paiements ont pour mode « mm:<id> » (ex. « mm:wave »).
 #[derive(Debug, Deserialize)]
@@ -182,6 +186,14 @@ pub struct Sale {
     pub items_count: f64,
     /// Montant déjà rendu par des retours.
     pub returned_total: i64,
+    /// Part payée avec les fonds du compte client (la part mise en dette est `credit_amount`).
+    pub account_amount: i64,
+    /// Programme client fidèle : bonus gagné sur cette vente.
+    pub loyalty_earned: i64,
+    /// Compte du client aujourd'hui (ticket) : solde (> 0 dette, < 0 fonds), bonus disponible, étoiles.
+    pub customer_balance: Option<i64>,
+    pub customer_bonus: Option<i64>,
+    pub customer_stars: Option<i64>,
     pub items: Vec<SaleItem>,
     pub payments: Vec<SalePayment>,
 }
@@ -190,7 +202,8 @@ const SALE_SELECT: &str = "SELECT s.id, s.number, s.customer_id, c.name, s.user_
         s.subtotal, s.discount, s.tax_total, s.total, s.cost_total, s.amount_paid, s.change_due,
         s.credit_amount, s.payment_method, s.status, s.note, s.created_at, s.cancelled_at, s.cancel_reason,
         (SELECT COALESCE(SUM(quantity), 0) FROM sale_items si WHERE si.sale_id = s.id),
-        (SELECT COALESCE(SUM(total), 0) FROM returns rt WHERE rt.sale_id = s.id)
+        (SELECT COALESCE(SUM(total), 0) FROM returns rt WHERE rt.sale_id = s.id),
+        s.account_amount, s.loyalty_earned, c.balance, c.loyalty_bonus
     FROM sales s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN customers c ON c.id = s.customer_id";
@@ -220,6 +233,11 @@ fn sale_from_row(r: &Row) -> rusqlite::Result<Sale> {
         cancel_reason: r.get(20)?,
         items_count: r.get(21)?,
         returned_total: r.get(22)?,
+        account_amount: r.get(23)?,
+        loyalty_earned: r.get(24)?,
+        customer_balance: r.get(25)?,
+        customer_bonus: r.get(26)?,
+        customer_stars: None,
         items: Vec::new(),
         payments: Vec::new(),
     })
@@ -268,6 +286,12 @@ pub fn get_sale(conn: &Connection, id: i64) -> AppResult<Sale> {
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    if let Some(customer_id) = sale.customer_id {
+        let program = crate::services::loyalty::Program::load(conn)?;
+        if program.enabled {
+            sale.customer_stars = Some(crate::services::loyalty::stars(conn, &program, customer_id)?);
+        }
+    }
     Ok(sale)
 }
 
@@ -604,6 +628,7 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
     let allow_negative = settings::get_bool(conn, "allow_negative_stock")?;
     let require_session = settings::get_bool(conn, "require_cash_session")?;
     let loyalty_step = settings::get_i64(conn, "loyalty_step")?;
+    let program = crate::services::loyalty::Program::load(conn)?;
 
     cash::ensure_cashier(user)?;
     let tx = conn.transaction()?;
@@ -699,7 +724,21 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
 
     // 3. Paiements
     let mut payments: Vec<PaymentInput> = Vec::new();
+    // Compte client (fonds, puis dette) et bonus fidélité : réservés au client choisi, contrôlés plus bas.
+    let mut account_explicit: i64 = 0;
+    let mut loyalty_amount: i64 = 0;
     for p in input.payments.iter().filter(|p| p.amount > 0) {
+        match p.method.as_str() {
+            "account" => {
+                account_explicit += p.amount;
+                continue;
+            }
+            "loyalty" => {
+                loyalty_amount += p.amount;
+                continue;
+            }
+            _ => {}
+        }
         let reference = db::clean(&p.reference);
         let phone = clean_phone(&p.phone)?;
         check_payment(&tx, &p.method, reference.as_deref())?;
@@ -722,7 +761,10 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
         }
         payments.push(PaymentInput { method: p.method.clone(), amount: p.amount, reference, phone });
     }
-    let non_cash: i64 = payments.iter().filter(|p| p.method != "cash").map(|p| p.amount).sum();
+    if (account_explicit > 0 || loyalty_amount > 0) && input.customer_id.is_none() {
+        return invalid("Choisissez le client pour payer avec son compte ou son bonus fidélité.");
+    }
+    let non_cash: i64 = payments.iter().filter(|p| p.method != "cash").map(|p| p.amount).sum::<i64>() + account_explicit + loyalty_amount;
     if non_cash > total {
         return invalid("Les paiements électroniques dépassent le montant à payer (la monnaie ne se rend qu'en espèces).");
     }
@@ -730,9 +772,13 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
     let cash_applied = cash_tendered.min(total - non_cash);
     let change_due = cash_tendered - cash_applied;
     let paid = non_cash + cash_applied;
-    let credit_amount = total - paid;
+    // Le reste non payé va sur le compte du client, comme un paiement « Compte client » :
+    // d'abord ses fonds, puis une dette dans la limite de son plafond de crédit.
+    let account_total = account_explicit + (total - paid);
+    let mut funds_used: i64 = 0;
+    let mut credit_amount: i64 = 0;
 
-    if credit_amount > 0 {
+    if account_total > 0 {
         let Some(customer_id) = input.customer_id else {
             return invalid("Montant payé insuffisant. Sélectionnez un client pour enregistrer le reste à crédit.");
         };
@@ -741,13 +787,41 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
             [customer_id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
-        if limit <= 0 {
-            return invalid(format!("Le client « {cname} » n'est pas autorisé à acheter à crédit."));
+        let funds = (-balance).max(0);
+        funds_used = account_total.min(funds);
+        credit_amount = account_total - funds_used;
+        if credit_amount > 0 {
+            if limit <= 0 {
+                return invalid(if funds > 0 {
+                    format!("Fonds insuffisants sur le compte de « {cname} » (disponible : {funds}) ; ce client n'est pas autorisé à acheter à crédit.")
+                } else {
+                    format!("Le client « {cname} » n'est pas autorisé à acheter à crédit.")
+                });
+            }
+            if balance + account_total > limit {
+                return invalid(format!(
+                    "Plafond de crédit dépassé pour « {cname} » (dette actuelle : {}, plafond : {limit}).",
+                    balance.max(0)
+                ));
+            }
         }
-        if balance + credit_amount > limit {
-            return invalid(format!(
-                "Plafond de crédit dépassé pour « {cname} » (dette actuelle : {balance}, plafond : {limit})."
-            ));
+    }
+
+    // Bonus fidélité : programme en marche, bonus suffisant (après expiration éventuelle).
+    let mut stars: i64 = 0;
+    if let Some(customer_id) = input.customer_id {
+        if program.active() {
+            crate::services::loyalty::expire_customer(&tx, &program, customer_id)?;
+            stars = crate::services::loyalty::stars(&tx, &program, customer_id)?;
+        }
+        if loyalty_amount > 0 {
+            if !program.active() {
+                return invalid("Le programme client fidèle n'est pas activé : le bonus ne peut pas servir à payer.");
+            }
+            let bonus: i64 = tx.query_row("SELECT loyalty_bonus FROM customers WHERE id = ?1", [customer_id], |r| r.get(0))?;
+            if loyalty_amount > bonus {
+                return invalid(format!("Bonus fidélité insuffisant : {bonus} disponible."));
+            }
         }
     }
 
@@ -757,6 +831,11 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
         let applied = if p.method == "cash" { cash_applied } else { p.amount };
         if applied > 0 && !methods.contains(&p.method.as_str()) {
             methods.push(p.method.as_str());
+        }
+    }
+    for (method, amount) in [("account", funds_used), ("loyalty", loyalty_amount)] {
+        if amount > 0 {
+            methods.push(method);
         }
     }
     let payment_method = match methods.len() {
@@ -770,8 +849,9 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
     let now = db::now();
     tx.execute(
         "INSERT INTO sales (number, customer_id, user_id, session_id, subtotal, discount, tax_total, total, cost_total,
-            amount_paid, change_due, credit_amount, payment_method, status, note, created_at, discount_approved_by, client_ref)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'completed', ?14, ?15, ?16, ?17)",
+            amount_paid, change_due, credit_amount, payment_method, status, note, created_at, discount_approved_by, client_ref,
+            account_amount)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 'completed', ?14, ?15, ?16, ?17, ?18)",
         params![
             number,
             input.customer_id,
@@ -782,14 +862,15 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
             tax_total,
             total,
             cost_total,
-            non_cash + cash_tendered,
+            non_cash - account_explicit + funds_used + cash_tendered,
             change_due,
             credit_amount,
             payment_method,
             db::clean(&input.note),
             now,
             discount_approved_by,
-            client_ref
+            client_ref,
+            funds_used
         ],
     )?;
     let sale_id = tx.last_insert_rowid();
@@ -810,6 +891,14 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
             "INSERT INTO sale_payments (sale_id, method, amount, tendered, created_at) VALUES (?1, 'cash', ?2, ?3, ?4)",
             params![sale_id, cash_applied, cash_tendered, now],
         )?;
+    }
+    for (method, amount) in [("account", funds_used), ("loyalty", loyalty_amount)] {
+        if amount > 0 {
+            tx.execute(
+                "INSERT INTO sale_payments (sale_id, method, amount, tendered, created_at) VALUES (?1, ?2, ?3, ?3, ?4)",
+                params![sale_id, method, amount, now],
+            )?;
+        }
     }
     for p in payments.iter().filter(|p| p.method != "cash") {
         tx.execute(
@@ -841,11 +930,21 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
     }
 
     if let Some(customer_id) = input.customer_id {
-        let points = if loyalty_step > 0 { total / loyalty_step } else { 0 };
+        // Anciens points : seulement si le programme client fidèle n'est pas activé.
+        let points = if loyalty_step > 0 && !program.enabled { total / loyalty_step } else { 0 };
         tx.execute(
             "UPDATE customers SET balance = balance + ?1, loyalty_points = loyalty_points + ?2 WHERE id = ?3",
-            params![credit_amount, points, customer_id],
+            params![funds_used + credit_amount, points, customer_id],
         )?;
+        if loyalty_amount > 0 {
+            crate::services::loyalty::add_move(&tx, customer_id, "spend", -loyalty_amount, Some(sale_id), None, None, Some(user.id))?;
+        }
+        if program.active() {
+            // Bonus sur la part réellement payée : ni le bonus dépensé, ni la part mise en dette.
+            let earned = program.bonus_for(stars, total - loyalty_amount - credit_amount);
+            let earned = crate::services::loyalty::add_move(&tx, customer_id, "earn", earned, Some(sale_id), None, None, Some(user.id))?;
+            tx.execute("UPDATE sales SET loyalty_earned = ?1 WHERE id = ?2", params![earned, sale_id])?;
+        }
     }
 
     tx.commit()?;
@@ -882,8 +981,12 @@ pub fn cancel_sale(conn: &mut Connection, user: &SessionUser, id: i64, reason: &
         let points = if loyalty_step > 0 { sale.total / loyalty_step } else { 0 };
         tx.execute(
             "UPDATE customers SET balance = balance - ?1, loyalty_points = MAX(0, loyalty_points - ?2) WHERE id = ?3",
-            params![sale.credit_amount, points, customer_id],
+            params![sale.credit_amount + sale.account_amount, points, customer_id],
         )?;
+        let spent: i64 = sale.payments.iter().filter(|p| p.method == "loyalty").map(|p| p.amount).sum();
+        let note = format!("Vente {} annulée", sale.number);
+        crate::services::loyalty::add_move(&tx, customer_id, "cancel", spent, Some(sale.id), None, Some(&note), Some(user.id))?;
+        crate::services::loyalty::add_move(&tx, customer_id, "cancel", -sale.loyalty_earned, Some(sale.id), None, Some(&note), Some(user.id))?;
     }
     tx.execute(
         "UPDATE sales SET status = 'cancelled', cancelled_at = ?1, cancelled_by = ?2, cancel_reason = ?3 WHERE id = ?4",
@@ -986,7 +1089,7 @@ pub fn list_electronic(conn: &Connection, f: &ElectronicFilter) -> AppResult<Vec
             SELECT sp.created_at AS d, 'sale' AS src, s.id, s.number, sp.method, sp.amount, sp.reference, sp.phone, c.name, u.full_name
               FROM sale_payments sp JOIN sales s ON s.id = sp.sale_id
               JOIN users u ON u.id = s.user_id LEFT JOIN customers c ON c.id = s.customer_id
-             WHERE s.status = 'completed' AND sp.method NOT IN ('cash', 'credit_note')
+             WHERE s.status = 'completed' AND sp.method NOT IN ('cash', 'credit_note', 'account', 'loyalty')
             UNION ALL
             SELECT cp.created_at, 'customer_payment', NULL, 'Règlement client', cp.method, cp.amount, cp.reference, cp.phone, c.name, u.full_name
               FROM customer_payments cp JOIN customers c ON c.id = cp.customer_id LEFT JOIN users u ON u.id = cp.user_id

@@ -338,6 +338,11 @@ pub fn allows(feature: &str) -> bool {
     effective().allows(feature)
 }
 
+/// Programme client fidèle (étoiles et bonus) : formules PRO et BUSINESS.
+pub fn loyalty_allowed() -> bool {
+    matches!(effective().plan.as_str(), "pro" | "business")
+}
+
 pub fn max_postes() -> usize {
     effective().max_postes as usize
 }
@@ -464,7 +469,7 @@ const ALWAYS: &[&str] = &[
 /// Consultation des données.
 const READ: &[&str] = &[
     "list_users", "list_categories", "list_products", "get_product", "scan_code", "find_product_by_barcode",
-    "list_locations", "list_stock_movements", "stock_summary", "list_suppliers", "list_customers", "customer_statement",
+    "list_locations", "list_stock_movements", "stock_summary", "list_suppliers", "list_customers", "customer_statement", "customer_loyalty_history", "customer_by_card",
     "list_sales", "get_sale", "list_electronic_payments", "list_purchases", "get_purchase", "current_cash_session",
     "list_cash_movements", "cashier_stats", "list_cash_sessions", "plan_get", "plan_fixture_contents", "product_places", "plan_floor_fill", "plan_floor_status", "plan_fixture_alerts", "plan_sales_map", "plan_preview_layout",
     "sale_quote", "list_returns", "get_return", "get_credit_note", "list_credit_notes", "list_promotions", "cash_x_report", "list_z_reports",

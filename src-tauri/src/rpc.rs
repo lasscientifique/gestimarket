@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use crate::error::{invalid, AppError, AppResult};
 use crate::services::{
-    audit, auth, backup, cash, catalog, devices, locations, media, partners, plan, promotions, purchases, reports, returns, sales,
+    audit, auth, backup, cash, catalog, devices, locations, loyalty, media, partners, plan, promotions, purchases, reports, returns, sales,
     settings, stock, templates, users, zreport,
 };
 use crate::state::{Access, AppState, Origin};
@@ -597,7 +597,20 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(partners::archive_customer(c, u, arg(&a, "id")?)?)
         }),
         "record_customer_payment" => run(Any, &|c, u| out(partners::record_payment(c, u, arg(&a, "input")?)?)),
+        // Fonds rendus au client : PIN d'un gestionnaire ou de l'administrateur.
+        "refund_customer_funds" => run(Any, &|c, u| {
+            let approver = confirm_pin(state, c, u, &a, 2, "Fonds rendus au client")?;
+            out(partners::refund_funds(c, u, &approver, arg(&a, "input")?)?)
+        }),
         "customer_statement" => run(Any, &|c, _| out(partners::statement(c, arg(&a, "id")?)?)),
+        // ───── Programme client fidèle ─────
+        "customer_loyalty_history" => run(Any, &|c, _| out(loyalty::history(c, arg(&a, "id")?)?)),
+        "customer_card" => run(Any, &|c, _| out(loyalty::card_code(c, arg(&a, "id")?)?)),
+        "customer_by_card" => run(Any, &|c, _| match loyalty::customer_by_card(c, &arg::<String>(&a, "code")?)? {
+            Some(id) => out(Some(partners::get_customer(c, id)?)),
+            None => out(None::<partners::Customer>),
+        }),
+        "loyalty_convert_points" => run(Admin, &|c, u| out(loyalty::convert_points(c, u, arg(&a, "per_point")?)?)),
 
         // ───── Ventes ─────
         // Remise au-delà du seuil : le PIN envoyé avec la vente est vérifié ici (niveau « pin_discount_level »),

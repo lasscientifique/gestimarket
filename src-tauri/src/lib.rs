@@ -102,6 +102,10 @@ pub fn run() {
             if let Err(e) = services::backup::auto_backup(&conn, false) {
                 journal::error(format!("Sauvegarde automatique impossible : {e}"));
             }
+            // Programme client fidèle : bonus expirés (aucun achat depuis le délai choisi).
+            if let Err(e) = services::loyalty::expire_all(&conn) {
+                journal::error(format!("Expiration des bonus fidélité impossible : {e}"));
+            }
             // Licence de cette boutique (vérifiée hors ligne) et horloge mémorisée.
             license::init(&conn, &root, &dir, slot);
             app.manage(AppState::new(conn, db_path));
@@ -173,6 +177,9 @@ pub fn run() {
                 if let Some(state) = handle.try_state::<AppState>() {
                     if let Err(e) = services::backup::auto_backup(&state.conn(), false) {
                         journal::error(format!("Sauvegarde automatique impossible : {e}"));
+                    }
+                    if let Err(e) = services::loyalty::expire_all(&state.conn()) {
+                        journal::error(format!("Expiration des bonus fidélité impossible : {e}"));
                     }
                 }
             });

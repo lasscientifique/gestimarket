@@ -548,7 +548,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 11);
+    assert_eq!(count("PRAGMA user_version"), 12);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -567,7 +567,7 @@ fn searches_with_several_criteria() {
     let r = catalog::list_products(&conn, &catalog::ProductFilter { search: Some("savon".into()), ..Default::default() }).unwrap();
     assert_eq!(r.len(), 1);
     partners::save_customer(&conn, &admin, None, partners::CustomerInput { name: "Moussa".into(), phone: Some("76 12".into()), email: None, address: None, notes: None, credit_limit: None, wholesale: None }).unwrap();
-    assert_eq!(partners::list_customers(&conn, &partners::CustomerFilter { search: Some("76".into()), with_debt: None }).unwrap().len(), 1);
+    assert_eq!(partners::list_customers(&conn, &partners::CustomerFilter { search: Some("76".into()), with_debt: None, with_funds: None }).unwrap().len(), 1);
     assert_eq!(audit::list(&conn, &audit::AuditFilter { search: Some("Création de produit".into()), ..Default::default() }).unwrap().len(), 1);
     assert!(partners::list_suppliers(&conn, Some("x".into())).unwrap().is_empty());
 }
@@ -1057,7 +1057,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 11);
+    assert_eq!(count("PRAGMA user_version"), 12);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
@@ -1336,7 +1336,7 @@ fn migration_to_pin_only_staff() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 11);
+    assert_eq!(count("PRAGMA user_version"), 12);
     // Plus de mot de passe, sauf pour l'administrateur qui n'a pas encore de PIN.
     assert_eq!(count("SELECT COUNT(*) FROM users WHERE password_hash <> ''"), 1);
     assert_eq!(count("SELECT internet_access FROM users WHERE id = 1"), 1);
@@ -1725,4 +1725,260 @@ fn plan_refuses_overlaps_and_shows_stock_and_sales() {
     assert_eq!((s.revenue, s.margin, s.quantity, s.products), (7000, 1000, 2.0, 1));
     assert!(plan::sales_map(&conn, "2026-13-01", &today).is_err());
     assert!(plan::sales_map(&conn, &today, "2020-01-01").is_err());
+}
+
+// ───────────────────────────── 0.19 : compte client et programme client fidèle ─────────────────────────────
+
+fn client(conn: &Connection, admin: &SessionUser, name: &str, limit: i64) -> i64 {
+    partners::save_customer(
+        conn,
+        admin,
+        None,
+        partners::CustomerInput { name: name.into(), phone: None, email: None, address: None, notes: None, credit_limit: Some(limit), wholesale: None },
+    )
+    .unwrap()
+    .id
+}
+
+fn pay(method: &str, amount: i64) -> sales::PaymentInput {
+    sales::PaymentInput { method: method.into(), amount, reference: None, phone: None }
+}
+
+fn money_in(customer_id: i64, amount: i64) -> partners::CustomerPaymentInput {
+    partners::CustomerPaymentInput { customer_id, amount, method: "cash".into(), reference: None, phone: None, note: None }
+}
+
+#[test]
+fn customer_account_funds_first_then_debt_within_limit() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let p = product(&mut conn, &admin, "Riz", 400, 1000, 100.0);
+    cash::open(&conn, &caisse, 0).unwrap();
+    let awa = client(&conn, &admin, "Awa", 0);
+
+    // Versement de 5 000 sans dette : des fonds sur le compte (solde négatif), l'argent entre dans le tiroir.
+    let c = partners::record_payment(&mut conn, &caisse, money_in(awa, 5000)).unwrap();
+    assert_eq!(c.balance, -5000);
+    assert_eq!(cash::current_session(&conn, &caisse).unwrap().unwrap().expected_now, 5000);
+
+    // Achat de 3 000 payé avec le compte : les fonds baissent, rien n'entre dans le tiroir.
+    let mut input = sale_input(vec![(p, 3.0)], "credit", 0, Some(awa));
+    input.payments = vec![pay("account", 3000)];
+    let sale = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    assert_eq!((sale.account_amount, sale.credit_amount, sale.payment_method.as_str()), (3000, 0, "account"));
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().balance, -2000);
+    let session = cash::current_session(&conn, &caisse).unwrap().unwrap();
+    assert_eq!((session.account_sales, session.expected_now), (3000, 5000));
+
+    // Sans plafond de crédit, le reste non payé ne prend que les fonds : 3 000 pour 2 000 disponibles, refusé.
+    let err = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 3.0)], "credit", 0, Some(awa))).unwrap_err();
+    assert!(err.to_string().contains("Fonds insuffisants"), "{err}");
+    // 2 000 en espèces + 1 000 pris sur le compte.
+    let sale = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 3.0)], "cash", 2000, Some(awa))).unwrap();
+    assert_eq!((sale.account_amount, sale.credit_amount), (1000, 0));
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().balance, -1000);
+
+    // Plafond de 2 000 : d'abord les fonds (1 000), puis 2 000 de dette ; au-delà du plafond, refusé.
+    partners::save_customer(
+        &conn,
+        &admin,
+        Some(awa),
+        partners::CustomerInput { name: "Awa".into(), phone: None, email: None, address: None, notes: None, credit_limit: Some(2000), wholesale: None },
+    )
+    .unwrap();
+    let sale = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 3.0)], "credit", 0, Some(awa))).unwrap();
+    assert_eq!((sale.account_amount, sale.credit_amount), (1000, 2000));
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().balance, 2000);
+    assert!(sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 1.0)], "credit", 0, Some(awa))).is_err());
+
+    // Annulation : le compte revient comme avant la vente (1 000 de fonds).
+    sales::cancel_sale(&mut conn, &admin, sale.id, "Erreur de saisie").unwrap();
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().balance, -1000);
+
+    // Un compte ou un bonus ne s'utilise pas sans client.
+    let mut input = sale_input(vec![(p, 1.0)], "credit", 0, None);
+    input.payments = vec![pay("account", 1000)];
+    assert!(sales::create_sale(&mut conn, &caisse, input).is_err());
+
+    // Relevé : versement, achats payés avec le compte.
+    let st = partners::statement(&conn, awa).unwrap();
+    assert!(st.iter().any(|l| l.kind == "payment" && l.total == 5000 && l.debt_change == -5000));
+    assert!(st.iter().any(|l| l.kind == "sale" && l.debt_change == 3000));
+
+    // Un client qui a encore des fonds ne s'archive pas.
+    assert!(partners::archive_customer(&conn, &admin, awa).unwrap_err().to_string().contains("fonds"));
+}
+
+#[test]
+fn customer_payment_repays_debt_first_and_funds_can_be_refunded() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let p = product(&mut conn, &admin, "Lait", 400, 1000, 50.0);
+    cash::open(&conn, &caisse, 0).unwrap();
+    let moussa = client(&conn, &admin, "Moussa", 5000);
+    sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 2.0)], "credit", 0, Some(moussa))).unwrap();
+    assert_eq!(partners::get_customer(&conn, moussa).unwrap().balance, 2000);
+
+    // Versement de 3 000 : 2 000 remboursent la dette, 1 000 deviennent des fonds.
+    let c = partners::record_payment(&mut conn, &caisse, money_in(moussa, 3000)).unwrap();
+    assert_eq!(c.balance, -1000);
+
+    // Fonds rendus : jamais plus que les fonds, espèces sorties du tiroir.
+    assert!(partners::refund_funds(&mut conn, &caisse, &admin, money_in(moussa, 1500)).is_err());
+    let c = partners::refund_funds(&mut conn, &caisse, &admin, money_in(moussa, 600)).unwrap();
+    assert_eq!(c.balance, -400);
+    assert_eq!(cash::current_session(&conn, &caisse).unwrap().unwrap().expected_now, 3000 - 600);
+    let st = partners::statement(&conn, moussa).unwrap();
+    assert!(st.iter().any(|l| l.kind == "refund" && l.total == 600 && l.debt_change == 600));
+
+    // Retour d'une vente faite sur le compte : il revient sur le compte (pas en espèces).
+    let sale = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 1.0)], "credit", 0, Some(moussa))).unwrap();
+    assert_eq!((sale.account_amount, sale.credit_amount), (400, 600));
+    let item = sale.items[0].id;
+    let back = |method: &str| returns::ReturnInput {
+        sale_id: sale.id,
+        items: vec![returns::ReturnItemInput { sale_item_id: item, quantity: 1.0, restock: true }],
+        refund_method: method.into(),
+        refund_reference: None,
+        reason: "Erreur".into(),
+    };
+    assert!(returns::create_return(&mut conn, &caisse, &admin, back("cash")).is_err());
+    returns::create_return(&mut conn, &caisse, &admin, back("debt")).unwrap();
+    assert_eq!(partners::get_customer(&conn, moussa).unwrap().balance, -400);
+}
+
+#[test]
+fn loyalty_program_settings_stars_and_bonus_rates() {
+    assert!(loyalty::Program::parse("1", "1", "0.5", "3,10,25,50,100", "500", "12").is_err());
+    assert!(loyalty::Program::parse("1", "0.5", "1", "3,10,10,50,100", "500", "12").is_err());
+    assert!(loyalty::Program::parse("1", "0.5", "1", "3,10,25,50", "500", "12").is_err());
+    assert!(loyalty::Program::parse("1", "0.5", "1", "3,10,25,50,100", "500", "200").is_err());
+    let p = loyalty::Program::parse("1", "0,5", "1", "3,10,25,50,100", "500", "12").unwrap();
+    assert_eq!((p.stars_for(2), p.stars_for(3), p.stars_for(25), p.stars_for(500)), (0, 1, 3, 5));
+    assert_eq!((p.bonus_for(0, 10_000), p.bonus_for(5, 10_000), p.bonus_for(1, 10_000)), (50, 100, 60));
+    assert_eq!((p.bonus_for(0, 199), p.bonus_for(0, 0)), (0, 0));
+
+    // Réglages enregistrés : refusés s'ils sont incohérents.
+    let (mut conn, admin) = setup();
+    let mut values = std::collections::BTreeMap::new();
+    values.insert("loyalty_rate_min".to_string(), "2".to_string());
+    values.insert("loyalty_rate_max".to_string(), "1".to_string());
+    assert!(settings::update(&mut conn, &admin, values).is_err());
+}
+
+#[test]
+fn loyalty_bonus_earned_spent_cancelled_and_returned() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let p = product(&mut conn, &admin, "Riz", 400, 1000, 1000.0);
+    cash::open(&conn, &caisse, 0).unwrap();
+    let awa = client(&conn, &admin, "Awa", 0);
+
+    // Programme désactivé : pas de bonus.
+    let s0 = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 1.0)], "cash", 1000, Some(awa))).unwrap();
+    assert_eq!(s0.loyalty_earned, 0);
+    sales::cancel_sale(&mut conn, &admin, s0.id, "Essai").unwrap();
+
+    let mut values = std::collections::BTreeMap::new();
+    values.insert("loyalty_enabled".to_string(), "1".to_string());
+    values.insert("loyalty_star_steps".to_string(), "1,2,3,4,5".to_string());
+    settings::update(&mut conn, &admin, values).unwrap();
+
+    // 0 étoile : 0,5 % de 10 000 = 50 ; le client passe à 1 étoile.
+    let s1 = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 10.0)], "cash", 10_000, Some(awa))).unwrap();
+    assert_eq!(s1.loyalty_earned, 50);
+    let c = partners::get_customer(&conn, awa).unwrap();
+    assert_eq!((c.stars, c.loyalty_bonus), (1, 50));
+    // 1 étoile : 0,6 % de 10 000 = 60.
+    let s2 = sales::create_sale(&mut conn, &caisse, sale_input(vec![(p, 10.0)], "cash", 10_000, Some(awa))).unwrap();
+    assert_eq!(s2.loyalty_earned, 60);
+    assert_eq!((s2.customer_bonus, s2.customer_stars), (Some(110), Some(2)));
+
+    // 100 de bonus + 900 en espèces : bonus gagné sur 900 seulement (2 étoiles : 0,7 % → 6).
+    let mut input = sale_input(vec![(p, 1.0)], "cash", 900, Some(awa));
+    input.payments.push(pay("loyalty", 100));
+    let s3 = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    assert_eq!((s3.loyalty_earned, s3.payment_method.as_str()), (6, "mixed"));
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().loyalty_bonus, 110 - 100 + 6);
+    assert_eq!(cash::current_session(&conn, &caisse).unwrap().unwrap().loyalty_sales, 100);
+    // Plus de bonus que disponible : refusé.
+    let mut input = sale_input(vec![(p, 1.0)], "cash", 0, Some(awa));
+    input.payments = vec![pay("loyalty", 1000)];
+    assert!(sales::create_sale(&mut conn, &caisse, input).unwrap_err().to_string().contains("Bonus"));
+
+    // Annulation : bonus dépensé rendu, bonus gagné retiré.
+    sales::cancel_sale(&mut conn, &admin, s3.id, "Erreur").unwrap();
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().loyalty_bonus, 110);
+    let h = loyalty::history(&conn, awa).unwrap();
+    assert!(h.iter().any(|m| m.kind == "spend" && m.amount == -100));
+    assert!(h.iter().any(|m| m.kind == "earn" && m.amount == 60 && m.sale_id == Some(s2.id)));
+
+    // Retour de la moitié de s2 en espèces : la moitié du bonus gagné (30) est retirée.
+    let item = s2.items[0].id;
+    let ret = returns::create_return(
+        &mut conn,
+        &caisse,
+        &admin,
+        returns::ReturnInput {
+            sale_id: s2.id,
+            items: vec![returns::ReturnItemInput { sale_item_id: item, quantity: 5.0, restock: true }],
+            refund_method: "cash".into(),
+            refund_reference: None,
+            reason: "Abîmé".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!((ret.total, ret.loyalty_refund), (5000, 0));
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().loyalty_bonus, 80);
+
+    // Vente payée entièrement avec le bonus puis rendue : le bonus revient, aucune espèce ne sort.
+    let mut input = sale_input(vec![(p, 0.05)], "cash", 0, Some(awa));
+    input.payments = vec![pay("loyalty", 50)];
+    let s4 = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().loyalty_bonus, 30);
+    let before = cash::current_session(&conn, &caisse).unwrap().unwrap().expected_now;
+    let ret = returns::create_return(
+        &mut conn,
+        &caisse,
+        &admin,
+        returns::ReturnInput {
+            sale_id: s4.id,
+            items: vec![returns::ReturnItemInput { sale_item_id: s4.items[0].id, quantity: 0.05, restock: true }],
+            refund_method: "cash".into(),
+            refund_reference: None,
+            reason: "Erreur".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(ret.loyalty_refund, 50);
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().loyalty_bonus, 80);
+    assert_eq!(cash::current_session(&conn, &caisse).unwrap().unwrap().expected_now, before);
+}
+
+#[test]
+fn loyalty_points_conversion_expiry_and_card() {
+    let (mut conn, admin) = setup();
+    let awa = client(&conn, &admin, "Awa", 0);
+    conn.execute("UPDATE customers SET loyalty_points = 12 WHERE id = ?1", [awa]).unwrap();
+    assert_eq!(loyalty::convert_points(&mut conn, &admin, 25).unwrap(), 1);
+    let c = partners::get_customer(&conn, awa).unwrap();
+    assert_eq!((c.loyalty_points, c.loyalty_bonus), (0, 300));
+    assert!(loyalty::convert_points(&mut conn, &admin, 0).is_err());
+
+    // Programme désactivé : rien n'expire.
+    assert_eq!(loyalty::expire_all(&conn).unwrap(), 0);
+    // Programme activé, dernier bonus gagné il y a 13 mois : le bonus expire (12 mois par défaut).
+    settings::set(&conn, "loyalty_enabled", "1").unwrap();
+    assert_eq!(loyalty::expire_all(&conn).unwrap(), 0);
+    conn.execute("UPDATE loyalty_moves SET created_at = datetime('now', 'localtime', '-13 months')", []).unwrap();
+    assert_eq!(loyalty::expire_all(&conn).unwrap(), 1);
+    assert_eq!(partners::get_customer(&conn, awa).unwrap().loyalty_bonus, 0);
+    assert!(loyalty::history(&conn, awa).unwrap().iter().any(|m| m.kind == "expire" && m.amount == -300));
+
+    // Carte de fidélité : un code par client, retrouvé au scan (majuscules ou non).
+    let code = loyalty::card_code(&conn, awa).unwrap();
+    assert!(code.starts_with("CL") && code.len() == 13, "{code}");
+    assert_eq!(loyalty::card_code(&conn, awa).unwrap(), code);
+    assert_eq!(loyalty::customer_by_card(&conn, &code.to_lowercase()).unwrap(), Some(awa));
+    assert_eq!(loyalty::customer_by_card(&conn, "CL999999-XXXX").unwrap(), None);
 }

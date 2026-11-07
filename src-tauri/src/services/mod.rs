@@ -5,6 +5,7 @@ pub mod cash;
 pub mod catalog;
 pub mod devices;
 pub mod locations;
+pub mod loyalty;
 pub mod media;
 pub mod partners;
 pub mod plan;

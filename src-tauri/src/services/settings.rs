@@ -19,7 +19,18 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("receipt_width", "80"),
     ("allow_negative_stock", "0"),
     ("require_cash_session", "1"),
+    // Anciens points de fidélité (1 point par tranche) : remplacés par le programme client fidèle.
     ("loyalty_step", "0"),
+    // Programme client fidèle (formules PRO et BUSINESS) : étoiles de 0 à 5 selon le nombre d'achats
+    // des 12 derniers mois (paliers), bonus de « loyalty_rate_min » % (0 étoile) à « loyalty_rate_max » %
+    // (5 étoiles) du montant payé, utilisable en caisse. Un achat sous « loyalty_min_purchase » ne compte
+    // pas pour les étoiles. Le bonus expire « loyalty_bonus_months » mois après le dernier achat (0 : jamais).
+    ("loyalty_enabled", "0"),
+    ("loyalty_rate_min", "0.5"),
+    ("loyalty_rate_max", "1"),
+    ("loyalty_star_steps", "3,10,25,50,100"),
+    ("loyalty_min_purchase", "500"),
+    ("loyalty_bonus_months", "12"),
     ("default_tax_rate", "0"),
     ("shop_logo_id", ""),
     // International : langue des tickets et du catalogue, pays (formats), devise (code ISO 4217)
@@ -163,6 +174,21 @@ pub fn update(
         if key == "shop_name" && value.trim().is_empty() {
             return invalid("Le nom du commerce est obligatoire.");
         }
+        if key == "loyalty_enabled" && value.trim() == "1" && current.get(key) != Some(value) && !crate::license::loyalty_allowed() {
+            return invalid("Le programme client fidèle est inclus à partir de la formule PRO : voir « Abonnement & licence ».");
+        }
+    }
+    // Programme client fidèle : taux, paliers d'étoiles, achat minimum, durée du bonus.
+    let pick = |k: &str| values.get(k).cloned().or_else(|| current.get(k).cloned()).unwrap_or_default();
+    if values.keys().any(|k| k.starts_with("loyalty_")) {
+        crate::services::loyalty::Program::parse(
+            &pick("loyalty_enabled"),
+            &pick("loyalty_rate_min"),
+            &pick("loyalty_rate_max"),
+            &pick("loyalty_star_steps"),
+            &pick("loyalty_min_purchase"),
+            &pick("loyalty_bonus_months"),
+        )?;
     }
 
     let tx = conn.transaction()?;

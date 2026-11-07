@@ -34,6 +34,9 @@ pub struct CashSession {
     pub cash_out: i64,
     /// Ventes payées avec un avoir.
     pub credit_note_sales: i64,
+    /// Ventes payées avec les fonds du compte client, et avec le bonus fidélité.
+    pub account_sales: i64,
+    pub loyalty_sales: i64,
     /// Retours de la session : nombre, montant rendu, dont espèces sorties du tiroir.
     pub returns_count: i64,
     pub returns_total: i64,
@@ -74,6 +77,8 @@ fn session_from_row(r: &Row) -> rusqlite::Result<CashSession> {
         cash_in: 0,
         cash_out: 0,
         credit_note_sales: 0,
+        account_sales: 0,
+        loyalty_sales: 0,
         returns_count: 0,
         returns_total: 0,
         refunds_cash: 0,
@@ -114,14 +119,17 @@ fn fill_summary(conn: &Connection, s: &mut CashSession) -> AppResult<()> {
         [s.id],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    s.credit_note_sales = conn.query_row(
-        "SELECT COALESCE(SUM(sp.amount), 0) FROM sale_payments sp JOIN sales sa ON sa.id = sp.sale_id
-         WHERE sa.session_id = ?1 AND sa.status = 'completed' AND sp.method = 'credit_note'",
+    (s.credit_note_sales, s.account_sales, s.loyalty_sales) = conn.query_row(
+        "SELECT COALESCE(SUM(CASE WHEN sp.method = 'credit_note' THEN sp.amount END), 0),
+                COALESCE(SUM(CASE WHEN sp.method = 'account' THEN sp.amount END), 0),
+                COALESCE(SUM(CASE WHEN sp.method = 'loyalty' THEN sp.amount END), 0)
+         FROM sale_payments sp JOIN sales sa ON sa.id = sp.sale_id
+         WHERE sa.session_id = ?1 AND sa.status = 'completed'",
         [s.id],
-        |r| r.get(0),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?;
     (s.returns_count, s.returns_total, s.refunds_cash) = conn.query_row(
-        "SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(SUM(CASE WHEN refund_method = 'cash' THEN total END), 0)
+        "SELECT COUNT(*), COALESCE(SUM(total), 0), COALESCE(SUM(CASE WHEN refund_method = 'cash' THEN total - loyalty_refund END), 0)
          FROM returns WHERE session_id = ?1",
         [s.id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
