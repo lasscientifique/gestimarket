@@ -114,6 +114,8 @@ jobs:
           DISPLAY=:99 import -window root e2e/out/00-fenetre-serveur-xvfb.png || true
           montage e2e/out/0*.png -tile 4x -geometry 480x+8+8 -background '#eeeeee' e2e/out/apercu.png || true
           cp e2e-app.log e2e/out/ || true
+          # Cargo.lock complété par la compilation (nouveaux modules) : publié pour être enregistré dans le dépôt.
+          git diff --quiet -- src-tauri/Cargo.lock || cp src-tauri/Cargo.lock e2e/out/Cargo.lock
       - name: Pile d'appels si le poste serveur s'est arrêté
         if: always()
         run: |
