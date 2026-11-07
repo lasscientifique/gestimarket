@@ -123,7 +123,9 @@ const PAYMENT_SOURCE: Record<string, string> = {
   other: "Autre",
   mixed: "Paiement mixte",
   credit_note: "Avoir",
-  debt: "Déduit de la dette du client",
+  account: "Compte client",
+  loyalty: "Bonus fidélité",
+  debt: "Sur le compte du client",
 };
 /** Libellés choisis par la boutique (opérateurs de mobile money…) : affichés tels quels. */
 let customPayments: Record<string, string> = {};
@@ -148,6 +150,26 @@ export function paymentLabel(m: string | null | undefined): string {
 /** Codes des moyens de paiement connus, opérateurs de la boutique compris (listes de filtres). */
 export function paymentMethods(): string[] {
   return [...Object.keys(PAYMENT_SOURCE), ...Object.keys(customPayments).filter((k) => k.startsWith("mm:"))];
+}
+
+/** Ticket : compte et fidélité du client, sous les paiements (solde, bonus gagné et disponible, étoiles).
+ *  `starChars` : « ★★★☆☆ » (ticket HTML) ; sinon en toutes lettres (imprimantes thermiques). */
+export function customerLines(
+  sale: { customer_id: number | null; customer_balance: number | null; customer_bonus: number | null; customer_stars: number | null; loyalty_earned: number },
+  starChars = true,
+): [string, string][] {
+  if (!sale.customer_id) return [];
+  const lines: [string, string][] = [];
+  const b = sale.customer_balance ?? 0;
+  if (b > 0) lines.push([ts("Dette du client"), money(b)]);
+  else if (b < 0) lines.push([ts("Fonds du client"), money(-b)]);
+  if (sale.loyalty_earned > 0) lines.push([ts("Bonus gagné"), money(sale.loyalty_earned)]);
+  if (sale.customer_bonus != null && (sale.loyalty_earned > 0 || sale.customer_bonus > 0)) lines.push([ts("Bonus disponible"), money(sale.customer_bonus)]);
+  if (sale.customer_stars != null) {
+    const n = Math.max(0, Math.min(5, sale.customer_stars));
+    lines.push([ts("Client fidèle"), starChars ? "★".repeat(n) + "☆".repeat(5 - n) : ts("{0} étoile(s) sur 5", [n])]);
+  }
+  return lines;
 }
 
 /** Libellé imprimé sur le ticket (langue de la boutique). */

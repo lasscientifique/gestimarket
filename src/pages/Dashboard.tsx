@@ -97,6 +97,9 @@ export default function DashboardPage() {
           hint={tl("{0} en rupture · {1} sous le seuil", [data.stock.out_of_stock_count, data.stock.low_stock_count])}
         />
         <StatCard label={tl("Créances clients")} value={money(data.customers_debt)} icon={<HandCoins size={18} />} tone={data.customers_debt > 0 ? "warning" : "default"} hint={<Link to="/customers">{tl("Voir les clients")}</Link>} />
+        {data.customers_funds > 0 && (
+          <StatCard label={tl("Fonds des clients")} value={money(data.customers_funds)} icon={<Wallet size={18} />} hint={tl("Argent déposé par les clients, à dépenser en boutique")} />
+        )}
       </div>
 
       <div className="grid-2-1">

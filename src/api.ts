@@ -44,6 +44,7 @@ import type {
   SessionUser,
   Settings,
   StatementLine,
+  LoyaltyMove,
   StockMovement,
   StockSummary,
   StoreInput,
@@ -247,7 +248,7 @@ export const api = {
   archiveSupplier: (id: number, pin: string) => call<void>("archive_supplier", { id, pin }),
 
   // Clients
-  listCustomers: (filter: { search?: string; with_debt?: boolean } = {}) =>
+  listCustomers: (filter: { search?: string; with_debt?: boolean; with_funds?: boolean } = {}) =>
     call<Customer[]>("list_customers", { filter }),
   saveCustomer: (id: number | null, input: Partial<Customer> & { name: string }) =>
     call<Customer>("save_customer", { id, input }),
@@ -255,6 +256,15 @@ export const api = {
   recordCustomerPayment: (input: { customer_id: number; amount: number; method: string; reference: string | null; phone: string | null; note: string | null }) =>
     call<Customer>("record_customer_payment", { input }),
   customerStatement: (id: number) => call<StatementLine[]>("customer_statement", { id }),
+  /** Fonds rendus au client : PIN d'un gestionnaire ou de l'administrateur. */
+  refundCustomerFunds: (
+    input: { customer_id: number; amount: number; method: string; reference: string | null; phone: string | null; note: string | null },
+    pin: string,
+  ) => call<Customer>("refund_customer_funds", { input, pin }),
+  customerLoyaltyHistory: (id: number) => call<LoyaltyMove[]>("customer_loyalty_history", { id }),
+  customerCard: (id: number) => call<string>("customer_card", { id }),
+  customerByCard: (code: string) => call<Customer | null>("customer_by_card", { code }),
+  loyaltyConvertPoints: (perPoint: number) => call<number>("loyalty_convert_points", { per_point: perPoint }),
 
   // Ventes
   createSale: (input: SaleInput) => call<Sale>("create_sale", { input }),

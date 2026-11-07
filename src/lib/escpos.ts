@@ -1,5 +1,5 @@
 import type { Sale, Settings } from "../types";
-import { dateTime, money, paymentLabelShop, qty } from "./format";
+import { customerLines, dateTime, money, paymentLabelShop, qty } from "./format";
 import { ts } from "./i18n";
 
 /**
@@ -165,6 +165,8 @@ export function receiptEscpos(sale: Sale, settings: Settings, opts: { drawer?: b
   }
   if (sale.change_due > 0) t.bold(true).row(ts("Monnaie rendue"), money(sale.change_due)).bold(false);
   if (sale.credit_amount > 0) t.bold(true).row(ts("Reste à crédit"), money(sale.credit_amount)).bold(false);
+  // Compte et fidélité du client (étoiles en toutes lettres : les imprimantes thermiques n'ont pas « ★ »).
+  for (const [label, value] of customerLines(sale, false)) t.row(label, value);
   const saved = sale.items.reduce((s, i) => s + (i.regular_price && i.price_kind !== "retail" ? Math.round((i.regular_price - i.unit_price) * i.quantity) : 0), 0);
   if (saved > 0) t.sep().bold(true).row(ts("Vous économisez"), money(saved)).bold(false);
   t.sep().align("center");

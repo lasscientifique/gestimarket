@@ -135,6 +135,12 @@ textarea { resize: vertical; }
 .ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
+/* Étoiles du client fidèle (0 à 5). */
+.stars { display: inline-flex; gap: 1px; vertical-align: -2px; color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.stars .on { color: #f59e0b; }
+.loyalty-card-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.loyalty-card-preview img { border-radius: 8px; background: #fff; padding: 6px; }
+.tabbar.small-tabs { margin: 4px 0 10px; }
 .spacer { flex: 1; }
 .row-end { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
 .row-start { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -678,6 +684,14 @@ button.pick-item:hover { border-color: var(--accent); background: var(--accent-t
 .r-name { font-weight: 600; }
 .r-strong { font-weight: 700; font-size: 13px; }
 .r-small { font-size: 10px; }
+/* Carte de fidélité (QR code) : format carte bancaire, 86 × 54 mm. */
+.loyalty-card { width: 82mm; min-height: 50mm; border: 0.3mm solid #000; border-radius: 3mm; padding: 3mm; display: flex; flex-direction: column; align-items: center; gap: 1mm; font-family: Arial, sans-serif; color: #000; text-align: center; }
+.loyalty-card img { width: 26mm; height: 26mm; }
+.lc-shop { font-weight: 700; font-size: 13px; }
+.lc-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+.lc-name { font-weight: 700; font-size: 12px; }
+.lc-stars { font-size: 13px; letter-spacing: 1px; }
+.lc-code { font-family: ui-monospace, Consolas, monospace; font-size: 10px; }
 .report-print { font-family: "Segoe UI", Arial, sans-serif; font-size: 11px; color: #000; }
 .report-print h1 { font-size: 18px; margin-bottom: 4px; }
 .report-print h3 { font-size: 13px; margin: 16px 0 6px; }

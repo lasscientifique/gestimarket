@@ -170,7 +170,7 @@ export function SessionSummary({ session }: { session: CashSession }) {
   const rows: [string, number, boolean?][] = [
     [tl("Fond de caisse"), session.opening_amount],
     [tl("Ventes en espèces"), session.cash_sales],
-    [tl("Règlements clients (espèces)"), session.customer_payments_cash],
+    [tl("Versements clients (espèces)"), session.customer_payments_cash],
     [tl("Entrées d'espèces"), session.cash_in],
     [tl("Sorties d'espèces"), -session.cash_out],
     ...(session.refunds_cash ? [[tl("Retours remboursés en espèces"), -session.refunds_cash] as [string, number]] : []),
@@ -196,12 +196,14 @@ export function SessionSummary({ session }: { session: CashSession }) {
         <div className="kv"><span>{tl("Autre")}</span><span>{money(session.other_sales)}</span></div>
         <div className="kv"><span>{tl("À crédit")}</span><span>{money(session.credit_sales)}</span></div>
         {session.credit_note_sales > 0 && <div className="kv"><span>{tl("Payé par avoir")}</span><span>{money(session.credit_note_sales)}</span></div>}
+        {session.account_sales > 0 && <div className="kv"><span>{tl("Payé avec les fonds des clients")}</span><span>{money(session.account_sales)}</span></div>}
+        {session.loyalty_sales > 0 && <div className="kv"><span>{tl("Payé avec le bonus fidélité")}</span><span>{money(session.loyalty_sales)}</span></div>}
         <div className="kv kv-strong"><span>{tl("Total ventes")}</span><span>{money(session.sales_total)}</span></div>
         {session.returns_count > 0 && (
           <div className="kv"><span>{tl("Retours ({0})", [session.returns_count])}</span><span>-{money(session.returns_total)}</span></div>
         )}
         {session.customer_payments_electronic > 0 && (
-          <div className="kv muted"><span>{tl("Règlements clients (électroniques)")}</span><span>{money(session.customer_payments_electronic)}</span></div>
+          <div className="kv muted"><span>{tl("Versements clients (électroniques)")}</span><span>{money(session.customer_payments_electronic)}</span></div>
         )}
       </div>
     </div>

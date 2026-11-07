@@ -1,6 +1,6 @@
 import type { CreditNote, Sale, SaleReturn, Settings, ZData } from "../types";
 import { barcodeSvg } from "../components/LabelsModal";
-import { dateTime, money, paymentLabelShop, qty } from "./format";
+import { customerLines, dateTime, money, paymentLabelShop, qty } from "./format";
 import { inAppWebView, notify } from "./device";
 import { tl, ts } from "./i18n";
 import { mediaUrl } from "./media";
@@ -66,6 +66,9 @@ export function receiptHtml(sale: Sale, settings: Settings): string {
       .join("")}
     ${sale.change_due > 0 ? row(ts("Monnaie rendue"), money(sale.change_due), true) : ""}
     ${sale.credit_amount > 0 ? row(ts("Reste à crédit"), money(sale.credit_amount), true) : ""}
+    ${customerLines(sale)
+      .map(([label, value]) => row(label, esc(value)))
+      .join("")}
     ${saved > 0 ? `<div class="r-sep"></div>${row(ts("Vous économisez"), money(saved), true)}` : ""}
     <div class="r-sep"></div>
     <div class="r-center">${esc(settings.receipt_footer)}</div>

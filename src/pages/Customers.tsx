@@ -1,30 +1,41 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Search, Pencil, Archive, HandCoins, FileText, Phone } from "lucide-react";
+import { Plus, Search, Pencil, Archive, HandCoins, FileText, Phone, Undo2, QrCode } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { HelpTip } from "../components/Help";
 import { Badge, Empty, Field, Modal, PageHeader } from "../components/ui";
 import { SaleDetailModal } from "../components/SaleDetail";
-import { currencySymbol, dateOnly, dateTime, minorToInput, money, operatorMethods, paymentLabel, toMinor } from "../lib/format";
+import { AccountBalance, DepositModal, LoyaltyCardModal, LoyaltyHistory, RefundFundsModal, Stars, balanceText, useLoyaltyActive } from "../components/CustomerAccount";
+import { currencySymbol, dateOnly, dateTime, minorToInput, money, paymentLabel, toMinor } from "../lib/format";
 import type { Customer, Sale, StatementLine } from "../types";
 import { tl } from "../lib/i18n";
 
+type View = "all" | "debt" | "funds";
+
 export default function CustomersPage() {
   const { toast, confirm, isAdmin, askPin } = useApp();
+  const loyalty = useLoyaltyActive();
   const [list, setList] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
-  const [withDebt, setWithDebt] = useState(false);
+  const [view, setView] = useState<View>("all");
   const [editing, setEditing] = useState<Customer | "new" | null>(null);
   const [paying, setPaying] = useState<Customer | null>(null);
+  const [refunding, setRefunding] = useState<Customer | null>(null);
+  const [card, setCard] = useState<Customer | null>(null);
   const [statement, setStatement] = useState<Customer | null>(null);
 
-  const load = useCallback(() => api.listCustomers({ search, with_debt: withDebt }).then(setList).catch(toast.error), [search, withDebt, toast]);
+  const load = useCallback(
+    () => api.listCustomers({ search, with_debt: view === "debt", with_funds: view === "funds" }).then(setList).catch(toast.error),
+    [search, view, toast],
+  );
   useEffect(() => {
     const t = setTimeout(load, 150);
     return () => clearTimeout(t);
   }, [load]);
 
   const totalDebt = list.reduce((s, c) => s + Math.max(0, c.balance), 0);
+  const totalFunds = list.reduce((s, c) => s + Math.max(0, -c.balance), 0);
+  const showPoints = !loyalty && list.some((c) => c.loyalty_points > 0);
 
   const archive = async (c: Customer) => {
     if (!(await confirm({ title: tl("Archiver le client"), message: tl("Archiver « {0} » ?", [c.name]), danger: true, confirmLabel: tl("Archiver") }))) return;
@@ -43,19 +54,40 @@ export default function CustomersPage() {
       <PageHeader
         help="customers"
         title={tl("Clients")}
-        subtitle={<>{list.length}  {tl("client(s) · Créances :")} <strong>{money(totalDebt)}</strong></>}
+        subtitle={
+          <>
+            {list.length}  {tl("client(s) · Créances :")} <strong>{money(totalDebt)}</strong>
+            {totalFunds > 0 && <>  {tl("· Fonds des clients :")} <strong>{money(totalFunds)}</strong></>}
+          </>
+        }
         actions={<button className="btn btn-primary" onClick={() => setEditing("new")}><Plus size={16} />  {tl("Nouveau client")}</button>}
       />
       <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tl("Nom, téléphone ou e-mail…")} /></div>
-        <label className="check"><input type="checkbox" checked={withDebt} onChange={(e) => setWithDebt(e.target.checked)} />  {tl("Uniquement les clients endettés")}</label>
+        <select value={view} onChange={(e) => setView(e.target.value as View)} aria-label={tl("Clients affichés")}>
+          <option value="all">{tl("Tous les clients")}</option>
+          <option value="debt">{tl("Avec une dette")}</option>
+          <option value="funds">{tl("Avec des fonds")}</option>
+        </select>
       </div>
       <div className="card no-pad">
         {list.length === 0 ? (
           <Empty title={tl("Aucun client")} />
         ) : (
           <table className="table">
-            <thead><tr><th>{tl("Client")}</th><th>{tl("Téléphone")}</th><th className="num">{tl("Achats cumulés")}</th><th>{tl("Dernier achat")}</th><th className="num">{tl("Points")}</th><th className="num">{tl("Plafond crédit")}</th><th className="num">{tl("Dette")}</th><th></th></tr></thead>
+            <thead>
+              <tr>
+                <th>{tl("Client")}</th>
+                <th>{tl("Téléphone")}</th>
+                <th className="num">{tl("Achats cumulés")}</th>
+                <th>{tl("Dernier achat")}</th>
+                {loyalty && <th>{tl("Fidélité")}</th>}
+                {showPoints && <th className="num">{tl("Points")}</th>}
+                <th className="num">{tl("Plafond crédit")}</th>
+                <th className="num">{tl("Compte")} <HelpTip k="customer_account" /></th>
+                <th></th>
+              </tr>
+            </thead>
             <tbody>
               {list.map((c) => (
                 <tr key={c.id} onDoubleClick={() => setStatement(c)}>
@@ -63,11 +95,19 @@ export default function CustomersPage() {
                   <td>{c.phone ? <><Phone size={12} /> {c.phone}</> : <span className="muted">—</span>}</td>
                   <td className="num">{money(c.purchases_total)}</td>
                   <td>{dateOnly(c.last_purchase_at)}</td>
-                  <td className="num">{c.loyalty_points}</td>
-                  <td className="num">{c.credit_limit > 0 ? money(c.credit_limit) : <span className="muted">aucun</span>}</td>
-                  <td className="num">{c.balance > 0 ? <Badge tone="warning">{money(c.balance)}</Badge> : c.balance < 0 ? <Badge tone="info">{tl("Avoir")} {money(-c.balance)}</Badge> : <span className="muted">—</span>}</td>
+                  {loyalty && (
+                    <td className="nowrap">
+                      <Stars value={c.stars} />
+                      {c.loyalty_bonus > 0 && <div className="small">{tl("Bonus")} <strong>{money(c.loyalty_bonus)}</strong></div>}
+                    </td>
+                  )}
+                  {showPoints && <td className="num">{c.loyalty_points}</td>}
+                  <td className="num">{c.credit_limit > 0 ? money(c.credit_limit) : <span className="muted">{tl("aucun")}</span>}</td>
+                  <td className="num"><AccountBalance balance={c.balance} /></td>
                   <td className="actions">
-                    {c.balance > 0 && <button className="icon-btn" title={tl("Encaisser un règlement")} onClick={() => setPaying(c)}><HandCoins size={16} /></button>}
+                    <button className="icon-btn" title={c.balance > 0 ? tl("Encaisser un versement (dette)") : tl("Ajouter des fonds")} onClick={() => setPaying(c)}><HandCoins size={16} /></button>
+                    {c.balance < 0 && <button className="icon-btn" title={tl("Rendre des fonds")} onClick={() => setRefunding(c)}><Undo2 size={16} /></button>}
+                    {loyalty && <button className="icon-btn" title={tl("Carte de fidélité")} onClick={() => setCard(c)}><QrCode size={16} /></button>}
                     <button className="icon-btn" title={tl("Relevé de compte")} onClick={() => setStatement(c)}><FileText size={16} /></button>
                     <button className="icon-btn" title={tl("Modifier")} onClick={() => setEditing(c)}><Pencil size={16} /></button>
                     {isAdmin && <button className="icon-btn danger" title={tl("Archiver")} onClick={() => archive(c)}><Archive size={16} /></button>}
@@ -79,8 +119,10 @@ export default function CustomersPage() {
         )}
       </div>
       {editing && <CustomerForm customer={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
-      {paying && <PaymentForm customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load(); }} />}
-      {statement && <StatementModal customer={statement} onClose={() => setStatement(null)} />}
+      {paying && <DepositModal customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load(); }} />}
+      {refunding && <RefundFundsModal customer={refunding} onClose={() => setRefunding(null)} onSaved={() => { setRefunding(null); load(); }} />}
+      {card && <LoyaltyCardModal customer={card} onClose={() => { setCard(null); load(); }} />}
+      {statement && <StatementModal customer={statement} loyalty={loyalty} onClose={() => setStatement(null)} />}
     </div>
   );
 }
@@ -131,90 +173,64 @@ function CustomerForm({ customer, onClose, onSaved }: { customer: Customer | nul
   );
 }
 
-function PaymentForm({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
-  const { toast } = useApp();
-  const [amount, setAmount] = useState(minorToInput(customer.balance));
-  const [method, setMethod] = useState("cash");
-  const [reference, setReference] = useState("");
-  const [phone, setPhone] = useState(customer.phone ?? "");
-  const [note, setNote] = useState("");
-  const submit = async () => {
-    try {
-      await api.recordCustomerPayment({
-        customer_id: customer.id,
-        amount: toMinor(amount),
-        method,
-        reference: method === "cash" ? null : reference.trim() || null,
-        phone: method === "cash" ? null : phone.trim() || null,
-        note: note || null,
-      });
-      toast.success(tl("Règlement enregistré."));
-      onSaved();
-    } catch (e) {
-      toast.error(e);
-    }
+/** Libellé d'une ligne du relevé (traduit à l'affichage). */
+function lineLabel(kind: StatementLine["kind"]): string {
+  const labels: Record<StatementLine["kind"], string> = {
+    sale: tl("Achat"),
+    payment: tl("Versement"),
+    refund: tl("Fonds rendus"),
+    return: tl("Retour sur le compte"),
   };
-  return (
-    <Modal
-      title={tl("Règlement de {0}", [customer.name])}
-      onClose={onClose}
-      width={460}
-      footer={<><button className="btn" onClick={onClose}>{tl("Annuler")}</button><button className="btn btn-primary" onClick={submit}>{tl("Encaisser")}</button></>}
-    >
-      <div className="alert alert-warning">{tl("Dette actuelle :")} <strong>{money(customer.balance)}</strong></div>
-      <div className="form-grid one">
-        <Field label={tl("Montant reçu ({0})", [currencySymbol()])}><input className="input-lg" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus /></Field>
-        <Field label={tl("Mode de paiement")}>
-          <select value={method} onChange={(e) => setMethod(e.target.value)}>
-            <option value="cash">{tl("Espèces")}</option>
-            <option value="orange_money">{paymentLabel("orange_money")}</option>
-            {operatorMethods().map((m) => (
-              <option key={m} value={m}>{paymentLabel(m)}</option>
-            ))}
-            <option value="mobile_money">{paymentLabel("mobile_money")}</option>
-            <option value="card">{tl("Carte bancaire")}</option>
-            <option value="other">{tl("Autre")}</option>
-          </select>
-        </Field>
-        {method !== "cash" && method !== "other" && (
-          <>
-            <Field label={tl("ID de transaction")} hint={tl("Saisissez ou scannez la référence de la confirmation.")}>
-              <input className="mono" value={reference} onChange={(e) => setReference(e.target.value.trim())} />
-            </Field>
-            <Field label={tl("N° de téléphone du payeur")}><input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
-          </>
-        )}
-        <Field label={tl("Note")}><input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-      </div>
-    </Modal>
-  );
+  return labels[kind] ?? kind;
 }
 
-function StatementModal({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+function StatementModal({ customer, loyalty, onClose }: { customer: Customer; loyalty: boolean; onClose: () => void }) {
   const { toast } = useApp();
   const [lines, setLines] = useState<StatementLine[]>([]);
   const [sale, setSale] = useState<Sale | null>(null);
+  const [tab, setTab] = useState<"account" | "bonus">("account");
   useEffect(() => {
     api.customerStatement(customer.id).then(setLines).catch(toast.error);
   }, [customer.id, toast]);
+  const open = (id: number | null) => id && api.getSale(id).then(setSale).catch(toast.error);
 
   return (
-    <Modal title={tl("Relevé de compte — {0}", [customer.name])} onClose={onClose} width={720}>
+    <Modal title={tl("Relevé de compte — {0}", [customer.name])} onClose={onClose} width={760}>
       <div className="summary-bar">
         <span>{tl("Achats cumulés :")} <strong>{money(customer.purchases_total)}</strong></span>
-        <span>{tl("Dette :")} <strong>{money(customer.balance)}</strong></span>
-        <span>{tl("Points fidélité :")} <strong>{customer.loyalty_points}</strong></span>
+        <span>{tl("Compte :")} <strong className={customer.balance > 0 ? "text-danger" : customer.balance < 0 ? "text-success" : ""}>{balanceText(customer.balance)}</strong></span>
+        {loyalty && (
+          <span>
+            <Stars value={customer.stars} />  {tl("Bonus :")} <strong>{money(customer.loyalty_bonus)}</strong>
+            <span className="muted small">  {tl("({0} achat(s) sur 12 mois)", [customer.purchases_12m])}</span>
+          </span>
+        )}
+        {!loyalty && customer.loyalty_points > 0 && <span>{tl("Points fidélité :")} <strong>{customer.loyalty_points}</strong></span>}
       </div>
-      {lines.length === 0 ? (
+      {loyalty && (
+        <div className="tabbar small-tabs">
+          <button className={`tab-item ${tab === "account" ? "active" : ""}`} onClick={() => setTab("account")}>{tl("Compte")}</button>
+          <button className={`tab-item ${tab === "bonus" ? "active" : ""}`} onClick={() => setTab("bonus")}>{tl("Bonus fidélité")}</button>
+        </div>
+      )}
+      {tab === "bonus" ? (
+        <LoyaltyHistory customerId={customer.id} />
+      ) : lines.length === 0 ? (
         <Empty title={tl("Aucune opération")} />
       ) : (
         <table className="table compact">
-          <thead><tr><th>{tl("Date")}</th><th>{tl("Opération")}</th><th>{tl("Paiement")}</th><th className="num">{tl("Montant")}</th><th className="num">{tl("Effet sur la dette")}</th></tr></thead>
+          <thead><tr><th>{tl("Date")}</th><th>{tl("Opération")}</th><th>{tl("Paiement")}</th><th className="num">{tl("Montant")}</th><th className="num">{tl("Effet sur le compte")}</th></tr></thead>
           <tbody>
             {lines.map((l, i) => (
-              <tr key={i} onDoubleClick={() => l.sale_id && api.getSale(l.sale_id).then(setSale)}>
+              <tr key={i} onDoubleClick={() => open(l.sale_id)}>
                 <td className="nowrap">{dateTime(l.date)}</td>
-                <td>{l.kind === "sale" ? <button className="link-btn" onClick={() => l.sale_id && api.getSale(l.sale_id).then(setSale).catch(toast.error)}>{tl("Achat")} {l.reference}</button> : tl("Règlement")}</td>
+                <td>
+                  {l.kind === "sale" ? (
+                    <button className="link-btn" onClick={() => open(l.sale_id)}>{tl("Achat")} {l.reference}</button>
+                  ) : (
+                    <>{lineLabel(l.kind)}{l.kind === "return" && <span className="mono">  {l.reference}</span>}</>
+                  )}
+                </td>
                 <td>{paymentLabel(l.method)}</td>
                 <td className="num">{money(l.total)}</td>
                 <td className={`num ${l.debt_change > 0 ? "text-danger" : l.debt_change < 0 ? "text-success" : "muted"}`}>
@@ -225,6 +241,7 @@ function StatementModal({ customer, onClose }: { customer: Customer; onClose: ()
           </tbody>
         </table>
       )}
+      <p className="muted small" style={{ marginTop: 8 }}>{tl("Effet sur le compte : + achat payé avec le compte ou mis en dette, − versement ou retour remis sur le compte.")}</p>
       {sale && <SaleDetailModal sale={sale} onClose={() => setSale(null)} />}
     </Modal>
   );

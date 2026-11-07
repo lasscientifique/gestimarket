@@ -434,6 +434,33 @@ try {
     await shot(pc, "19-remises-par-caissier.png");
   }
 
+  // ── 0.19 : compte client (fonds puis dette) et programme client fidèle (étoiles, bonus, carte QR)
+  if (caisse) {
+    await rpc("update_settings", { values: { loyalty_enabled: "1", loyalty_star_steps: "1,2,3,4,5" }, pin: PIN }, admin);
+    const cashier = (await rpc("login", { username: "caisse1", pin: caisse.pin })).token;
+    await rpc("open_cash_session", { amount: 0 }, cashier).catch(() => null);
+    const fatou = await rpc("save_customer", { id: null, input: { name: "Fatou Fidèle", phone: "70 11 22 33", credit_limit: 0 } }, admin);
+    const dep = await rpc("record_customer_payment", { input: { customer_id: fatou.id, amount: 5000, method: "cash", reference: null, phone: null, note: null } }, cashier);
+    check("compte client : versement de 5 000 sans dette → 5 000 de fonds", dep.balance === -5000, dep.balance);
+    const bought = await rpc("create_sale", {
+      input: { items: [{ product_id: coca.id, quantity: 4, discount: 0, packaging_id: null }], customer_id: fatou.id, discount: 0, payments: [], note: null },
+    }, cashier);
+    check("caisse : achat payé avec les fonds du client (rien à crédit)", bought.account_amount === bought.total && bought.credit_amount === 0, `${bought.account_amount} / ${bought.total}`);
+    check("client fidèle : bonus de 0,5 % gagné sur l'achat", bought.loyalty_earned === Math.floor(bought.total * 0.005), bought.loyalty_earned);
+    const tooMuch = await rpc("create_sale", {
+      input: { items: [{ product_id: coca.id, quantity: 40, discount: 0, packaging_id: null }], customer_id: fatou.id, discount: 0, payments: [], note: null },
+    }, cashier).then(() => "acceptée", (e) => e.message);
+    check("compte client : au-delà des fonds, sans plafond de crédit, refusé", tooMuch.includes("Fonds insuffisants"), tooMuch);
+    const card = await rpc("customer_card", { id: fatou.id }, admin);
+    const byCard = await rpc("customer_by_card", { code: card }, cashier);
+    check("carte de fidélité : client retrouvé par son QR code, avec ses étoiles", byCard?.id === fatou.id && byCard.stars === 1, `${card} → ${byCard?.name} (${byCard?.stars} étoile)`);
+    await pc.goto(`${SRV}/#/customers`);
+    if (await seen(pc, "Clients : compte et fidélité", "Fatou Fidèle")) {
+      check("page Clients : fonds du client affichés", (await pc.locator("tr", { hasText: "Fatou Fidèle" }).locator(".badge", { hasText: "Fonds" }).count()) === 1);
+      await shot(pc, "23-clients-fonds-fidelite.png");
+    }
+  }
+
   const backup = await rpc("backup_status", {}, admin);
   check("sauvegarde automatique active sans réglage (dossier par défaut, copie récente)", !!backup.dir && backup.is_default && !backup.stale && !backup.error, JSON.stringify(backup));
   await pc.goto(`${SRV}/#/dashboard`);

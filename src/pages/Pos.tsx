@@ -31,6 +31,7 @@ import {
   Eye,
   HandHelping,
   Ticket,
+  Gift,
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
@@ -41,6 +42,7 @@ import { operatorOf, parseOperators } from "../lib/mobile";
 import { HelpTip, PageHelpButton } from "../components/Help";
 import { NumPad } from "../components/PinPad";
 import { CameraScanner } from "../components/CameraScanner";
+import { Stars, balanceText, useLoyaltyActive } from "../components/CustomerAccount";
 import { openCustomerDisplay } from "../components/CustomerDisplayPanel";
 import { posteId } from "../lib/presence";
 import { locationText, currencyDecimals, currencySymbol, minorToInput, money, parseNumber, paymentLabel, qty, toMinor } from "../lib/format";
@@ -140,6 +142,7 @@ export default function PosPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const loyalty = useLoyaltyActive();
   const [discount, setDiscount] = useState(0);
   const [held, setHeld] = useState<HeldTicket[]>(() => loadHeld(heldKey));
   const [modal, setModal] = useState<null | "open" | "customer" | "pay" | "discount" | "held" | { line: number }>(null);
@@ -465,6 +468,14 @@ export default function PosPage() {
       code = m[2].trim();
     }
     try {
+      if (/^CL\d{6}-[A-Z0-9]{4}$/i.test(code)) {
+        const c = await api.customerByCard(code);
+        if (c) {
+          setCustomer(c);
+          toast.success(tl("Client : {0}", [c.name]));
+          return true;
+        }
+      }
       const r = await api.scanCode(code);
       if (r) {
         addToCart(r.product, quantity, r.packaging);
@@ -634,9 +645,21 @@ export default function PosPage() {
             <div>
               <div className="cb-title">{customer ? customer.name : tl("Client de passage")}</div>
               <div className="cb-sub">
-                {customer
-                  ? `${customer.phone ?? ""}${customer.balance > 0 ? ` · Dette : ${money(customer.balance)}` : ""}`
-                  : tl("Associer un client (F4)")}
+                {customer ? (
+                  <>
+                    {customer.phone ?? ""}
+                    {customer.balance !== 0 && <>{customer.phone ? " · " : ""}{balanceText(customer.balance)}</>}
+                    {loyalty && (
+                      <>
+                        {" "}
+                        <Stars value={customer.stars} size={11} />
+                        {customer.loyalty_bonus > 0 && <> {tl("Bonus : {0}", [money(customer.loyalty_bonus)])}</>}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  tl("Associer un client (F4)")
+                )}
               </div>
             </div>
           </button>
@@ -982,6 +1005,7 @@ function PaymentModal({
   onLive?: (info: { method: string | null; paid: number; remaining: number; change: number; show_om_qr: boolean; qr_method: string | null }) => void;
 }) {
   const { settings } = useApp();
+  const loyalty = useLoyaltyActive();
   const omEnabled = settings.om_enabled !== "0";
   const omRequireRef = settings.om_require_reference !== "0";
   const operators = useMemo(() => parseOperators(settings.mobile_operators), [settings.mobile_operators]);
@@ -995,7 +1019,9 @@ function PaymentModal({
     { id: "card", label: tl("Carte"), icon: <CreditCard size={22} /> },
     { id: "other", label: tl("Autre"), icon: <CircleEllipsis size={22} /> },
     { id: "credit_note", label: tl("Avoir"), icon: <Ticket size={22} /> },
-    { id: "credit", label: tl("Crédit client"), icon: <HandCoins size={22} /> },
+    // Le reste va sur le compte du client : ses fonds, puis une dette dans la limite de son plafond.
+    { id: "credit", label: tl("Compte client"), icon: <HandCoins size={22} /> },
+    ...(loyalty && customer && customer.loyalty_bonus > 0 ? [{ id: "loyalty" as const, label: tl("Bonus fidélité"), icon: <Gift size={22} /> }] : []),
   ];
 
   const [added, setAdded] = useState<PaymentInput[]>([]);
@@ -1029,7 +1055,11 @@ function PaymentModal({
   const cashApplied = Math.min(cash, Math.max(0, total - nonCash));
   const change = cash - cashApplied;
   const remaining = Math.max(0, total - nonCash - cashApplied);
-  const canCredit = !!customer && customer.credit_limit > 0;
+  // Compte du client : fonds déposés, puis dette jusqu'au plafond de crédit.
+  const funds = customer ? Math.max(0, -customer.balance) : 0;
+  const accountRoom = customer ? funds + Math.max(0, customer.credit_limit - Math.max(0, customer.balance)) : 0;
+  const canCredit = !!customer && accountRoom > 0;
+  const bonusUsed = all.filter((p) => p.method === "loyalty").reduce((s, p) => s + p.amount, 0);
   // Orange Money et opérateurs configurés : QR marchand + ID de transaction.
   const operator = operatorOf(method, operators);
   const qrPanel = method === "orange_money" || !!operator;
@@ -1060,8 +1090,18 @@ function PaymentModal({
           : tl("Saisissez ou scannez l'ID de transaction {0} (reçu par SMS).", [paymentLabel(missingRef.method)])
         : method === "credit_note" && current && note_ && current.amount > note_.balance
           ? tl("Il ne reste que {0} sur cet avoir.", [money(note_.balance)])
+          : customer && bonusUsed > customer.loyalty_bonus
+          ? tl("Le client n'a que {0} de bonus.", [money(customer.loyalty_bonus)])
           : remaining > 0 && !canCredit
           ? tl("Il manque {0}. Pour vendre à crédit, associez un client disposant d'un plafond de crédit.", [money(remaining)])
+          : remaining > accountRoom
+          ? tl("Il manque {0} : le compte de {1} permet au plus {2} (fonds {3}, plafond de crédit {4}).", [
+              money(remaining),
+              customer!.name,
+              money(accountRoom),
+              money(funds),
+              money(customer!.credit_limit),
+            ])
           : null;
 
   const selectMethod = (m: PaymentMethod | "credit") => {
@@ -1071,7 +1111,7 @@ function PaymentModal({
     setPhone("");
     setNote_(null);
     setNoteError("");
-    setAmount(m === "credit" ? "" : minorToInput(dueNow));
+    setAmount(m === "credit" ? "" : minorToInput(m === "loyalty" && customer ? Math.min(customer.loyalty_bonus, dueNow) : dueNow));
     setTimeout(() => (m === "orange_money" || m.startsWith("mm:") ? refRef.current?.focus() : amountRef.current?.select()), 0);
   };
 
@@ -1171,10 +1211,19 @@ function PaymentModal({
         ))}
       </div>
 
-      {method === "credit" && (
+      {method === "credit" && customer && (
         <div className="alert alert-warning">
-          {tl("Le reste (")}{money(remaining)}{tl(") sera ajouté à la dette de")} <strong>{customer?.name}</strong>  {tl("(dette actuelle")} {money(customer?.balance ?? 0)}{tl(", plafond")} {money(customer?.credit_limit ?? 0)}).
+          {tl("Le reste ({0}) sera pris sur le compte de {1} : d'abord ses fonds ({2}), puis en dette jusqu'à son plafond ({3}).", [
+            money(remaining),
+            customer.name,
+            money(funds),
+            money(customer.credit_limit),
+          ])}
+          <div className="small">{tl("Compte actuel : {0}", [balanceText(customer.balance)])}</div>
         </div>
+      )}
+      {method === "loyalty" && customer && (
+        <div className="alert alert-info">{tl("Bonus fidélité disponible : {0}", [money(customer.loyalty_bonus)])}</div>
       )}
 
       {method === "credit_note" ? (
@@ -1301,7 +1350,7 @@ function PaymentModal({
       ) : (
         remaining > 0 && method !== "credit" && (
           <div className="alert alert-warning">
-            {tl("Reste")} {money(remaining)}  {tl("à mettre au crédit de")} {customer!.name}  {tl("(plafond")} {money(customer!.credit_limit)}).
+            {tl("Reste {0} pris sur le compte de {1} (fonds {2}, plafond de crédit {3}).", [money(remaining), customer!.name, money(funds), money(customer!.credit_limit)])}
           </div>
         )
       )}

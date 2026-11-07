@@ -15,8 +15,10 @@ import { Link } from "react-router-dom";
 import QRCode from "qrcode";
 import { Badge } from "../components/ui";
 import { activitiesOf, BusinessTypeGrid, featuresOf, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
-import { Building2, Code2, Copy, FileText, Mail, MessageCircle, Phone } from "lucide-react";
-import { currencySymbol, dateTime, isoDate, minorToInput, toMinor } from "../lib/format";
+import { Building2, Code2, Copy, FileText, Mail, MessageCircle, Phone, Star } from "lucide-react";
+import { currencyDecimals, currencySymbol, dateTime, isoDate, minorToInput, money, toMinor } from "../lib/format";
+import { useLicense } from "../lib/license";
+import { Stars } from "../components/CustomerAccount";
 import type { BackupStatus, CloudStatus, Settings, TunnelStatus } from "../types";
 import { PrinterSettings } from "../components/PrinterSettings";
 import { LANGS, tl, tm } from "../lib/i18n";
@@ -289,13 +291,18 @@ export default function SettingsPage() {
           <Field label={tl("Taux de taxe proposés")} span={2} hint={tl("Une ligne par taux, « Nom=taux ». Ex. TVA 18 %=18, TVA réduite=5, Exonéré=0.")}>
             <textarea rows={3} value={f.tax_rates ?? ""} onChange={set("tax_rates")} placeholder={tl("TVA 18 %=18\nExonéré=0")} />
           </Field>
-          <Field label={<>{tl("Fidélité : 1 point par tranche de (")}{currencySymbol()}) <HelpTip k="loyalty" /></>} hint={tl("0 = programme de fidélité désactivé")}>
-            <input inputMode="decimal" value={loyalty} onChange={(e) => setLoyalty(e.target.value)} />
-          </Field>
+          {/* Anciens points : seulement pour une boutique qui les utilise encore sans le programme client fidèle. */}
+          {f.loyalty_enabled !== "1" && Number(settings.loyalty_step || 0) > 0 && (
+            <Field label={<>{tl("Fidélité : 1 point par tranche de (")}{currencySymbol()}) <HelpTip k="loyalty" /></>} hint={tl("0 = programme de fidélité désactivé")}>
+              <input inputMode="decimal" value={loyalty} onChange={(e) => setLoyalty(e.target.value)} />
+            </Field>
+          )}
           <label className="check span-2"><input type="checkbox" checked={f.require_cash_session !== "0"} onChange={toggle("require_cash_session")} />  {tl("Obliger l'ouverture d'une session de caisse avant de vendre (recommandé)")} <HelpTip k="require_session" /></label>
           <label className="check span-2"><input type="checkbox" checked={f.allow_negative_stock === "1"} onChange={toggle("allow_negative_stock")} />  {tl("Autoriser la vente de produits en rupture (stock négatif)")} <HelpTip k="allow_negative" /></label>
         </div>
       </div>
+
+      <LoyaltySettings f={f} setF={setF} />
 
       <div className="card">
         <h3 className="card-title"><CalendarClock size={18} />  {tl("Péremption")}</h3>
@@ -844,6 +851,89 @@ function InternetAddressSettings() {
           <button className="btn btn-primary" onClick={() => setAsking(true)}>
             {st?.configured ? tl("Redemander l'adresse") : tl("Créer l'adresse Internet")}</button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Paramètres → Ventes : programme client fidèle (étoiles et bonus), formules PRO et BUSINESS. */
+function LoyaltySettings({ f, setF }: { f: Settings; setF: (s: Settings) => void }) {
+  const { toast, confirm } = useApp();
+  const lic = useLicense();
+  const allowed = !lic || lic.plan === "pro" || lic.plan === "business";
+  const on = f.loyalty_enabled === "1";
+  const [minPurchase, setMinPurchase] = useState(minorToInput(Number(f.loyalty_min_purchase ?? "500")));
+  const [perPoint, setPerPoint] = useState(minorToInput(1));
+  const set = (k: string) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const rate = (v: string | undefined, d: number) => {
+    const n = Number(String(v ?? "").replace(",", "."));
+    return Number.isFinite(n) ? n : d;
+  };
+  const rMin = rate(f.loyalty_rate_min, 0.5);
+  const rMax = rate(f.loyalty_rate_max, 1);
+  const steps = String(f.loyalty_star_steps ?? "3,10,25,50,100").split(",").map((x) => x.trim());
+  const convert = async () => {
+    const value = toMinor(perPoint || "0");
+    if (value <= 0) return toast.error(tl("Indiquez la valeur d'un point."));
+    if (!(await confirm({ title: tl("Convertir les anciens points"), message: tl("Chaque point de fidélité devient {0} de bonus, puis les points sont remis à zéro.", [money(value)]), confirmLabel: tl("Convertir") }))) return;
+    try {
+      const n = await api.loyaltyConvertPoints(value);
+      toast.success(tl("{0} client(s) : points convertis en bonus.", [n]));
+    } catch (e) {
+      toast.error(e);
+    }
+  };
+  return (
+    <div className="card">
+      <h3 className="card-title"><Star size={18} />  {tl("Programme client fidèle")} <HelpTip k="loyalty_program" /></h3>
+      {!allowed && <div className="alert alert-info">{tl("Le programme client fidèle est inclus à partir de la formule PRO : voir « Abonnement & licence ».")}</div>}
+      <label className="check">
+        <input type="checkbox" checked={on} disabled={!allowed && !on} onChange={(e) => setF({ ...f, loyalty_enabled: e.target.checked ? "1" : "0" })} />
+        {tl("Activer : étoiles de 0 à 5 et bonus utilisable en caisse")}
+      </label>
+      {on && (
+        <>
+          <div className="form-grid" style={{ marginTop: 12 }}>
+            <Field label={tl("Bonus à 0 étoile (% de l'achat)")}><input inputMode="decimal" value={f.loyalty_rate_min ?? "0.5"} onChange={set("loyalty_rate_min")} /></Field>
+            <Field label={tl("Bonus à 5 étoiles (% de l'achat)")}><input inputMode="decimal" value={f.loyalty_rate_max ?? "1"} onChange={set("loyalty_rate_max")} /></Field>
+            <Field label={tl("Achats sur 12 mois pour 1, 2, 3, 4 et 5 étoiles")} hint={tl("5 nombres croissants séparés par des virgules")}>
+              <input value={f.loyalty_star_steps ?? "3,10,25,50,100"} onChange={set("loyalty_star_steps")} />
+            </Field>
+            <Field label={tl("Achat minimum pour compter une étoile ({0})", [currencySymbol()])}>
+              <input
+                inputMode="decimal"
+                value={minPurchase}
+                onChange={(e) => setMinPurchase(e.target.value)}
+                onBlur={() => setF({ ...f, loyalty_min_purchase: String(toMinor(minPurchase || "0")) })}
+              />
+            </Field>
+            <Field label={tl("Le bonus expire après (mois sans achat)")} hint={tl("0 : n'expire jamais")}>
+              <input inputMode="numeric" value={f.loyalty_bonus_months ?? "12"} onChange={set("loyalty_bonus_months")} />
+            </Field>
+          </div>
+          <table className="table compact" style={{ maxWidth: 520 }}>
+            <thead><tr><th>{tl("Étoiles")}</th><th className="num">{tl("Achats sur 12 mois")}</th><th className="num">{tl("Bonus")}</th><th className="num">{tl("Pour un achat de {0}", [money(10000 * 10 ** currencyDecimals())])}</th></tr></thead>
+            <tbody>
+              {[0, 1, 2, 3, 4, 5].map((n) => {
+                const r = rMin + ((rMax - rMin) * n) / 5;
+                return (
+                  <tr key={n}>
+                    <td><Stars value={n} /></td>
+                    <td className="num">{n === 0 ? "—" : tl("dès {0}", [steps[n - 1] ?? "?"])}</td>
+                    <td className="num">{`${r.toFixed(2).replace(/\.?0+$/, "")} %`}</td>
+                    <td className="num">{money(Math.floor((10000 * 10 ** currencyDecimals() * r) / 100))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <h4 className="section-title">{tl("Anciens points de fidélité")}</h4>
+          <p className="muted small">{tl("Les points gagnés avant le programme client fidèle ne servaient pas en caisse. Convertissez-les en bonus : chaque point vaut la somme choisie.")}</p>
+          <div className="input-group" style={{ maxWidth: 420 }}>
+            <input inputMode="decimal" value={perPoint} onChange={(e) => setPerPoint(e.target.value)} aria-label={tl("Valeur d'un point")} />
+            <button className="btn" type="button" onClick={convert}>{tl("Convertir les points en bonus")}</button>
+          </div>
+        </>
       )}
     </div>
   );

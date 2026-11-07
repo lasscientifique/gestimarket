@@ -3,7 +3,17 @@
 
 export type Role = "admin" | "manager" | "cashier";
 /** « mm:<id> » : opérateur de mobile money configuré par la boutique (Wave, MTN MoMo…). */
-export type PaymentMethod = "cash" | "orange_money" | "mobile_money" | "card" | "other" | "credit_note" | `mm:${string}`;
+export type PaymentMethod =
+  | "cash"
+  | "orange_money"
+  | "mobile_money"
+  | "card"
+  | "other"
+  | "credit_note"
+  // Fonds du compte client (puis dette dans la limite du plafond) et bonus du programme client fidèle.
+  | "account"
+  | "loyalty"
+  | `mm:${string}`;
 /** Mode de paiement résumé d'une vente : un moyen, « mixed » (plusieurs) ou « credit » (rien payé). */
 export type SaleMethod = PaymentMethod | "credit" | "mixed";
 
@@ -509,11 +519,28 @@ export interface Customer {
   last_purchase_at: string | null;
   /** Client grossiste : toujours au prix de gros. */
   wholesale: boolean;
+  /** Programme client fidèle : bonus disponible, achats des 12 derniers mois qui comptent, étoiles (0 à 5). */
+  loyalty_bonus: number;
+  purchases_12m: number;
+  stars: number;
+  card_code: string | null;
+}
+
+/** Mouvement du bonus fidélité d'un client. */
+export interface LoyaltyMove {
+  id: number;
+  kind: "earn" | "spend" | "cancel" | "return" | "expire" | "convert" | "debt_paid";
+  amount: number;
+  sale_id: number | null;
+  sale_number: string | null;
+  note: string | null;
+  created_at: string;
 }
 
 export interface StatementLine {
   date: string;
-  kind: "sale" | "payment";
+  /** Achat, versement, fonds rendus, retour remis sur le compte. */
+  kind: "sale" | "payment" | "refund" | "return";
   reference: string;
   sale_id: number | null;
   total: number;
@@ -711,6 +738,14 @@ export interface Sale {
   items_count: number;
   /** Montant déjà rendu par des retours. */
   returned_total: number;
+  /** Part payée avec les fonds du compte client (la part mise en dette est credit_amount). */
+  account_amount: number;
+  /** Bonus fidélité gagné sur cette vente. */
+  loyalty_earned: number;
+  /** Compte du client aujourd'hui : solde (> 0 dette, < 0 fonds), bonus disponible, étoiles. */
+  customer_balance: number | null;
+  customer_bonus: number | null;
+  customer_stars: number | null;
   items: SaleItem[];
   payments: SalePayment[];
 }
@@ -775,6 +810,9 @@ export interface CashSession {
   cash_in: number;
   cash_out: number;
   credit_note_sales: number;
+  /** Ventes payées avec les fonds du compte client, et avec le bonus fidélité. */
+  account_sales: number;
+  loyalty_sales: number;
   returns_count: number;
   returns_total: number;
   refunds_cash: number;
@@ -817,6 +855,8 @@ export interface Dashboard {
   month_margin: number;
   month_count: number;
   customers_debt: number;
+  /** Fonds déposés par les clients (argent gardé pour eux). */
+  customers_funds: number;
   stock: StockSummary;
   daily: DayPoint[];
   top_products: TopProduct[];
