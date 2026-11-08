@@ -447,17 +447,28 @@ try {
     }, cashier);
     check("caisse : achat payé avec les fonds du client (rien à crédit)", bought.account_amount === bought.total && bought.credit_amount === 0, `${bought.account_amount} / ${bought.total}`);
     check("client fidèle : bonus de 0,5 % gagné sur l'achat", bought.loyalty_earned === Math.floor(bought.total * 0.005), bought.loyalty_earned);
+    // Tout le stock restant (au moins 10 canettes) dépasse les fonds restants (5 000 moins l'achat).
+    const left = Math.floor((await rpc("get_product", { id: coca.id }, admin)).stock);
     const tooMuch = await rpc("create_sale", {
-      input: { items: [{ product_id: coca.id, quantity: 40, discount: 0, packaging_id: null }], customer_id: fatou.id, discount: 0, payments: [], note: null },
+      input: { items: [{ product_id: coca.id, quantity: left, discount: 0, packaging_id: null }], customer_id: fatou.id, discount: 0, payments: [], note: null },
     }, cashier).then(() => "acceptée", (e) => e.message);
     check("compte client : au-delà des fonds, sans plafond de crédit, refusé", tooMuch.includes("Fonds insuffisants"), tooMuch);
     const card = await rpc("customer_card", { id: fatou.id }, admin);
     const byCard = await rpc("customer_by_card", { code: card }, cashier);
     check("carte de fidélité : client retrouvé par son QR code, avec ses étoiles", byCard?.id === fatou.id && byCard.stars === 1, `${card} → ${byCard?.name} (${byCard?.stars} étoile)`);
+    // Page rechargée : les paramètres (programme client fidèle activé ci-dessus) sont relus.
     await pc.goto(`${SRV}/#/customers`);
+    await pc.reload();
     if (await seen(pc, "Clients : compte et fidélité", "Fatou Fidèle")) {
-      check("page Clients : fonds du client affichés", (await pc.locator("tr", { hasText: "Fatou Fidèle" }).locator(".badge", { hasText: "Fonds" }).count()) === 1);
+      const row = pc.locator("tr", { hasText: "Fatou Fidèle" });
+      check("page Clients : fonds du client affichés", (await row.locator(".badge", { hasText: "Fonds" }).count()) === 1);
+      check("page Clients : étoiles du client fidèle et carte de fidélité", (await row.locator(".stars .on").count()) === 1 && (await row.locator('button[title="Carte de fidélité"]').count()) === 1);
       await shot(pc, "23-clients-fonds-fidelite.png");
+      await row.locator('button[title="Relevé de compte"]').click();
+      await pc.waitForTimeout(800);
+      check("relevé du client : versement et achat payé avec le compte", (await pc.locator(".modal").getByText("Versement").count()) >= 1);
+      await shot(pc, "24-releve-client.png");
+      await pc.keyboard.press("Escape");
     }
   }
 
