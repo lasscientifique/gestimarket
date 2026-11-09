@@ -561,13 +561,13 @@ mod tests {
 
     #[test]
     fn recherche_des_boutiques_sur_le_reseau_local() {
-        let c = scan_candidates(&["192.168.43.1".into(), "10.0.2.15".into(), "8.8.8.8".into(), "abc".into()]);
+        let c = super::scan_candidates(&["192.168.43.1".into(), "10.0.2.15".into(), "8.8.8.8".into(), "abc".into()]);
         assert_eq!(c.len(), 2 * 254);
         assert!(c.contains(&"192.168.43.254".parse().unwrap()));
         assert!(c.contains(&"10.0.2.15".parse().unwrap()));
         assert!(!c.iter().any(|ip| ip.octets()[0] == 8));
         // Deux adresses du même réseau : chaque appareil n'est essayé qu'une fois.
-        assert_eq!(scan_candidates(&["192.168.1.10".into(), "192.168.1.20".into()]).len(), 254);
+        assert_eq!(super::scan_candidates(&["192.168.1.10".into(), "192.168.1.20".into()]).len(), 254);
     }
 
     #[test]
