@@ -1,11 +1,13 @@
 // Application GestiMarket pour Android (Tauri), essayée dans un émulateur Android sur GitHub Actions.
 // Playwright se branche sur la page de l'application (WebView de la compilation debug) :
 // première configuration et licence de test, produit et vente dans la base SQLite du téléphone,
-// pages de l'administrateur à la largeur du téléphone, mode réseau sans « Poste serveur »,
+// pages de l'administrateur à la largeur du téléphone, téléphone « Serveur de la boutique » (serveur joint
+// depuis le PC de GitHub par adb forward, service permanent, recherche des boutiques sur le réseau),
 // liaison à un poste serveur (faux, sur le PC de GitHub) et imprimante à tickets réseau (fausse, port 9100).
 // L'émulateur voit le PC de GitHub à l'adresse 10.0.2.2.
 //   node e2e/android.mjs   (APK déjà installé : adb install)
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import http from "node:http";
 import net from "node:net";
 import { _android } from "playwright";
@@ -148,6 +150,15 @@ try {
   check("application Android : mode poste unique au premier lancement", info.config.mode === "local", info.config.mode);
   check("interface : application installée reconnue (pas de WebView FlutterFlow)", await page.evaluate(() => "__TAURI_INTERNALS__" in window && /Android/.test(navigator.userAgent)));
 
+  // Premier démarrage : trois façons de travailler (boutique sur ce téléphone, rejoindre, espace propriétaire).
+  const choices = await page.locator(".start-choice").allInnerTexts().catch(() => []);
+  check(
+    "premier démarrage : « Ma boutique sur ce téléphone », « Rejoindre une boutique », « Espace propriétaire »",
+    choices.length === 3 && choices.some((t) => t.includes("Ma boutique sur ce téléphone")) && choices.some((t) => t.includes("Espace propriétaire")),
+    choices.map((t) => t.split(/\r?\n/)[0]).join(", "),
+  );
+  await shot("a-01b-choix-du-demarrage.png");
+
   let team = [];
   if (await rpc("needs_setup")) {
     const r = await rpc("initial_setup", {
@@ -191,13 +202,11 @@ try {
     await shot(`a-page-${r}.png`);
   }
 
-  // ── Poste & réseau : poste client ou poste unique, jamais serveur ; pas de « plusieurs boutiques »
+  // ── Poste & réseau : serveur de la boutique (Android), poste client, poste unique ; pas de « plusieurs boutiques »
   await go("#/poste");
   const modes = await page.locator(".mode-card").allInnerTexts();
   const titles = modes.map((t) => t.split("\n")[0].trim());
-  check("mode réseau : poste client et poste unique proposés, pas de poste serveur", titles.length === 2 && !titles.includes("Poste serveur"), titles.join(", "));
-  const refused = await invoke("save_network_config", { config: { ...info.config, mode: "server" }, pin: PIN }).then(() => "accepté", (e) => String(e));
-  check("mode serveur refusé par Rust sur le téléphone", refused.includes("poste serveur"), refused);
+  check("mode réseau : serveur de la boutique, poste client et poste unique proposés", titles.length === 3 && titles.includes("Serveur de la boutique"), titles.join(", "));
 
   // ── Poste client : test de connexion au poste serveur du Wi-Fi (http, adresse IP)
   await page.locator(".mode-card").filter({ hasText: "Poste client" }).first().click();
@@ -207,6 +216,36 @@ try {
   check("poste client : le téléphone joint un poste serveur en http sur le réseau", linked);
   await shot("a-poste-client.png");
   await page.locator(".mode-card").filter({ hasText: "Poste unique" }).first().click();
+
+  // ── Téléphone serveur : sans PC, la TV et les autres caisses se relient à ce téléphone.
+  const asServer = await invoke("save_network_config", { config: { ...info.config, mode: "server" }, pin: PIN }).then(() => "ok", (e) => String(e));
+  check("téléphone serveur : mode serveur accepté sur Android", asServer === "ok", asServer);
+  await sleep(2500);
+  try {
+    execFileSync("adb", ["forward", "tcp:7990", "tcp:7878"]);
+  } catch (e) {
+    report.push({ label: "adb forward", error: String(e) });
+  }
+  const pinged = await fetch("http://127.0.0.1:7990/api/ping").then((r) => r.json(), (e) => ({ error: String(e) }));
+  check("téléphone serveur : répond sur le réseau (port 7878)", pinged.app === "GestiMarket" && pinged.device === "phone", JSON.stringify(pinged));
+  const seen = await invoke("discover_servers").then((l) => l, (e) => String(e));
+  check(
+    "téléphone serveur : trouvé par la recherche des boutiques sur le réseau",
+    Array.isArray(seen) && seen.some((x) => x.shop_name === pinged.shop_name),
+    JSON.stringify(seen).slice(0, 300),
+  );
+  // Service permanent (notification) : le serveur continue écran verrouillé.
+  await page.evaluate(() => window.GestiMarketAndroid?.startServer());
+  await sleep(2500);
+  const services = String(await device.shell(`dumpsys activity services ${PKG}`).catch(() => ""));
+  check("téléphone serveur : service permanent démarré", services.includes("GestiServerService"), services.slice(0, 200));
+  check("application toujours ouverte après le démarrage du service", !!String(await device.shell(`pidof ${PKG}`).catch(() => "")).trim());
+  await shot("a-telephone-serveur.png");
+  await page.evaluate(() => window.GestiMarketAndroid?.stopServer());
+  const back = await invoke("save_network_config", { config: { ...info.config, mode: "local" }, pin: PIN }).then(() => "ok", (e) => String(e));
+  await sleep(1500);
+  const stopped = await fetch("http://127.0.0.1:7990/api/ping").then(() => false, () => true);
+  check("téléphone serveur : arrêté en repassant en poste unique", back === "ok" && stopped, back);
 
   // ── Imprimante à tickets réseau : page de test reçue par la fausse imprimante
   await go("#/settings");

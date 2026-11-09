@@ -3,7 +3,7 @@ import { LanguageSwitch } from "../components/LanguageSwitch";
 import { LogIn, Network, ArrowLeft, KeyRound, Loader2, Keyboard, Smartphone, ShieldCheck, Store } from "lucide-react";
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
-import { getNetwork, isTauri } from "../lib/transport";
+import { getNetwork, isMobileApp, isTauri, remoteShop, setRemoteShop } from "../lib/transport";
 import { ROLE_LABELS } from "../lib/format";
 import { Field, Modal } from "../components/ui";
 import { NetworkForm } from "../components/NetworkForm";
@@ -278,9 +278,19 @@ export default function LoginPage() {
 
           <BoutiquesPanel compact />
 
-          {isTauri && (
+          {isTauri && !remoteShop() && (
             <button type="button" className="link-btn auth-net" onClick={() => setNetOpen(true)}>
               <Network size={14} /> {modeLabel}  {tl("— modifier")}</button>
+          )}
+          {/* Application installée : boutique ouverte à distance, ou Espace propriétaire. */}
+          {isMobileApp && (
+            remoteShop() ? (
+              <button type="button" className="link-btn auth-net" onClick={() => setRemoteShop(null, "#/proprietaire")}>
+                <Store size={14} /> {tl("Boutique à distance : {0} — changer de boutique", [remoteShop()!.name])}</button>
+            ) : (
+              <button type="button" className="link-btn auth-net" onClick={() => (window.location.hash = "#/proprietaire")}>
+                <Store size={14} /> {tl("Espace propriétaire (mes boutiques à distance)")}</button>
+            )
           )}
         </div>
       </div>

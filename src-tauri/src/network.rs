@@ -81,9 +81,26 @@ impl NetworkState {
     }
 }
 
-/// Adresses IP locales de ce PC (à saisir sur les postes clients).
+/// Adresse IPv4 privée du réseau local (Wi-Fi, câble, point d'accès d'un téléphone).
+fn private_v4(ip: &std::net::Ipv4Addr) -> bool {
+    ip.is_private() && !ip.is_loopback()
+}
+
+/// Adresses IP locales de cet appareil (à saisir sur les postes clients).
+/// Les interfaces réseau d'abord : le point d'accès d'un téléphone serveur (sans Internet, la route vers
+/// Internet n'existe pas) ; puis l'astuce du socket UDP.
 pub fn local_ips() -> Vec<String> {
     let mut ips = Vec::new();
+    if let Ok(list) = if_addrs::get_if_addrs() {
+        for i in list {
+            if let std::net::IpAddr::V4(v4) = i.ip() {
+                let ip = v4.to_string();
+                if private_v4(&v4) && !ips.contains(&ip) {
+                    ips.push(ip);
+                }
+            }
+        }
+    }
     // Astuce sans envoi de paquet : « connecter » un socket UDP révèle l'interface réseau utilisée.
     for target in ["8.8.8.8:80", "192.168.1.1:80", "10.0.0.1:80"] {
         if let Ok(sock) = std::net::UdpSocket::bind("0.0.0.0:0") {
@@ -98,6 +115,69 @@ pub fn local_ips() -> Vec<String> {
         }
     }
     ips
+}
+
+/// Adresses à essayer pour trouver un serveur GestiMarket : tout le réseau /24 de chaque adresse locale.
+pub fn scan_candidates(local: &[String]) -> Vec<std::net::Ipv4Addr> {
+    let mut out = Vec::new();
+    for ip in local {
+        let Ok(v4) = ip.parse::<std::net::Ipv4Addr>() else { continue };
+        if !private_v4(&v4) {
+            continue;
+        }
+        let [a, b, c, _] = v4.octets();
+        for d in 1..=254u8 {
+            let cand = std::net::Ipv4Addr::new(a, b, c, d);
+            if !out.contains(&cand) {
+                out.push(cand);
+            }
+        }
+    }
+    out
+}
+
+/// Boutiques GestiMarket sur le Wi-Fi ou le partage de connexion de cet appareil : chaque adresse du
+/// réseau local est essayée sur les ports des boutiques (7878, 7888, 7898), 64 à la fois. Sans
+/// diffusion ni autorisation spéciale : marche sur les téléphones, les TV et tous les réseaux, même sans Internet.
+pub fn discover() -> Vec<Value> {
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+    let candidates: Vec<SocketAddr> = scan_candidates(&local_ips())
+        .into_iter()
+        .flat_map(|ip| [7878u16, 7888, 7898].into_iter().map(move |p| SocketAddr::from((ip, p))))
+        .collect();
+    let found = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let size = candidates.len().div_ceil(64).max(1);
+    let workers: Vec<_> = candidates
+        .chunks(size)
+        .map(|chunk| {
+            let chunk = chunk.to_vec();
+            let found = found.clone();
+            std::thread::spawn(move || {
+                for addr in chunk {
+                    if TcpStream::connect_timeout(&addr, Duration::from_millis(350)).is_err() {
+                        continue;
+                    }
+                    let url = format!("http://{addr}");
+                    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(2)).build();
+                    let Ok(resp) = agent.get(&format!("{url}/api/ping")).call() else { continue };
+                    let Ok(v) = resp.into_json::<Value>() else { continue };
+                    if v["app"].as_str() == Some("GestiMarket") {
+                        found.lock().unwrap_or_else(|e| e.into_inner()).push(json!({
+                            "url": url, "shop_name": v["shop_name"], "version": v["version"],
+                            "poste": v["poste"], "device": v["device"],
+                        }));
+                    }
+                }
+            })
+        })
+        .collect();
+    for w in workers {
+        let _ = w.join();
+    }
+    let mut list = found.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    list.sort_by(|a, b| a["shop_name"].as_str().unwrap_or_default().cmp(b["shop_name"].as_str().unwrap_or_default()));
+    list
 }
 
 /// Nom de ce PC.
@@ -119,8 +199,34 @@ pub fn hostname() -> String {
 /// Une seule `AppHandle`, créée sur le fil principal, est gardée dans un `Arc`, qui se clone sans risque.
 type App = Arc<AppHandle>;
 
-/// Démarre le serveur HTTP du poste serveur (appelé sur le fil principal).
+/// Serveur en marche : port, signal d'arrêt (http) et poignée (https).
+static RUNNING: Mutex<Option<(u16, tokio::sync::watch::Sender<bool>, axum_server::Handle)>> = Mutex::new(None);
+
+/// Le serveur de la boutique tourne-t-il sur cet appareil ?
+pub fn server_running() -> bool {
+    RUNNING.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
+/// Arrête le serveur (téléphone qui quitte le mode serveur sans redémarrer l'application).
+pub fn stop_server() {
+    if let Some((port, stop, https)) = RUNNING.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        let _ = stop.send(true);
+        https.graceful_shutdown(Some(std::time::Duration::from_secs(2)));
+        crate::journal::info(format!("Serveur de la boutique arrêté (port {port})"));
+    }
+}
+
+/// Démarre le serveur HTTP du poste serveur (appelé sur le fil principal). Sans effet s'il tourne déjà.
 pub fn start_server(app: AppHandle, port: u16) {
+    let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
+    let https_handle = axum_server::Handle::new();
+    {
+        let mut running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+        if running.is_some() {
+            return;
+        }
+        *running = Some((port, stop_tx, https_handle.clone()));
+    }
     let app: App = Arc::new(app);
     tauri::async_runtime::spawn(async move {
         let router = Router::new()
@@ -139,6 +245,7 @@ pub fn start_server(app: AppHandle, port: u16) {
             tauri::async_runtime::spawn(async move {
                 let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port.saturating_add(1)));
                 if let Err(e) = axum_server::bind_rustls(addr, tls)
+                    .handle(https_handle)
                     .serve(https.into_make_service_with_connect_info::<std::net::SocketAddr>())
                     .await
                 {
@@ -148,11 +255,19 @@ pub fn start_server(app: AppHandle, port: u16) {
         }
         match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {
             Ok(listener) => {
-                if let Err(e) = axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await {
+                if let Err(e) = axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                    .with_graceful_shutdown(async move {
+                        let _ = stop_rx.changed().await;
+                    })
+                    .await
+                {
                     crate::journal::error(format!("Serveur réseau arrêté : {e}"));
                 }
             }
-            Err(e) => crate::journal::error(format!("Impossible d'ouvrir le port {port} : {e}")),
+            Err(e) => {
+                crate::journal::error(format!("Impossible d'ouvrir le port {port} : {e}"));
+                RUNNING.lock().unwrap_or_else(|e| e.into_inner()).take();
+            }
         }
     });
 }
@@ -384,7 +499,13 @@ async fn media_handler(
 async fn ping_handler(State(app): State<App>) -> Response {
     let state = app.state::<AppState>();
     let name = { let conn = state.conn(); crate::services::settings::get(&conn, "shop_name").unwrap_or_default() };
-    Json(json!({ "app": "GestiMarket", "shop_name": name, "version": env!("CARGO_PKG_VERSION") })).into_response()
+    // Nom du poste serveur et type d'appareil : la TV et les téléphones les montrent dans la liste des boutiques.
+    let poste = app.try_state::<NetworkState>().map(|n| n.get().poste_name).unwrap_or_default();
+    Json(json!({
+        "app": "GestiMarket", "shop_name": name, "version": env!("CARGO_PKG_VERSION"),
+        "poste": poste, "device": if cfg!(mobile) { "phone" } else { "pc" },
+    }))
+    .into_response()
 }
 
 /// Sert l'interface (fichiers intégrés à l'application) aux navigateurs du réseau.
@@ -436,6 +557,17 @@ mod tests {
             h.insert(*k, HeaderValue::from_static(v));
         }
         h
+    }
+
+    #[test]
+    fn recherche_des_boutiques_sur_le_reseau_local() {
+        let c = scan_candidates(&["192.168.43.1".into(), "10.0.2.15".into(), "8.8.8.8".into(), "abc".into()]);
+        assert_eq!(c.len(), 2 * 254);
+        assert!(c.contains(&"192.168.43.254".parse().unwrap()));
+        assert!(c.contains(&"10.0.2.15".parse().unwrap()));
+        assert!(!c.iter().any(|ip| ip.octets()[0] == 8));
+        // Deux adresses du même réseau : chaque appareil n'est essayé qu'une fois.
+        assert_eq!(scan_candidates(&["192.168.1.10".into(), "192.168.1.20".into()]).len(), 254);
     }
 
     #[test]

@@ -759,6 +759,19 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
                 "internet_ok": cloud.public_ok,
             }))
         }
+        // TV (écran client) : noms des caisses à choisir, sans connexion (rien d'autre que les noms).
+        "display_postes" => {
+            let mut names: Vec<String> = state
+                .live
+                .postes()
+                .into_iter()
+                .filter(|p| p.kind != "display" && !p.name.trim().is_empty())
+                .map(|p| p.name)
+                .collect();
+            names.sort();
+            names.dedup();
+            out(json!({ "postes": names }))
+        }
         "list_postes" => {
             state.require(origin, Any)?;
             let postes = state.live.postes();

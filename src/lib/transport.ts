@@ -62,6 +62,41 @@ export function setToken(t: string | null) {
   }
 }
 
+// ───────────── Boutique ouverte à distance (Espace propriétaire) ─────────────
+// L'application installée ouvre une boutique de la propriétaire par son adresse Internet, avec l'écran
+// déjà dans l'application : seules les données passent par Internet. Le mode réseau de l'appareil ne
+// change pas ; « Changer de boutique » revient à l'Espace propriétaire.
+
+export interface RemoteShop {
+  url: string;
+  code: string;
+  name: string;
+}
+
+const REMOTE_KEY = "gm-remote-shop";
+
+export function remoteShop(): RemoteShop | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(REMOTE_KEY) ?? "null");
+    return v && typeof v.url === "string" ? (v as RemoteShop) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Ouvre une boutique à distance (ou revient à celle de l'appareil avec `null`), puis recharge. */
+export function setRemoteShop(shop: RemoteShop | null, hash = "#/") {
+  try {
+    if (shop) localStorage.setItem(REMOTE_KEY, JSON.stringify(shop));
+    else localStorage.removeItem(REMOTE_KEY);
+    sessionStorage.removeItem("gm-token");
+  } catch {
+    /* stockage indisponible */
+  }
+  window.location.hash = hash;
+  window.location.reload();
+}
+
 /** À appeler au démarrage : détermine le mode de fonctionnement de ce poste. */
 export async function initTransport(): Promise<NetworkInfo | null> {
   loadToken();
@@ -76,6 +111,9 @@ export async function initTransport(): Promise<NetworkInfo | null> {
     network = null;
   }
   remoteBase = network?.config.mode === "client" && network.config.server_url ? network.config.server_url : null;
+  // Boutique de la propriétaire ouverte à distance (application installée).
+  const shop = isMobileApp ? remoteShop() : null;
+  if (shop) remoteBase = shop.url.replace(/\/+$/, "");
   return network;
 }
 

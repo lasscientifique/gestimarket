@@ -3,10 +3,11 @@ import ReactDOM from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import App from "./App";
 import { AppProvider } from "./context/AppContext";
-import { initTransport, posteName } from "./lib/transport";
+import { getNetwork, initTransport, isMobileApp, posteName } from "./lib/transport";
 import { startPresence } from "./lib/presence";
 import { getLang, loadDictionary } from "./lib/i18n";
 import { captureErrors, reportError } from "./lib/errors";
+import { hasAndroidBridge, serverService } from "./lib/android";
 import "@fontsource-variable/inter";
 import "./styles.css";
 
@@ -39,6 +40,8 @@ window.addEventListener("load", () => setTimeout(() => {
 async function start() {
   // Interface en anglais : dictionnaire chargé avant le premier affichage.
   await Promise.all([initTransport(), getLang() === "en" ? loadDictionary() : Promise.resolve()]);
+  // Téléphone serveur (Android) : service permanent, le serveur continue écran verrouillé.
+  if (isMobileApp && hasAndroidBridge()) serverService(getNetwork()?.config.mode === "server");
   // Chaque poste se signale au serveur (liste des postes connectés, état de la liaison).
   startPresence(posteName);
 

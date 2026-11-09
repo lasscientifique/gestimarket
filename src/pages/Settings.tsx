@@ -27,6 +27,7 @@ import { isMobileApp, isTauri } from "../lib/transport";
 import { appCacheDir, join } from "@tauri-apps/api/path";
 import { readFile, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { every } from "../lib/visibility";
+import { markBackupShared } from "../components/PhoneBanners";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
@@ -50,6 +51,9 @@ export default function SettingsPage() {
   const [info, setInfo] = useState<{ version: string; db_path: string; last_auto_backup: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabId>(() => {
+    // « ?tab=backup » (rappel de sauvegarde du téléphone) : onglet demandé.
+    const asked = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("tab");
+    if (asked) return asked as TabId;
     try {
       return (sessionStorage.getItem("gm-settings-tab") as TabId) || "shop";
     } catch {
@@ -116,6 +120,7 @@ export default function SettingsPage() {
       } else {
         await api.backupDatabase(path);
       }
+      if (isMobileApp) markBackupShared();
       toast.success(tl("Sauvegarde réalisée avec succès."));
     } catch (e) {
       toast.error(e);

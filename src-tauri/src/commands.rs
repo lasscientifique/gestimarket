@@ -221,14 +221,17 @@ pub async fn get_network_config(net: State<'_, NetworkState>) -> AppResult<Netwo
 /// Libre pour un poste client (aucune donnée locale) ou une installation pas encore configurée.
 #[tauri::command]
 pub async fn save_network_config(
+    app: AppHandle,
     state: State<'_, AppState>,
     net: State<'_, NetworkState>,
     config: NetworkConfig,
     pin: Option<String>,
 ) -> AppResult<()> {
     let current = net.get();
-    if config.mode == "server" && cfg!(mobile) {
-        return invalid("Un téléphone ou une tablette ne peut pas être poste serveur : choisissez « Poste client » ou « Poste unique ».");
+    // iPhone et iPad : jamais serveur (iOS arrête les applications en arrière-plan). Android : oui, avec un
+    // service permanent (notification « serveur de la boutique actif »), voir scripts/mobile/android-init.sh.
+    if config.mode == "server" && cfg!(target_os = "ios") {
+        return invalid("Un iPhone ou un iPad ne peut pas être poste serveur : choisissez « Poste client » ou « Poste unique ».");
     }
     if config.mode == "server" && current.mode != "server" && !crate::license::allows("server") {
         return invalid("Le mode serveur (autres PC, téléphones, tablettes) est inclus à partir de la formule PRO : voir « Abonnement & licence ».");
@@ -248,8 +251,60 @@ pub async fn save_network_config(
             )?;
         }
     }
+    let port = config.port;
+    let server = config.mode == "server";
     net.save(config)?;
+    // Téléphone Android : le serveur démarre ou s'arrête tout de suite (l'application n'est pas relancée).
+    if cfg!(target_os = "android") {
+        if server {
+            network::start_server(app, port);
+        } else {
+            network::stop_server();
+        }
+    }
     Ok(())
+}
+
+/// Boutiques GestiMarket trouvées sur le Wi-Fi ou le partage de connexion de cet appareil.
+#[tauri::command]
+pub async fn discover_servers() -> AppResult<Vec<serde_json::Value>> {
+    Ok(tauri::async_runtime::spawn_blocking(network::discover).await.map_err(internal)?)
+}
+
+/// Espace propriétaire (compte Eden Dev sur ce téléphone) : boutiques, état de leur PC serveur, paiements.
+/// Commande locale seulement : jamais accessible depuis le réseau (la session reste sur cet appareil).
+#[tauri::command]
+pub async fn owner(state: State<'_, AppState>, action: String, args: Option<serde_json::Value>) -> AppResult<serde_json::Value> {
+    let dir = state.db_path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+    let a = args.unwrap_or(serde_json::Value::Null);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let text = |k: &str| a.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        match action.as_str() {
+            "status" => Ok(crate::account::owner_status(&dir)),
+            "login" => crate::account::owner_login(&dir, &text("email"), &text("password")),
+            "logout" => {
+                crate::account::owner_logout(&dir);
+                Ok(serde_json::Value::Null)
+            }
+            "stores" => crate::account::owner_stores(&dir),
+            "payments" => crate::account::owner_payments(&dir, &text("store_code")),
+            "redeem" => crate::account::owner_redeem(&dir, &text("store_code"), &text("code")),
+            "declare" => crate::account::owner_declare(
+                &dir,
+                &text("store_code"),
+                &text("plan"),
+                a.get("months").and_then(serde_json::Value::as_i64).unwrap_or(1),
+                &text("method"),
+                &text("reference"),
+                &text("phone"),
+            ),
+            "options" => crate::account::options(),
+            _ => Err("Action inconnue.".to_string()),
+        }
+    })
+    .await
+    .map_err(internal)?;
+    result.map_err(AppError::Validation)
 }
 
 /// Relance l'application (nouveau mode réseau). Sur téléphone et tablette, l'interface se recharge elle-même :

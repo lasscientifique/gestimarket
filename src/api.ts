@@ -359,6 +359,8 @@ export const api = {
   // Écran client
   displayUpdate: (poste: string, state: unknown) => call<void>("display_update", { poste, state }),
   displayState: <T,>(poste: string) => call<T | null>("display_state", { poste }),
+  /** TV (écran client) : noms des caisses, sans connexion. */
+  displayPostes: () => call<{ postes: string[] }>("display_postes"),
   serverInfo: () => call<{ shop_name: string; version: string }>("server_info"),
 
   // Abonnement et licence (Eden Dev)

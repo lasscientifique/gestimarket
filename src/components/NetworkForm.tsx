@@ -1,16 +1,22 @@
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
-import { Monitor, Server, Laptop, Wifi, CheckCircle2, RotateCw, ScanLine } from "lucide-react";
+import { Monitor, Server, Laptop, Wifi, CheckCircle2, RotateCw, ScanLine, BatteryCharging, Radio } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { getNetwork, isMobileApp, local, pingServer, type NetworkConfig } from "../lib/transport";
 import { hasNativeScanner, onNativeCode, requestNativeScan } from "../lib/native";
+import { askBatteryExemption, askNotifications, batteryRestricted, hasAndroidBridge, openHotspotSettings, serverService } from "../lib/android";
 import { Field } from "./ui";
 import { HelpTip } from "./Help";
 import { tl } from "../lib/i18n";
 
+/** Téléphone ou tablette Android : peut être le serveur de la boutique (service permanent). iPhone : non. */
+const androidApp = isMobileApp && typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+
 const MODES: { id: NetworkConfig["mode"]; title: string; text: string; icon: React.ReactNode }[] = isMobileApp
   ? [
-      // Téléphone et tablette : jamais serveur (le système arrête les applications en arrière-plan).
+      ...(androidApp
+        ? [{ id: "server" as const, title: tl("Serveur de la boutique"), text: tl("Ce téléphone garde la base et la partage à la TV (écran client) et aux autres caisses, par le partage de connexion ou le Wi-Fi, même sans Internet. Gardez-le branché."), icon: <Server size={22} /> }]
+        : []),
       { id: "client", title: tl("Poste client"), text: tl("Cet appareil travaille sur la base du poste serveur de la boutique (Wi-Fi ou adresse Internet)."), icon: <Laptop size={22} /> },
       { id: "local", title: tl("Poste unique"), text: tl("Toute la boutique sur cet appareil, même sans Internet. Pensez à enregistrer des sauvegardes ailleurs."), icon: <Monitor size={22} /> },
     ]
@@ -73,7 +79,7 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
   const save = async () => {
     if (c.mode === "client" && !c.server_url.trim()) return toast.error(tl("Indiquez l'adresse du poste serveur."));
     if (!(await confirm({ title: tl("Changer le mode réseau"), message: tl("L'application va redémarrer pour appliquer le nouveau mode."), confirmLabel: tl("Enregistrer et redémarrer") }))) return;
-    if (isMobileApp && c.mode === "server") return toast.error(tl("Un téléphone ou une tablette ne peut pas être poste serveur."));
+    if (isMobileApp && !androidApp && c.mode === "server") return toast.error(tl("Un iPhone ou un iPad ne peut pas être poste serveur."));
     // Poste qui détient la base (serveur / poste unique) : code PIN d'un responsable, sauf administrateur connecté.
     let pin: string | null = null;
     if (user && user.role !== "admin" && info?.config.mode !== "client") {
@@ -83,6 +89,14 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
     setBusy(true);
     try {
       await local("save_network_config", { config: c, pin });
+      // Téléphone serveur : service permanent (notification), notifications et batterie autorisées.
+      if (androidApp && hasAndroidBridge()) {
+        serverService(c.mode === "server");
+        if (c.mode === "server") {
+          askNotifications();
+          if (batteryRestricted()) askBatteryExemption();
+        }
+      }
       onSaved?.();
       // Téléphone et tablette : rien à relancer côté Rust, l'interface se recharge dans le nouveau mode.
       if (isMobileApp) window.location.reload();
@@ -136,6 +150,23 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
           <strong>{tl("Adresse à saisir sur les postes clients (PC) :")}</strong>
           <ul>{serverUrls.length ? serverUrls.map((u) => <li key={u} className="mono">{u}</li>) : <li>{tl("Adresse IP introuvable : vérifiez la connexion Wi-Fi / câble.")}</li>}</ul>
           {tl("Fonctionne aussi avec le point d'accès (partage de connexion) d'un téléphone : tous les appareils se connectent à ce point d'accès.")}</div>
+      )}
+      {androidApp && c.mode === "server" && (
+        <div className="card phone-server-guide">
+          <h4 className="section-title"><Radio size={16} />  {tl("Boutique sans ordinateur : ce téléphone est le serveur")}</h4>
+          <ol>
+            <li>{tl("Activez le partage de connexion (point d'accès mobile) de ce téléphone. Il marche même sans forfait Internet : les appareils se parlent entre eux.")}</li>
+            <li>{tl("Sur la TV Android et les autres téléphones, connectez le Wi-Fi à ce point d'accès. Si Android dit « Pas d'accès à Internet », choisissez « Rester connecté ».")}</li>
+            <li>{tl("Ouvrez GestiMarket sur la TV : elle trouve la boutique toute seule. Sur un autre téléphone : « Rejoindre une boutique ». Sur un iPhone : scannez le QR code ci-dessous avec l'appareil photo.")}</li>
+            <li>{tl("Laissez ce téléphone branché au chargeur pendant les heures d'ouverture. Le serveur continue quand l'écran est verrouillé.")}</li>
+          </ol>
+          <div className="row-start">
+            <button type="button" className="btn" onClick={openHotspotSettings}><Wifi size={16} />  {tl("Ouvrir le partage de connexion")}</button>
+            {batteryRestricted() && (
+              <button type="button" className="btn" onClick={askBatteryExemption}><BatteryCharging size={16} />  {tl("Autoriser en arrière-plan")}</button>
+            )}
+          </div>
+        </div>
       )}
       {c.mode === "server" && info?.config.mode === "server" && (info?.local_ips ?? []).length > 0 && (
         <div className="phone-access">

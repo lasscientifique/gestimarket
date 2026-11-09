@@ -1,6 +1,6 @@
 [package]
 name = "gestimarket"
-version = "0.20.0"
+version = "0.21.0"
 description = "GestiMarket — logiciel de gestion de supermarché et de boutiques"
 authors = ["GestiMarket"]
 edition = "2021"
@@ -31,7 +31,7 @@ base64 = "0.22"
 axum = "0.8"
 # Compression gzip / brotli des réponses : interface et données plus rapides sur téléphone en 4G (tunnel).
 tower-http = { version = "0.6", features = ["cors", "compression-gzip", "compression-br"] }
-tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "sync"] }
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
@@ -39,6 +39,8 @@ ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 # Licences : signature Ed25519 vérifiée hors ligne, identifiant du PC.
 ed25519-dalek = "2"
 sha2 = "0.10"
+# Adresses du Wi-Fi et du point d'accès (téléphone serveur, recherche des boutiques sur le réseau).
+if-addrs = "0.13"
 # Vignettes des photos (listes et caisse légères sur téléphone et par Internet).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 

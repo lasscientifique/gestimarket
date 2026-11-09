@@ -337,6 +337,150 @@ pub fn card_start(plan: &str, months: i64) -> Result<Value, String> {
     }))
 }
 
+// ───────────────────────────── Espace propriétaire (téléphone, tablette) ─────────────────────────────
+// Ce que faisait l'application FlutterFlow, dans l'application GestiMarket : le compte Eden Dev de la
+// propriétaire, ses boutiques (PC serveur allumé ou éteint, abonnement), ses paiements.
+// La connexion reste ouverte (jeton de rafraîchissement gardé dans le dossier privé de l'application,
+// effacé par « Se déconnecter »). La liste des boutiques est gardée : elle reste lisible sans Internet.
+// Ces fonctions ne sont appelées que par cet appareil (commande Tauri « owner »), jamais par le réseau.
+
+const OWNER_FILE: &str = "proprietaire.json";
+const OWNER_CACHE: &str = "proprietaire-boutiques.json";
+const NO_INTERNET: &str = "Connexion à Internet impossible : vérifiez la connexion de ce PC, puis réessayez.";
+
+static OWNER: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+
+/// Connexion par e-mail et mot de passe : jeton d'accès et jeton de rafraîchissement.
+fn owner_tokens(body: Value, grant: &str) -> Result<(String, String), String> {
+    let v = call(request(&format!("/auth/v1/token?grant_type={grant}"), None), body)?;
+    let access = v["access_token"].as_str().ok_or("Réponse de connexion invalide.")?;
+    let refresh = v["refresh_token"].as_str().ok_or("Réponse de connexion invalide.")?;
+    Ok((access.to_string(), refresh.to_string()))
+}
+
+fn owner_save(dir: &std::path::Path, email: &str, refresh: &str) {
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(dir.join(OWNER_FILE), json!({ "email": email, "refresh_token": refresh }).to_string());
+}
+
+fn owner_saved(dir: &std::path::Path) -> Option<(String, String)> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(OWNER_FILE)).ok()?).ok()?;
+    Some((v["email"].as_str()?.to_string(), v["refresh_token"].as_str()?.to_string()))
+}
+
+/// Jeton d'accès de la propriétaire : gardé 50 minutes, puis renouvelé avec le jeton de rafraîchissement.
+fn owner_token(dir: &std::path::Path) -> Result<String, String> {
+    if let Some((token, at)) = OWNER.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        if at.elapsed() < Duration::from_secs(50 * 60) {
+            return Ok(token);
+        }
+    }
+    let Some((email, refresh)) = owner_saved(dir) else {
+        return Err("Connectez-vous à votre compte boutique (Espace propriétaire).".into());
+    };
+    let (access, refresh) = owner_tokens(json!({ "refresh_token": refresh }), "refresh_token").map_err(|e| {
+        if e == NO_INTERNET {
+            e
+        } else {
+            // Session révoquée ou expirée : il faut se reconnecter.
+            let _ = std::fs::remove_file(dir.join(OWNER_FILE));
+            "Votre connexion au compte boutique a expiré : reconnectez-vous.".to_string()
+        }
+    })?;
+    owner_save(dir, &email, &refresh);
+    *OWNER.lock().unwrap_or_else(|e| e.into_inner()) = Some((access.clone(), Instant::now()));
+    Ok(access)
+}
+
+/// Connexion de la propriétaire, puis ses boutiques.
+pub fn owner_login(dir: &std::path::Path, email: &str, password: &str) -> Result<Value, String> {
+    let email = email.trim().to_lowercase();
+    let (access, refresh) = owner_tokens(json!({ "email": email, "password": password }), "password")?;
+    owner_save(dir, &email, &refresh);
+    *OWNER.lock().unwrap_or_else(|e| e.into_inner()) = Some((access, Instant::now()));
+    owner_stores(dir)
+}
+
+/// « Se déconnecter » : la session et la liste gardée sont effacées de l'appareil.
+pub fn owner_logout(dir: &std::path::Path) {
+    *OWNER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let _ = std::fs::remove_file(dir.join(OWNER_FILE));
+    let _ = std::fs::remove_file(dir.join(OWNER_CACHE));
+}
+
+/// Boutiques de la propriétaire, avec l'état du PC serveur de chacune. Sans Internet : la dernière liste.
+pub fn owner_stores(dir: &std::path::Path) -> Result<Value, String> {
+    let saved = owner_saved(dir);
+    let cached = || -> Option<Value> { serde_json::from_str(&std::fs::read_to_string(dir.join(OWNER_CACHE)).ok()?).ok() };
+    let fresh = (|| -> Result<Value, String> {
+        let token = owner_token(dir)?;
+        let stores = rpc_call("gm_my_stores", &token, json!({}))?;
+        let mut list = Vec::new();
+        for mut s in stores.as_array().cloned().unwrap_or_default() {
+            let code = s["code"].as_str().unwrap_or_default().to_string();
+            s["server"] = rpc_call("gm_my_server", &token, json!({ "p_store_code": code })).unwrap_or(json!({ "found": false }));
+            list.push(s);
+        }
+        Ok(json!({
+            "email": saved.as_ref().map(|(e, _)| e.clone()).unwrap_or_default(),
+            "stores": list,
+            "offline": false,
+            "at": chrono::Utc::now().to_rfc3339(),
+        }))
+    })();
+    match fresh {
+        Ok(v) => {
+            let _ = std::fs::write(dir.join(OWNER_CACHE), v.to_string());
+            Ok(v)
+        }
+        Err(e) if e == NO_INTERNET => match cached() {
+            Some(mut v) => {
+                v["offline"] = json!(true);
+                Ok(v)
+            }
+            None => Err(e),
+        },
+        Err(e) => Err(e),
+    }
+}
+
+/// La propriétaire est-elle connectée sur cet appareil ? (sans appel réseau)
+pub fn owner_status(dir: &std::path::Path) -> Value {
+    match owner_saved(dir) {
+        Some((email, _)) => json!({ "connected": true, "email": email }),
+        None => json!({ "connected": false }),
+    }
+}
+
+/// Derniers paiements d'une boutique (en attente, validés, refusés).
+pub fn owner_payments(dir: &std::path::Path, store_code: &str) -> Result<Value, String> {
+    let token = owner_token(dir)?;
+    rpc_call("gm_my_payments", &token, json!({ "p_store_code": store_code }))
+}
+
+/// Carte de bon saisie sur le téléphone : l'abonnement de la boutique est activé tout de suite.
+pub fn owner_redeem(dir: &std::path::Path, store_code: &str, code: &str) -> Result<Value, String> {
+    let token = owner_token(dir)?;
+    let r = rpc_call("gm_my_redeem_voucher", &token, json!({ "p_store_code": store_code, "p_code": code.trim() }))?;
+    if r["ok"].as_bool() == Some(false) {
+        return Err(r["error"].as_str().unwrap_or("Carte de bon refusée.").to_string());
+    }
+    Ok(r)
+}
+
+/// Paiement mobile (Orange Money, Moov Money) déclaré avec la référence reçue par SMS : Eden Dev le valide.
+pub fn owner_declare(dir: &std::path::Path, store_code: &str, plan: &str, months: i64, method: &str, reference: &str, phone: &str) -> Result<Value, String> {
+    let token = owner_token(dir)?;
+    rpc_call(
+        "gm_declare_payment",
+        &token,
+        json!({
+            "p_store_code": store_code, "p_plan": plan, "p_months": months, "p_method": method,
+            "p_reference": reference.trim(), "p_payer_phone": phone.trim(),
+        }),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

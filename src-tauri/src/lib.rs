@@ -148,9 +148,12 @@ pub fn run() {
             let config = net.get();
             journal::info(format!("Poste « {} » en mode {} (port {})", config.poste_name, config.mode, config.port));
             app.manage(net);
-            // Le mode serveur est réservé au PC : Android et iOS arrêtent les applications en arrière-plan.
-            if config.mode == "server" && cfg!(desktop) {
+            // Poste serveur : PC, ou téléphone Android (service permanent démarré par l'interface).
+            // iOS arrête les applications en arrière-plan : jamais serveur.
+            if config.mode == "server" && !cfg!(target_os = "ios") {
                 network::start_server(app.handle().clone(), config.port);
+            }
+            if config.mode == "server" && cfg!(desktop) {
                 // Application mobile : adresse du serveur publiée sur Supabase (si activé).
                 cloud::start(app.handle().clone(), config.port);
                 // Adresse Internet automatique : cloudflared lancé avec le jeton du tunnel de la boutique.
@@ -207,6 +210,8 @@ pub fn run() {
             commands::read_text_file,
             commands::get_network_config,
             commands::save_network_config,
+            commands::discover_servers,
+            commands::owner,
             commands::restart_app,
             commands::list_monitors,
             commands::toggle_customer_display,

@@ -32,9 +32,12 @@ import {
   X,
   Undo2,
   BadgePercent,
+  UserRound,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { LicenceBanner, UpdateBanner } from "./LicenceBanner";
+import { PhoneBanners } from "./PhoneBanners";
+import { isMobileApp } from "../lib/transport";
 import { ROLE_LABELS } from "../lib/format";
 import { BrandLogo } from "./Brand";
 import type { Role } from "../types";
@@ -100,6 +103,8 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { to: "/poste", label: tl("Poste & réseau"), icon: <Network size={18} />, roles: ["admin", "manager", "cashier"] },
       { to: "/settings", label: tl("Paramètres"), icon: <SettingsIcon size={18} />, roles: ["admin"] },
       { to: "/licence", label: tl("Abonnement & licence"), short: tl("Licence"), icon: <BadgeCheck size={18} />, roles: ["admin"] },
+      // Application installée : boutiques du compte Eden Dev à distance, abonnements, contact.
+      ...(isMobileApp ? [{ to: "/proprietaire", label: tl("Espace propriétaire"), icon: <UserRound size={18} />, roles: ["admin"] as Role[] }] : []),
     ],
   },
 ];
@@ -257,6 +262,7 @@ export function Layout({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="content">
+        <PhoneBanners />
         <LicenceBanner />
         <UpdateBanner />
         {children}

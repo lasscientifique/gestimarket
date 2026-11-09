@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { ShoppingBasket, Store, Heart } from "lucide-react";
+import { ShoppingBasket, Store, Heart, Settings2 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Thumb } from "../components/ui";
 import { PaymentQr } from "../components/OrangeMoneyQr";
 import { mediaUrl } from "../lib/media";
 import { money, paymentLabel, paymentLabelShop, qty } from "../lib/format";
-import { posteName } from "../lib/transport";
+import { isMobileApp, posteName } from "../lib/transport";
+import { isTv, keepScreenOn } from "../lib/android";
 import type { DisplayState } from "../lib/display";
-import { locale, ts } from "../lib/i18n";
+import { locale, tl, ts } from "../lib/i18n";
 
 /**
  * Écran client : affiché sur un 2ᵉ écran tourné vers le client, une TV ou un projecteur.
@@ -22,6 +23,11 @@ export default function CustomerDisplayPage() {
   const [error, setError] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const poste = posteName();
+  // TV Android : écran toujours allumé ; bouton (télécommande) pour changer de boutique ou de caisse.
+  const tv = isMobileApp && isTv();
+  useEffect(() => {
+    if (tv) keepScreenOn(true);
+  }, [tv]);
 
   useEffect(() => {
     let stop = false;
@@ -66,6 +72,11 @@ export default function CustomerDisplayPage() {
             {settings.shop_phone && <div className="cd-sub">{settings.shop_phone}</div>}
           </div>
         </div>
+        {tv && (
+          <button className="cd-tv-settings" onClick={() => (window.location.hash = "#/tv")} title={tl("Changer de boutique ou de caisse")} aria-label={tl("Changer de boutique ou de caisse")}>
+            <Settings2 size={18} />
+          </button>
+        )}
         <div className="cd-clock">
           <strong>{now.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })}</strong>
           <span>{now.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" })}</span>

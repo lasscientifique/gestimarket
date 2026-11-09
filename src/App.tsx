@@ -9,6 +9,9 @@ import LoginPage from "./pages/Login";
 import PinSetupPage from "./pages/PinSetup";
 import { useLocation } from "react-router-dom";
 import { tl } from "./lib/i18n";
+import { getNetwork, isMobileApp } from "./lib/transport";
+import { isTv } from "./lib/android";
+import { startChoice, tvPoste } from "./lib/start";
 
 // Pages chargées à la demande : l'écran de connexion s'affiche vite, même en 4G sur un téléphone ;
 // la 3D, les graphiques et le PDF ne sont téléchargés qu'à l'ouverture de leur page.
@@ -36,6 +39,10 @@ const PromotionsPage = lazy(() => import("./pages/Promotions"));
 const ReturnsPage = lazy(() => import("./pages/Returns"));
 const CustomerDisplayPage = lazy(() => import("./pages/CustomerDisplay"));
 const LicencePage = lazy(() => import("./pages/Licence"));
+// Application installée (téléphone, tablette, TV) : premier démarrage, Espace propriétaire, écran client de la TV.
+const MobileStartPage = lazy(() => import("./pages/MobileStart"));
+const OwnerHubPage = lazy(() => import("./pages/OwnerHub"));
+const TvSetupPage = lazy(() => import("./pages/TvSetup"));
 
 function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { can } = useApp();
@@ -57,12 +64,34 @@ export default function App() {
       </Suspense>
     );
   }
+  // Espace propriétaire : compte Eden Dev, boutiques à distance, abonnements (sans connexion à une boutique).
+  if (location.pathname.startsWith("/proprietaire")) {
+    return (
+      <Suspense fallback={<Loading />}>
+        <OwnerHubPage />
+      </Suspense>
+    );
+  }
+  // TV Android : écran client de la caisse choisie, ou choix de la boutique et de la caisse.
+  if (isMobileApp && (location.pathname.startsWith("/tv") || isTv())) {
+    const poste = tvPoste();
+    if (poste && getNetwork()?.config.mode === "client" && !location.pathname.startsWith("/tv")) {
+      return <Navigate to={`/display?poste=${encodeURIComponent(poste)}`} replace />;
+    }
+    return (
+      <Suspense fallback={<Loading />}>
+        <TvSetupPage />
+      </Suspense>
+    );
+  }
   return <MainApp />;
 }
 
 function MainApp() {
   const { user, setUser } = useApp();
   const [state, setState] = useState<"loading" | "setup" | "ready">("loading");
+  // Application installée : la boutique sera-t-elle sur ce téléphone ? (sinon : choix au premier démarrage)
+  const [localChosen, setLocalChosen] = useState(() => !isMobileApp || startChoice() === "local");
 
   useEffect(() => {
     (async () => {
@@ -83,7 +112,7 @@ function MainApp() {
   if (state === "setup") {
     return (
       <Suspense fallback={<Loading />}>
-        <SetupPage onDone={() => setState("ready")} />
+        {localChosen ? <SetupPage onDone={() => setState("ready")} /> : <MobileStartPage onLocal={() => setLocalChosen(true)} />}
       </Suspense>
     );
   }

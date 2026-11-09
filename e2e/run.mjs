@@ -583,6 +583,12 @@ try {
     );
   }
 
+  // ── TV (écran client) : noms des caisses lisibles sans connexion, rien d'autre.
+  const dp = await fetch(`${SRV}/rpc/display_postes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json());
+  check("TV : noms des caisses lisibles sans connexion (écran client)", Array.isArray(dp?.ok?.postes) && Object.keys(dp.ok).length === 1, JSON.stringify(dp).slice(0, 200));
+  const ping = await fetch(`${SRV}/api/ping`).then((r) => r.json());
+  check("serveur : nom du poste et type d'appareil dans /api/ping (recherche des boutiques)", typeof ping.poste === "string" && ping.device === "pc", JSON.stringify(ping));
+
   // ── Version mobile : toutes les pages sur un téléphone de 360 px, par Internet (administrateur et caissière).
   const cashierToken = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;
   await phoneTour({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, strict: process.env.MOBILE_STRICT !== "0", check });

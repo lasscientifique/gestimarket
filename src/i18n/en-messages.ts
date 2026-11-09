@@ -660,4 +660,9 @@ export const EN_MESSAGES: Record<string, string> = {
   "Requête invalide : nombre d'appels groupés.": "Invalid request: number of grouped calls.",
   "Erreur non envoyée à Eden Dev : {}": "Error not sent to Eden Dev: {}",
   "Panne du moteur : {} ({})": "Engine failure: {} ({})",
+  "Action inconnue.": "Unknown action.",
+  "Connectez-vous à votre compte boutique (Espace propriétaire).": "Sign in to your shop account (Owner space).",
+  "Serveur de la boutique arrêté (port {})": "Shop server stopped (port {})",
+  "Un iPhone ou un iPad ne peut pas être poste serveur : choisissez « Poste client » ou « Poste unique ».": "An iPhone or iPad cannot be the server station: choose “Client station” or “Single station”.",
+  "Votre connexion au compte boutique a expiré : reconnectez-vous.": "Your shop account session has expired: sign in again.",
 };
