@@ -248,6 +248,65 @@
     else wait();
   }
 
+  // ---------- 2 bis. Espaces entre les éléments des boîtes flexibles (gap) ----------
+  // Moteurs d'avant Chrome 84 et iOS 14.5 : « gap » n'écarte pas les éléments d'une boîte flexible
+  // (titres collés, boutons serrés). On pose une marge équivalente sur les éléments concernés.
+  function flexGapSupported() {
+    var d = document.createElement("div");
+    d.style.display = "flex";
+    d.style.flexDirection = "column";
+    d.style.rowGap = "1px";
+    d.appendChild(document.createElement("div"));
+    d.appendChild(document.createElement("div"));
+    document.body.appendChild(d);
+    var ok = d.scrollHeight === 1;
+    d.parentNode.removeChild(d);
+    return ok;
+  }
+
+  function gapPass() {
+    var all = document.body.getElementsByTagName("*");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.namespaceURI !== "http://www.w3.org/1999/xhtml") continue;
+      var cs = w.getComputedStyle(el);
+      if (cs.display !== "flex" && cs.display !== "inline-flex") continue;
+      var rg = parseFloat(cs.rowGap) || 0;
+      var cg = parseFloat(cs.columnGap) || 0;
+      if (!rg && !cg) continue;
+      var column = cs.flexDirection.indexOf("column") === 0;
+      var first = true;
+      for (var k = 0; k < el.children.length; k++) {
+        var c = el.children[k];
+        var ccs = w.getComputedStyle(c);
+        if (ccs.display === "none" || ccs.position === "absolute" || ccs.position === "fixed") continue;
+        if (first) {
+          first = false;
+          continue;
+        }
+        // Seulement là où aucune marge n'est déjà prévue (une marge « auto » qui pousse à droite reste).
+        if (column && rg && ccs.marginTop === "0px") c.style.marginTop = rg + "px";
+        if (!column && cg && ccs.marginLeft === "0px") c.style.marginLeft = cg + "px";
+      }
+    }
+  }
+
+  function startGapPolyfill() {
+    if (!document.body || flexGapSupported() || !w.MutationObserver) return;
+    var timer = null;
+    var schedule = function () {
+      if (timer) return;
+      timer = setTimeout(function () {
+        timer = null;
+        gapPass();
+      }, 250);
+    };
+    schedule();
+    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", startGapPolyfill);
+  else startGapPolyfill();
+
   // ---------- 3. Démarrage bloqué : message clair ----------
   var ua = navigator.userAgent || "";
   var engine = (function () {

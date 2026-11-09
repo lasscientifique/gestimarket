@@ -6,7 +6,8 @@
 //    temps bloqué (tâches longues). Résultats dans vitesse.json.
 // 2. iPhone (moteur WebKit, celui de Safari) : les mêmes écrans s'ouvrent, sans erreur JavaScript.
 //
-// Objectifs (VITESSE_STRICT=1 : un objectif manqué fait échouer le test ; sinon simple relevé).
+// Objectifs : un objectif manqué fait échouer le test (VITESSE_STRICT=0 : simple relevé).
+// Mesures de la 0.20 (GitHub) : démarrage 4 à 5,2 s, écrans 0,7 à 1,9 s, 1 à 5 allers-retours par écran.
 import fs from "node:fs";
 import { webkit } from "playwright";
 
@@ -14,7 +15,7 @@ const ANDROID = "Mozilla/5.0 (Linux; Android 11; SM-A105F) AppleWebKit/537.36 (K
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 
 /** Objectifs en millisecondes (téléphone d'entrée de gamme simulé, 4G). */
-export const BUDGET = { start: 6000, screen: 4000, rpcPerScreen: 12 };
+export const BUDGET = { start: 6500, screen: 3000, rpcPerScreen: 10 };
 
 const CASHIER_SCREENS = ["pos", "finder", "customers", "sales", "cash"];
 const ADMIN_SCREENS = ["dashboard", "products", "stock", "sales", "customers", "finder", "reports"];
@@ -89,7 +90,7 @@ async function measureScreens(page, t, who, screens, rows) {
 }
 
 export async function speedTest({ browser, url, adminToken, cashierToken, out, check }) {
-  const strict = process.env.VITESSE_STRICT === "1";
+  const strict = process.env.VITESSE_STRICT !== "0";
   const rows = [];
   const verdict = (name, ok, detail) => {
     if (strict) check(name, ok, detail);

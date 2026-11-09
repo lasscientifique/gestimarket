@@ -71,14 +71,26 @@ for (const f of files) check(f, fs.readFileSync(path.join(dir, f), "utf8"));
 const css = fs.readdirSync(dir).filter((f) => f.endsWith(".css"));
 for (const f of css) {
   const text = fs.readFileSync(path.join(dir, f), "utf8");
-  // Chaque couleur mélangée d'une propriété normale doit être précédée d'une valeur simple (scripts/css-fallbacks.mjs).
-  const re = /([{;])([a-z-]+):([^;{}]*color-mix\([^;{}]*)(?=[;}])/g;
-  for (let m = re.exec(text); m; m = re.exec(text)) {
-    const before = text.slice(Math.max(0, m.index - 400), m.index + 1);
-    const prop = m[2];
-    if (prop.startsWith("--")) continue; // Variables : calculées par public/compat.js.
-    if (!new RegExp(`[{;]${prop}:[^;{}]*;$`).test(before)) {
-      problems.push(`${f} : « ${prop}: color-mix(…) » sans valeur de secours (${m[3].slice(0, 60)})`);
+  // Chaque couleur mélangée d'une propriété normale doit être dans un bloc @supports (scripts/css-fallbacks.mjs) :
+  // un ancien moteur garde alors la valeur simple de la règle.
+  const stack = [];
+  let start = 0;
+  const flagged = new Set();
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === "{") {
+      const head = text.slice(start, i).trim();
+      stack.push(head.startsWith("@supports") ? "supports" : "other");
+      start = i + 1;
+    } else if (c === "}" || c === ";") {
+      const decl = text.slice(start, i);
+      const m = /^\s*([a-z-]+)\s*:([\s\S]*)$/.exec(decl);
+      if (m && !m[1].startsWith("--") && /color-mix\(/.test(m[2]) && !stack.includes("supports") && !flagged.has(m[1])) {
+        flagged.add(m[1]);
+        problems.push(`${f} : « ${m[1]}: color-mix(…) » hors d'un bloc @supports (${m[2].slice(0, 60)})`);
+      }
+      if (c === "}") stack.pop();
+      start = i + 1;
     }
   }
 }
