@@ -14,9 +14,10 @@ const fmt = (n: number) => String(Math.round(n * 100) / 100).replace(".", getLan
 
 /** Première page d'un PDF en image (pdf.js, chargé seulement ici). */
 async function pdfToBlob(file: File): Promise<Blob> {
-  const pdfjs = await import("pdfjs-dist");
+  // Version « ancienne compatibilité » de pdf.js : elle marche aussi sur les anciens Android et iOS.
+  const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as typeof import("pdfjs-dist");
   // Lecteur PDF dans un « worker » regroupé par Vite (fichier .js, servi partout avec le bon type).
-  const { default: PdfWorker } = await import("pdfjs-dist/build/pdf.worker.min.mjs?worker");
+  const { default: PdfWorker } = await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker");
   const worker = new PdfWorker();
   pdfjs.GlobalWorkerOptions.workerPort = worker;
   try {

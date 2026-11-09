@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Search, Pencil, Archive, Tags, Download, Wand2, Trash2, Upload, Printer, MapPin, Package, Camera } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
-import { Badge, Empty, Field, ImageField, LocationBadge, Modal, PageHeader, Thumb } from "../components/ui";
+import { Badge, Empty, Field, ImageField, LocationBadge, Modal, PageHeader, Thumb, useShowMore } from "../components/ui";
 import { ImportModal } from "../components/ImportModal";
 import { LabelsModal } from "../components/LabelsModal";
 import { LocationSelect } from "../components/LocationSelect";
@@ -27,6 +27,7 @@ export default function ProductsPage() {
   const [filter, setFilter] = useState<"" | "low" | "unplaced" | "nocat" | "archived">("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [modal, setModal] = useState<null | "new" | "import" | "labels" | Product>(null);
+  const shown = useShowMore(products, `${search}|${categoryId}|${filter}`);
 
   const load = useCallback(() => {
     api
@@ -186,7 +187,7 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => {
+              {shown.visible.map((p) => {
                 const margin = p.sale_price - p.purchase_price;
                 const rate = p.sale_price > 0 ? (margin / p.sale_price) * 100 : 0;
                 const days = p.expiry_date ? daysUntil(p.expiry_date) : null;
@@ -240,6 +241,7 @@ export default function ProductsPage() {
             </tbody>
           </table>
         )}
+        {shown.more}
       </div>
 
       {(modal === "new" || (modal && typeof modal === "object")) && (

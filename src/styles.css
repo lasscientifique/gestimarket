@@ -20,6 +20,10 @@
   --accent-hover: color-mix(in srgb, var(--brand) 68%, #000000);
   --accent-soft: color-mix(in srgb, var(--brand) 18%, #ffffff);
   --accent-tint: color-mix(in srgb, var(--brand) 6%, #ffffff);
+  /* Couleurs dérivées gardées en variables : les anciens moteurs les reçoivent de public/compat.js. */
+  --star-off: color-mix(in srgb, var(--muted) 55%, transparent);
+  --map-grid: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  --map-band: color-mix(in srgb, var(--accent-strong) 12%, transparent);
   --success: #16a34a;
   --success-soft: #dcfce7;
   --success-text: #166534;
@@ -136,7 +140,7 @@ textarea { resize: vertical; }
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }
 /* Étoiles du client fidèle (0 à 5). */
-.stars { display: inline-flex; gap: 1px; vertical-align: -2px; color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.stars { display: inline-flex; gap: 1px; vertical-align: -2px; color: var(--star-off); }
 .stars .on { color: #f59e0b; }
 .loyalty-card-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
 .loyalty-card-preview img { border-radius: 8px; background: #fff; padding: 6px; }
@@ -419,7 +423,7 @@ button.pick-item:hover { border-color: var(--accent); background: var(--accent-t
 .store-map svg { width: 100%; height: 100%; display: block; cursor: grab; }
 .store-map svg:active { cursor: grabbing; }
 .map-floor { fill: var(--surface); stroke: var(--text-2); }
-.map-grid { stroke: color-mix(in srgb, var(--border-strong) 70%, transparent); }
+.map-grid { stroke: var(--map-grid); }
 .map-fixture > g:first-child { cursor: pointer; }
 .map-fixture.editable > g:first-child { cursor: move; }
 .map-fixture.cat-batiment > g:first-child rect { fill-opacity: 1; }
@@ -441,7 +445,7 @@ button.pick-item:hover { border-color: var(--accent); background: var(--accent-t
 .map-cote.narrow line { stroke: var(--warning); }
 .map-cote-text { fill: var(--text); font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-linejoin: round; font-family: inherit; }
 .map-cote.narrow .map-cote-text { fill: var(--warning-text); }
-.map-band { fill: color-mix(in srgb, var(--accent-strong) 12%, transparent); stroke: var(--accent-strong); stroke-dasharray: 0.2 0.15; }
+.map-band { fill: var(--map-band); stroke: var(--accent-strong); stroke-dasharray: 0.2 0.15; }
 .map-blocked { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); max-width: calc(100% - 90px); background: var(--danger); color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; text-align: center; box-shadow: var(--shadow); pointer-events: none; }
 .map-blocked.warn { background: var(--warning-soft); color: var(--warning-text); border: 1px solid var(--warning); }
 .plan-display { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -1407,3 +1411,15 @@ input, select, textarea { border-radius: 10px; }
 .journal-card h4 { margin: 0 0 6px; font-size: 15px; }
 
 .checks { display: grid; gap: 8px; margin-top: 8px; }
+
+/* Téléphones et tablettes : pas de flou derrière les barres et les fenêtres (coûteux au défilement
+   sur les Android d'entrée de gamme et sur iPhone). Le fond presque opaque suffit. */
+@media (max-width: 760px), (pointer: coarse) {
+  .tabbar, .pos-mobile-bar, .modal-backdrop, .tile-loc { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* « Afficher plus » sous les longues listes. */
+.show-more { display: flex; justify-content: center; padding: 14px; border-top: 1px solid var(--border); }
+
+/* Nouvelle version disponible. */
+.licence-banner.info { background: var(--info-soft); color: var(--info-text); border-color: var(--info); }

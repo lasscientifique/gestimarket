@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { SlidersHorizontal, Download, Boxes, AlertTriangle, PackageX, Coins } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
-import { Badge, Empty, Field, LocationBadge, Modal, PageHeader, StatCard, Thumb } from "../components/ui";
+import { Badge, Empty, Field, LocationBadge, Modal, PageHeader, StatCard, Thumb, useShowMore } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { exportCsv } from "../lib/files";
 import { addDays, dateOnly, dateTime, daysUntil, isoDate, money, MOVEMENT_LABELS, parseNumber, qty, toCsv } from "../lib/format";
@@ -21,6 +21,9 @@ export default function StockPage() {
   const [from, setFrom] = useState(isoDate(addDays(new Date(), -30)));
   const [to, setTo] = useState(isoDate());
   const [adjust, setAdjust] = useState<Product | "pick" | null>(null);
+  const shownAlerts = useShowMore(alerts, "alerts");
+  const shownExpiring = useShowMore(expiring, String(alertDays));
+  const shownMovements = useShowMore(movements, `${kind}|${from}|${to}`);
 
   const load = useCallback(() => {
     api.stockSummary().then(setSummary).catch(toast.error);
@@ -81,7 +84,7 @@ export default function StockPage() {
                 <tr><th>{tl("Produit")}</th><th>{tl("Fournisseur")}</th><th className="num">{tl("Stock")}</th><th className="num">{tl("Seuil")}</th><th className="num">{tl("À commander (≈)")}</th><th></th></tr>
               </thead>
               <tbody>
-                {alerts.map((p) => (
+                {shownAlerts.visible.map((p) => (
                   <tr key={p.id}>
                     <td><strong>{p.name}</strong><div className="muted small mono">{p.barcode}</div></td>
                     <td>{p.supplier_name ?? <span className="muted">—</span>}</td>
@@ -94,6 +97,7 @@ export default function StockPage() {
               </tbody>
             </table>
           )}
+          {shownAlerts.more}
         </div>
       )}
 
@@ -105,7 +109,7 @@ export default function StockPage() {
             <table className="table">
               <thead><tr><th>{tl("Produit")}</th><th>{tl("Emplacement")}</th><th className="num">{tl("Stock")}</th><th>{tl("Péremption")}</th><th className="num">{tl("Délai")}</th><th></th></tr></thead>
               <tbody>
-                {expiring.map((p) => {
+                {shownExpiring.visible.map((p) => {
                   const d = daysUntil(p.expiry_date!);
                   return (
                     <tr key={p.id}>
@@ -121,6 +125,7 @@ export default function StockPage() {
               </tbody>
             </table>
           )}
+          {shownExpiring.more}
         </div>
       )}
 
@@ -145,7 +150,7 @@ export default function StockPage() {
                   <tr><th>{tl("Date")}</th><th>{tl("Produit")}</th><th>{tl("Type")}</th><th className="num">{tl("Quantité")}</th><th className="num">{tl("Stock après")}</th><th>{tl("Référence / note")}</th><th>{tl("Par")}</th></tr>
                 </thead>
                 <tbody>
-                  {movements.map((m) => (
+                  {shownMovements.visible.map((m) => (
                     <tr key={m.id}>
                       <td className="nowrap">{dateTime(m.created_at)}</td>
                       <td>{m.product_name}</td>
@@ -159,6 +164,7 @@ export default function StockPage() {
                 </tbody>
               </table>
             )}
+            {shownMovements.more}
           </div>
         </>
       )}

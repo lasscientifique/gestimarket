@@ -3,7 +3,7 @@ import { Search, Download, X } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
-import { Empty, PageHeader } from "../components/ui";
+import { Empty, PageHeader, useShowMore } from "../components/ui";
 import { exportCsv } from "../lib/files";
 import { addDays, dateTime, isoDate, toCsv } from "../lib/format";
 import type { AuditEntry } from "../types";
@@ -19,6 +19,7 @@ export default function AuditPage() {
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState(isoDate(addDays(new Date(), userId ? -365 : -7)));
   const [to, setTo] = useState(isoDate());
+  const shown = useShowMore(list, `${search}|${from}|${to}|${userId ?? ""}`);
 
   const load = useCallback(
     () => api.listAuditLog({ search, from, to, limit: 2000, user_id: userId }).then(setList).catch(toast.error),
@@ -63,7 +64,7 @@ export default function AuditPage() {
           <table className="table compact">
             <thead><tr><th>{tl("Date")}</th><th>{tl("Utilisateur")}</th><th>{tl("Action")}</th><th>{tl("Détails")}</th></tr></thead>
             <tbody>
-              {list.map((a) => (
+              {shown.visible.map((a) => (
                 <tr key={a.id}>
                   <td className="nowrap">{dateTime(a.created_at)}</td>
                   <td>{a.username}</td>
@@ -74,6 +75,7 @@ export default function AuditPage() {
             </tbody>
           </table>
         )}
+        {shown.more}
       </div>
     </div>
   );

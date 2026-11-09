@@ -340,6 +340,10 @@ export const api = {
   listAuditLog: (filter: { search?: string; from?: string; to?: string; limit?: number; user_id?: number } = {}) =>
     call<AuditEntry[]>("list_audit_log", { filter }),
   appInfo: () => call<{ version: string; db_path: string; last_auto_backup: string | null }>("app_info"),
+  /** Version installée et dernière version publiée (vérifiée par le poste, au plus toutes les 6 h). */
+  updateStatus: () => call<{ current: string; latest: string | null; newer: boolean; url: string }>("update_status"),
+  /** Panne imprévue de l'interface, envoyée à Eden Dev si la boutique le permet (aucune donnée commerciale). */
+  reportError: (r: { kind: string; message: string; stack: string; page: string; device: string }) => call<void>("report_error", r),
   backupDatabase: (path: string) => call<void>("backup_database", { path }),
   runAutoBackup: () => call<string>("run_auto_backup"),
   backupStatus: () => call<BackupStatus>("backup_status"),

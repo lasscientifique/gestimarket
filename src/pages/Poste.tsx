@@ -10,7 +10,9 @@ import { BoutiquesPanel } from "../components/BoutiquesPanel";
 import { SessionsPanel } from "../components/SessionsPanel";
 import { getNetwork, isTauri, pingServer, posteName } from "../lib/transport";
 import { browserPosteName, deviceLabel, posteId, setBrowserPosteName, usePresence } from "../lib/presence";
-import type { CloudStatus, PosteInfo } from "../types";import { tl } from "../lib/i18n";
+import type { CloudStatus, PosteInfo } from "../types";
+import { tl } from "../lib/i18n";
+import { every } from "../lib/visibility";
 
 
 const MODE_LABELS: Record<string, string> = {
@@ -96,8 +98,7 @@ export default function PostePage() {
     if (!(isTauri && net?.config.mode === "server")) return;
     const check = () => pingServer(`127.0.0.1:${net.config.port}`).then(() => setServerOk(true)).catch(() => setServerOk(false));
     check();
-    const t = setInterval(check, 10_000);
-    return () => clearInterval(t);
+    return every(10_000, check);
   }, [net]);
 
   const load = () =>
@@ -110,8 +111,7 @@ export default function PostePage() {
       .catch(() => undefined);
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    return every(5000, load);
   }, []);
 
   // Poste serveur : l'adresse publique (tunnel) répond-elle ? Test fait par le serveur toutes les 30 s.
@@ -120,8 +120,7 @@ export default function PostePage() {
     if (mode !== "server") return;
     const l = () => api.cloudStatus().then(setCloud).catch(() => undefined);
     l();
-    const t = setInterval(l, 15_000);
-    return () => clearInterval(t);
+    return every(15_000, l);
   }, [mode]);
 
   const me = posteId();

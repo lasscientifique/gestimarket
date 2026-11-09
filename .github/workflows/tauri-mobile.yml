@@ -1,6 +1,8 @@
 # Application GestiMarket pour Android et iOS (Tauri), compilée et essayée sur GitHub, rien sur le PC.
 # - android-test : APK debug (x86_64) installé dans un émulateur Android et piloté par Playwright (e2e/android.mjs).
-# - android-apk  : APK à installer sur les téléphones (arm64 + armv7), signé avec la clé de la boutique
+# - android-9    : le même APK sur un émulateur Android 9 (ancien moteur web, comme BlueStacks) : il doit démarrer.
+# - android-apk  : APK à installer (arm64 et armv7 pour les téléphones, x86_64 pour BlueStacks, émulateurs
+#                  et Chromebook), signé avec la clé de la boutique
 #                  (secrets ANDROID_KEYSTORE_BASE64 et ANDROID_KEYSTORE_PASSWORD ; sinon clé d'essai, nom « essai »).
 # - ios          : compilé pour le simulateur d'iPhone (sans compte Apple), lancé, capture d'écran.
 # Résultats et APK publiés dans une pré-release « mobile-N » (dépôt public : lisibles sans connexion) ;
@@ -20,6 +22,7 @@ on:
       - "vite.config.ts"
       - "e2e/android.mjs"
       - "e2e/mobile.mjs"
+      - "public/**"
       - "scripts/mobile/**"
       - ".github/workflows/tauri-mobile.yml"
   workflow_dispatch:
@@ -127,6 +130,49 @@ jobs:
           name: android-test
           path: e2e/out-android
 
+  # Ancien Android (9, moteur web d'origine, sans mise à jour) : GestiMarket doit démarrer ou, à défaut,
+  # afficher un message clair. Écran lu par l'accessibilité d'Android (scripts/mobile/boot-check.sh).
+  android-9:
+    needs: android-test
+    if: always()
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-test
+          path: e2e/out-android
+      - name: KVM pour l'émulateur
+        run: |
+          ls e2e/out-android/GestiMarket-android-test-x86_64.apk
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Émulateur Android 9 et démarrage
+        timeout-minutes: 30
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          target: default
+          arch: x86_64
+          profile: pixel_3a
+          ram-size: 3072M
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash scripts/mobile/boot-check.sh e2e/out-android/GestiMarket-android-test-x86_64.apk e2e/out-android9
+      - name: Résultat
+        if: always()
+        run: |
+          [ -f e2e/out-android9/android-ancien.txt ] || exit 0
+          echo "::notice title=Android 9::$(head -3 e2e/out-android9/android-ancien.txt | tr '\n' ' ')"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-9
+          path: e2e/out-android9
+
   android-apk:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
@@ -161,10 +207,10 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/mobile/android-init.sh 2>&1 | tee android-init.log
-      - name: Compilation (téléphones arm64 et armv7)
+      - name: Compilation (téléphones arm64 et armv7, BlueStacks et émulateurs x86_64)
         run: |
           set -o pipefail
-          npx tauri android build --apk --target aarch64 armv7 --ci 2>&1 | tee android-build.log
+          npx tauri android build --apk --target aarch64 armv7 x86_64 --ci 2>&1 | tee android-build.log
       - name: Erreurs de compilation (annotations)
         if: failure()
         run: |
@@ -290,7 +336,7 @@ jobs:
           path: e2e/out-ios
 
   publish:
-    needs: [android-test, android-apk, ios]
+    needs: [android-test, android-9, android-apk, ios]
     if: always()
     runs-on: ubuntu-22.04
     permissions:
@@ -304,7 +350,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p files
-          printf 'android-test: %s\nandroid-apk: %s\nios: %s\n' "${{ needs.android-test.result }}" "${{ needs.android-apk.result }}" "${{ needs.ios.result }}" > files/resume.txt
+          printf 'android-test: %s\nandroid-9: %s\nandroid-apk: %s\nios: %s\n' "${{ needs.android-test.result }}" "${{ needs.android-9.result }}" "${{ needs.android-apk.result }}" "${{ needs.ios.result }}" > files/resume.txt
           for d in dist/*/; do
             n=$(basename "$d")
             for f in "$d"*; do [ -f "$f" ] && [ -s "$f" ] && cp "$f" "files/$( [ "$(basename "$f")" = results.json ] && echo "$n-results.json" || basename "$f")"; done

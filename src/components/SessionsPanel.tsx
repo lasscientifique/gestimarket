@@ -6,6 +6,7 @@ import { Badge } from "./ui";
 import { ROLE_LABELS } from "../lib/format";
 import type { SessionInfo } from "../types";
 import { tl } from "../lib/i18n";
+import { every } from "../lib/visibility";
 
 function idle(secs: number): string {
   if (secs < 60) return tl("à l'instant");
@@ -25,8 +26,7 @@ export function SessionsPanel() {
   useEffect(() => {
     if (user?.role !== "admin") return;
     load();
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
+    return every(10_000, load);
   }, [load, user?.role]);
   if (user?.role !== "admin" || !data) return null;
 

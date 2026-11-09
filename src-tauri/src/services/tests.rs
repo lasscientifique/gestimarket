@@ -1982,3 +1982,115 @@ fn loyalty_points_conversion_expiry_and_card() {
     assert_eq!(loyalty::customer_by_card(&conn, &code.to_lowercase()).unwrap(), Some(awa));
     assert_eq!(loyalty::customer_by_card(&conn, "CL999999-XXXX").unwrap(), None);
 }
+
+/// Grosse boutique (après 2 ans) : 20 000 produits, 5 000 clients, 50 000 ventes et 200 000 lignes.
+/// Les recherches et les écrans principaux doivent rester rapides. Lancé à part sur GitHub :
+/// `cargo test perf_grosse_boutique -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn perf_grosse_boutique() {
+    use std::time::Instant;
+    let (mut conn, admin) = setup();
+    let t0 = Instant::now();
+    {
+        let tx = conn.transaction().unwrap();
+        for c in 0..40 {
+            tx.execute("INSERT INTO categories (name, color) VALUES (?1, '#64748b')", [format!("Rayon {c}")]).unwrap();
+        }
+        {
+            let mut p = tx
+                .prepare("INSERT INTO products (barcode, name, category_id, purchase_price, sale_price, stock, min_stock) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 5)")
+                .unwrap();
+            for i in 0..20_000i64 {
+                p.execute(rusqlite::params![
+                    format!("200{:010}", i),
+                    format!("Produit {i} marque {} format {}", i % 97, i % 13),
+                    1 + i % 40,
+                    100 + i % 900,
+                    150 + i % 1200,
+                    (i % 50) as f64,
+                ])
+                .unwrap();
+            }
+        }
+        {
+            let mut c = tx.prepare("INSERT INTO customers (name, phone) VALUES (?1, ?2)").unwrap();
+            for i in 0..5_000i64 {
+                c.execute(rusqlite::params![format!("Client {i}"), format!("7{:07}", i)]).unwrap();
+            }
+        }
+        {
+            let mut s = tx
+                .prepare(
+                    "INSERT INTO sales (number, customer_id, user_id, subtotal, total, cost_total, amount_paid, payment_method, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?4, 'cash', datetime('now', 'localtime', ?6))",
+                )
+                .unwrap();
+            let mut l = tx
+                .prepare(
+                    "INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, unit_cost, total)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                )
+                .unwrap();
+            for v in 0..50_000i64 {
+                let ago = format!("-{} minutes", v * 21); // environ 2 ans de ventes
+                s.execute(rusqlite::params![format!("P{v:08}"), if v % 3 == 0 { Some(1 + v % 5000) } else { None }, admin.id, 4 * 500, 4 * 350, ago]).unwrap();
+                let sale = tx.last_insert_rowid();
+                for k in 0..4i64 {
+                    let pid = 1 + (v * 7 + k * 131) % 20_000;
+                    l.execute(rusqlite::params![sale, pid, format!("Produit {pid}"), 1.0, 500, 350, 500]).unwrap();
+                }
+            }
+        }
+        tx.commit().unwrap();
+    }
+    conn.execute_batch("ANALYZE").unwrap();
+    println!("données créées en {:?}", t0.elapsed());
+
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let month_ago = (chrono::Local::now() - chrono::Duration::days(30)).format("%Y-%m-%d").to_string();
+    let mut slow = Vec::new();
+    let mut time = |what: &str, limit_ms: u128, f: &mut dyn FnMut()| {
+        let t = Instant::now();
+        f();
+        let ms = t.elapsed().as_millis();
+        println!("{what} : {ms} ms (objectif {limit_ms} ms)");
+        if ms > limit_ms {
+            slow.push(format!("{what} : {ms} ms > {limit_ms} ms"));
+        }
+    };
+    // Objectifs en version de test (non optimisée) : le moteur de la base, lui, est optimisé.
+    time("recherche caisse « marque 42 »", 300, &mut || {
+        let f = catalog::ProductFilter { search: Some("marque 42".into()), limit: Some(80), ..Default::default() };
+        assert!(!catalog::list_products(&conn, &f).unwrap().is_empty());
+    });
+    time("code-barres scanné", 50, &mut || {
+        assert!(catalog::find_by_barcode(&conn, "2000000012345").unwrap().is_some());
+    });
+    time("caisse, rayon ouvert", 300, &mut || {
+        let f = catalog::ProductFilter { category_id: Some(7), limit: Some(80), ..Default::default() };
+        assert!(!catalog::list_products(&conn, &f).unwrap().is_empty());
+    });
+    time("écran Produits (5 000 lignes)", 1500, &mut || {
+        let f = catalog::ProductFilter { limit: Some(5000), ..Default::default() };
+        assert_eq!(catalog::list_products(&conn, &f).unwrap().len(), 5000);
+    });
+    time("tableau de bord", 1500, &mut || {
+        reports::dashboard(&conn).unwrap();
+    });
+    time("rapport des 30 derniers jours", 1500, &mut || {
+        reports::sales_report(&conn, &month_ago, &today).unwrap();
+    });
+    time("ventes du jour", 300, &mut || {
+        let f = sales::SaleFilter { from: Some(today.clone()), to: Some(today.clone()), limit: Some(5000), ..Default::default() };
+        sales::list_sales(&conn, &f).unwrap();
+    });
+    time("résumé du stock", 500, &mut || {
+        stock::summary(&conn).unwrap();
+    });
+    time("recherche client", 300, &mut || {
+        let f = partners::CustomerFilter { search: Some("Client 42".into()), ..Default::default() };
+        assert!(!partners::list_customers(&conn, &f).unwrap().is_empty());
+    });
+    assert!(slow.is_empty(), "écrans trop lents avec une grosse boutique : {}", slow.join(" ; "));
+}

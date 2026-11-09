@@ -8,6 +8,7 @@ import { Badge, Empty, Loading, PageHeader, StatCard } from "../components/ui";
 import { dateTime, fromMinor, money, paymentLabel, percent, qty, shortDay } from "../lib/format";
 import type { BackupStatus, Dashboard } from "../types";
 import { locale, tl } from "../lib/i18n";
+import { every } from "../lib/visibility";
 
 export default function DashboardPage() {
   const { toast, user } = useApp();
@@ -22,8 +23,7 @@ export default function DashboardPage() {
   const load = () => api.dashboard().then(setData).catch(toast.error);
   useEffect(() => {
     load();
-    const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
+    return every(60_000, load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -7,8 +7,21 @@
 //   tm(message du serveur)                 → messages du moteur (erreurs, licence…), traduits d'après leur modèle
 // Un texte sans traduction reste en français. La langue est lue au démarrage (les textes des listes et
 // menus sont calculés au chargement) : en changer recharge l'interface.
-import { EN } from "../i18n/en";
-import { EN_MESSAGES } from "../i18n/en-messages";
+// Le dictionnaire anglais (environ 250 Ko) n'est chargé que si l'anglais sert : interface en anglais,
+// ou boutique en anglais (tickets, écran client). Démarrage plus rapide pour tous les autres.
+let EN: Record<string, string> = {};
+let EN_MESSAGES: Record<string, string> = {};
+let dictionary: Promise<void> | null = null;
+
+/** Charge le dictionnaire anglais (une seule fois). */
+export function loadDictionary(): Promise<void> {
+  dictionary ??= Promise.all([import("../i18n/en"), import("../i18n/en-messages")]).then(([a, b]) => {
+    EN = a.EN;
+    EN_MESSAGES = b.EN_MESSAGES;
+    patterns = null;
+  });
+  return dictionary;
+}
 
 export type Lang = "fr" | "en";
 export const LANGS: { code: Lang; label: string }[] = [
@@ -62,6 +75,7 @@ export function setLang(l: Lang, reload = true) {
 /** Langue de la boutique (tickets, écran client, catalogue) et pays (formats de nombres et de dates). */
 export function configureLocale(shop: string | undefined, countryCode: string | undefined) {
   if (isLang(shop)) shopLang = shop;
+  if (shopLang === "en") void loadDictionary();
   if (countryCode && /^[A-Z]{2}$/.test(countryCode)) country = countryCode;
 }
 
@@ -136,6 +150,23 @@ export function tm(message: string | null | undefined): string {
   // Plusieurs phrases : chacune est traduite séparément si le message entier n'a pas de modèle.
   const whole = translateMessage(message, 0);
   if (whole !== message) return whole;
-  const sentences = message.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý«])/);
+  const sentences = splitSentences(message);
   return sentences.length > 1 ? sentences.map((s) => translateMessage(s, 0)).join(" ") : message;
+}
+
+/**
+ * Découpe un message en phrases (« . », « ! » ou « ? » suivi d'une majuscule).
+ * Sans « regarder en arrière » dans l'expression régulière : Safari ne le comprend qu'à partir d'iOS 16.4,
+ * et une seule de ces écritures empêche tout le programme de démarrer sur les iPhone plus anciens.
+ */
+export function splitSentences(message: string): string[] {
+  const out: string[] = [];
+  const re = /[.!?]\s+(?=[A-ZÀ-Ý«])/g;
+  let last = 0;
+  for (let m = re.exec(message); m; m = re.exec(message)) {
+    out.push(message.slice(last, m.index + 1));
+    last = re.lastIndex;
+  }
+  out.push(message.slice(last));
+  return out;
 }

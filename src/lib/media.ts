@@ -5,17 +5,23 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import { chosenName } from "./files";
 import { getToken, isMobileApp, isRemote, isTauri, remoteUrl } from "./transport";
 
-/** URL d'une photo stockée dans la base (servie par le protocole « media » côté Rust). */
-export function mediaUrl(id: number | null | undefined): string | undefined {
+/**
+ * URL d'une photo stockée dans la base (servie par le protocole « media » côté Rust).
+ * `size` (pixels) : vignette fabriquée par le serveur (96, 160 ou 320), bien plus légère que la photo
+ * entière pour les listes, surtout sur téléphone et par Internet.
+ */
+export function mediaUrl(id: number | null | undefined, size?: number): string | undefined {
   if (!id) return undefined;
+  const s = size ? `s=${Math.round(size)}` : "";
   // Depuis Internet, le poste serveur exige la session pour servir les photos.
   if (isRemote()) {
     const t = getToken();
-    return remoteUrl(`/media/${id}${t ? `?t=${encodeURIComponent(t)}` : ""}`);
+    const query = [s, t ? `t=${encodeURIComponent(t)}` : ""].filter(Boolean).join("&");
+    return remoteUrl(`/media/${id}${query ? `?${query}` : ""}`);
   }
   if (!isTauri) return undefined;
   try {
-    return convertFileSrc(String(id), "media");
+    return convertFileSrc(String(id), "media") + (s ? `?${s}` : "");
   } catch {
     return undefined;
   }

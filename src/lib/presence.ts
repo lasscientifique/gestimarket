@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 import { rpc, getNetwork, isMobileApp, isRemote, isTauri } from "./transport";
 import { inAppWebView } from "./device";
 import { tl } from "./i18n";
+import { every } from "./visibility";
 
 
 const ID_KEY = "gm-poste-id";
@@ -144,7 +145,7 @@ export function startPresence(name: () => string) {
   if (started) return;
   started = true;
   beat();
-  setInterval(beat, 10_000);
+  every(10_000, beat);
   window.addEventListener("online", beat);
 }
 

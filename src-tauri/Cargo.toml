@@ -1,6 +1,6 @@
 [package]
 name = "gestimarket"
-version = "0.19.0"
+version = "0.20.0"
 description = "GestiMarket — logiciel de gestion de supermarché et de boutiques"
 authors = ["GestiMarket"]
 edition = "2021"
@@ -39,6 +39,8 @@ ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 # Licences : signature Ed25519 vérifiée hors ligne, identifiant du PC.
 ed25519-dalek = "2"
 sha2 = "0.10"
+# Vignettes des photos (listes et caisse légères sur téléphone et par Internet).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

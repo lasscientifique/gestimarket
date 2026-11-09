@@ -5,15 +5,18 @@ import type { CellFill, Fixture, Floor } from "../../types";
 import { DRAG_TYPE, geometryOf, problemMessage, type Geometry } from "../plan/StoreMap";
 import { StoreEngine, type EngineOptions, type Highlight, type ViewMode } from "./engine";
 import { tl } from "../../lib/i18n";
+import { isPhoneLike } from "../../lib/visibility";
 
 const PREFS = "gm-plan3d";
 
 function loadPrefs(): EngineOptions {
   try {
     const v = JSON.parse(localStorage.getItem(PREFS) ?? "{}");
-    return { quality: v.quality === "simple" ? "simple" : "realistic", products: v.products !== false, photos: !!v.photos, highWalls: !!v.highWalls };
+    // Qualité « Simple » (sans ombres) par défaut sur téléphone et tablette : plus fluide, moins de batterie.
+    const quality = v.quality === "simple" || v.quality === "realistic" ? v.quality : isPhoneLike() ? "simple" : "realistic";
+    return { quality, products: v.products !== false, photos: !!v.photos, highWalls: !!v.highWalls };
   } catch {
-    return { quality: "realistic", products: true, photos: false, highWalls: false };
+    return { quality: isPhoneLike() ? "simple" : "realistic", products: true, photos: false, highWalls: false };
   }
 }
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Search, Eye, Download } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
-import { Badge, Empty, PageHeader } from "../components/ui";
+import { Badge, Empty, PageHeader, useShowMore } from "../components/ui";
 import { SaleDetailModal } from "../components/SaleDetail";
 import { exportCsv } from "../lib/files";
 import { csvMoney, dateTime, isoDate, money, paymentLabel, paymentMethods, qty, toCsv } from "../lib/format";
@@ -18,6 +18,7 @@ export default function SalesPage() {
   const [status, setStatus] = useState("");
   const [method, setMethod] = useState("");
   const [viewing, setViewing] = useState<Sale | null>(null);
+  const shown = useShowMore(list, `${from}|${to}|${search}|${status}|${method}`);
 
   const load = useCallback(() => {
     api.listSales({ from, to, search, status: status || undefined, payment_method: method || undefined, limit: 5000 }).then(setList).catch(toast.error);
@@ -79,7 +80,7 @@ export default function SalesPage() {
           <table className="table">
             <thead><tr><th>{tl("N° ticket")}</th><th>{tl("Date")}</th><th>{tl("Client")}</th><th>{tl("Caissier")}</th><th className="num">{tl("Articles")}</th><th>{tl("Paiement")}</th><th className="num">{tl("Total")}</th><th></th></tr></thead>
             <tbody>
-              {list.map((s) => (
+              {shown.visible.map((s) => (
                 <tr key={s.id} className={s.status === "cancelled" ? "row-cancelled" : ""} onDoubleClick={() => open(s)}>
                   <td><strong>{s.number}</strong> {s.status === "cancelled" && <Badge tone="danger">{tl("Annulée")}</Badge>}</td>
                   <td className="nowrap">{dateTime(s.created_at)}</td>
@@ -96,6 +97,7 @@ export default function SalesPage() {
             </tbody>
           </table>
         )}
+        {shown.more}
       </div>
       {viewing && <SaleDetailModal sale={viewing} onClose={() => setViewing(null)} onChanged={load} />}
     </div>

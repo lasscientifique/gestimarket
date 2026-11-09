@@ -62,10 +62,13 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
       setSelected(null);
       return;
     }
+    let stale = false;
     const t = setTimeout(async () => {
       try {
         const byCode = await api.findProductByBarcode(search.trim());
         const list = byCode ? [byCode] : await api.listProducts({ search, limit: 40 });
+        // Recherche dépassée pendant l'attente du réseau : ses résultats ne remplacent pas les nouveaux.
+        if (stale) return;
         setResults(list);
         setActive(0);
         setSelected(list[0] ?? null);
@@ -73,7 +76,10 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
         toast.error(e);
       }
     }, 160);
-    return () => clearTimeout(t);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
   }, [search, toast]);
 
   const place = places[Math.min(focus, places.length - 1)] ?? null;

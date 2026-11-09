@@ -1,3 +1,5 @@
+import { isPhoneLike } from "../../lib/visibility";
+
 // Disponibilité de la 3D (sans charger three.js : la caisse reste légère).
 
 let cached: boolean | null = null;
@@ -24,6 +26,9 @@ export function savedView(key: string, fallback: PlanView): PlanView {
   } catch {
     // Stockage indisponible : vue par défaut.
   }
+  // Téléphone et tablette : plan vu de dessus par défaut (la 3D reste à un bouton) ; la 3D chargée
+  // d'office figeait les iPhone et les petits Android.
+  if (fallback !== "plan" && isPhoneLike()) return "plan";
   return fallback === "plan" || webglAvailable() ? fallback : "plan";
 }
 

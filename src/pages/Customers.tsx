@@ -3,7 +3,7 @@ import { Plus, Search, Pencil, Archive, HandCoins, FileText, Phone, Undo2, QrCod
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { HelpTip } from "../components/Help";
-import { Badge, Empty, Field, Modal, PageHeader } from "../components/ui";
+import { Badge, Empty, Field, Modal, PageHeader, useShowMore } from "../components/ui";
 import { SaleDetailModal } from "../components/SaleDetail";
 import { AccountBalance, DepositModal, LoyaltyCardModal, LoyaltyHistory, RefundFundsModal, Stars, balanceText, useLoyaltyActive } from "../components/CustomerAccount";
 import { currencySymbol, dateOnly, dateTime, minorToInput, money, paymentLabel, toMinor } from "../lib/format";
@@ -23,6 +23,7 @@ export default function CustomersPage() {
   const [refunding, setRefunding] = useState<Customer | null>(null);
   const [card, setCard] = useState<Customer | null>(null);
   const [statement, setStatement] = useState<Customer | null>(null);
+  const shown = useShowMore(list, `${search}|${view}`);
 
   const load = useCallback(
     () => api.listCustomers({ search, with_debt: view === "debt", with_funds: view === "funds" }).then(setList).catch(toast.error),
@@ -89,7 +90,7 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map((c) => (
+              {shown.visible.map((c) => (
                 <tr key={c.id} onDoubleClick={() => setStatement(c)}>
                   <td><strong>{c.name}</strong>{c.wholesale && <> <Badge tone="info">{tl("Grossiste")}</Badge></>}{c.address && <div className="muted small">{c.address}</div>}</td>
                   <td>{c.phone ? <><Phone size={12} /> {c.phone}</> : <span className="muted">—</span>}</td>
@@ -117,6 +118,7 @@ export default function CustomersPage() {
             </tbody>
           </table>
         )}
+        {shown.more}
       </div>
       {editing && <CustomerForm customer={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {paying && <DepositModal customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load(); }} />}

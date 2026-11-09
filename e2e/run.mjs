@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { chromium } from "playwright";
 import { phoneTour } from "./mobile.mjs";
+import { speedTest } from "./vitesse.mjs";
 
 const SRV = "http://127.0.0.1:7878";
 const PUB = "http://127.0.0.1:8080";
@@ -585,6 +586,9 @@ try {
   // ── Version mobile : toutes les pages sur un téléphone de 360 px, par Internet (administrateur et caissière).
   const cashierToken = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;
   await phoneTour({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, strict: process.env.MOBILE_STRICT !== "0", check });
+
+  // ── Vitesse sur un petit téléphone en 4G, et Safari (WebKit) sur iPhone.
+  await speedTest({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, check });
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

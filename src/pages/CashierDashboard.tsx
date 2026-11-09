@@ -8,6 +8,7 @@ import { Badge, Empty, Loading, PageHeader, StatCard } from "../components/ui";
 import { dateTime, fromMinor, money, qty } from "../lib/format";
 import type { CashierStats } from "../types";
 import { locale, tl } from "../lib/i18n";
+import { every } from "../lib/visibility";
 
 /** Tableau de bord du caissier : statistiques de sa session de caisse. */
 export default function CashierDashboardPage() {
@@ -17,8 +18,7 @@ export default function CashierDashboardPage() {
   const load = useCallback(() => api.cashierStats().then(setData).catch(toast.error), [toast]);
   useEffect(() => {
     load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
+    return every(30_000, load);
   }, [load]);
 
   if (!data) return <Loading />;

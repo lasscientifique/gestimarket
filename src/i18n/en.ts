@@ -2347,4 +2347,10 @@ export const EN: Record<string, string> = {
   "Versement enregistré. {0}": "Deposit recorded. {0}",
   "Versements clients (électroniques)": "Customer deposits (electronic)",
   "Versements clients (espèces)": "Customer deposits (cash)",
+  "Afficher plus ({0} sur {1})": "Show more ({0} of {1})",
+  "GestiMarket {0} est disponible (vous avez la {1}).": "GestiMarket {0} is available (you have {1}).",
+  "Télécharger": "Download",
+  "Pannes du programme": "Program failures",
+  "Envoyer les pannes du programme à Eden Dev, pour qu'elles soient corrigées": "Send program failures to Eden Dev so they can be fixed",
+  "Seuls partent le message de la panne, l'écran, la version et le modèle d'appareil. Jamais de ventes, produits, clients ni montants.": "Only the failure message, the screen, the version and the device model are sent. Never sales, products, customers or amounts.",
 };

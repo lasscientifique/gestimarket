@@ -414,7 +414,9 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
                     return invalid("Le logo personnalisé est inclus à partir de la formule PRO.");
                 }
             }
-            out(settings::update(c, u, values)?)
+            let saved = settings::update(c, u, values)?;
+            crate::report::refresh(c);
+            out(saved)
         }),
 
         // ───── Catalogue ─────
@@ -842,6 +844,20 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             if crate::license::allows("customer_display") {
                 let poste: String = arg(&a, "poste")?;
                 state.set_display(&poste, a.get("state").cloned().unwrap_or(Value::Null));
+            }
+            out(())
+        }
+
+        // ───── Nouvelle version et erreurs du programme ─────
+        "update_status" => {
+            state.require(origin, Any)?;
+            Ok(crate::report::update_status())
+        }
+        // Erreur imprévue de l'interface (aussi avant la connexion) : envoyée à Eden Dev si la boutique le permet.
+        "report_error" => {
+            if crate::report::allowed(&state.conn()) {
+                let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+                crate::report::send(&text("kind"), &text("message"), &text("stack"), &text("page"), &text("device"));
             }
             out(())
         }

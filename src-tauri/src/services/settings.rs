@@ -9,6 +9,8 @@ use crate::state::SessionUser;
 /// Paramètres connus et leurs valeurs par défaut.
 pub const DEFAULTS: &[(&str, &str)] = &[
     ("shop_name", "Ma Boutique"),
+    // Pannes du programme envoyées à Eden Dev (aucune donnée commerciale) : « 0 » pour refuser.
+    ("error_reports", "1"),
     ("shop_address", ""),
     ("shop_phone", ""),
     ("shop_email", ""),

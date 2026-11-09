@@ -34,7 +34,7 @@ import {
   BadgePercent,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { LicenceBanner } from "./LicenceBanner";
+import { LicenceBanner, UpdateBanner } from "./LicenceBanner";
 import { ROLE_LABELS } from "../lib/format";
 import { BrandLogo } from "./Brand";
 import type { Role } from "../types";
@@ -258,6 +258,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       <main className="content">
         <LicenceBanner />
+        <UpdateBanner />
         {children}
       </main>
       {tabs.length > 0 && (

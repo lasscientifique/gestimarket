@@ -125,6 +125,7 @@ pub fn start_server(app: AppHandle, port: u16) {
     tauri::async_runtime::spawn(async move {
         let router = Router::new()
             .route("/rpc/{cmd}", post(rpc_handler))
+            .route("/rpc-batch", post(rpc_batch_handler))
             .route("/media/{id}", get(media_handler))
             .route("/api/ping", get(ping_handler))
             .fallback(get(asset_handler))
@@ -234,6 +235,11 @@ fn remote_args(body: &[u8], ip: String, route: &str) -> Result<Value, &'static s
     } else {
         serde_json::from_slice(body).map_err(|_| "Requête invalide : paramètres JSON illisibles.")?
     };
+    remote_value_args(parsed, ip, route)
+}
+
+/// Comme `remote_args`, pour des paramètres déjà lus (appels groupés).
+fn remote_value_args(parsed: Value, ip: String, route: &str) -> Result<Value, &'static str> {
     let mut map = match parsed {
         Value::Object(m) => m,
         Value::Null => serde_json::Map::new(),
@@ -282,6 +288,70 @@ async fn rpc_handler(
     }
 }
 
+/// Nombre maximum d'appels dans un envoi groupé.
+const MAX_BATCH: usize = 20;
+
+/// Appels groupés : `{"calls": [{"cmd": "…", "args": {…}}, …]}` → `{"results": [{"ok": …} | {"error": "…"}, …]}`.
+///
+/// Un écran qui demande plusieurs choses à son ouverture (produits, catégories, emplacements…) les envoie
+/// en un seul aller-retour : par Internet ou en 4G, chaque aller-retour coûte 0,2 à 0,5 s. Les appels sont
+/// faits dans l'ordre, chacun avec les mêmes contrôles qu'un appel seul (session, formule, droits).
+async fn rpc_batch_handler(
+    State(app): State<App>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(String::from);
+    let (ip, route) = client_route(&addr, &headers);
+    let this_pc = route == "local" && addr.ip().to_canonical().is_loopback();
+    if !this_pc {
+        if let Err(msg) = crate::license::remote_allowed(route) {
+            return Json(json!({ "error": msg })).into_response();
+        }
+    }
+    let parsed: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Requête invalide : paramètres JSON illisibles." }))).into_response(),
+    };
+    let Some(calls) = parsed.get("calls").and_then(Value::as_array).cloned() else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Requête invalide : liste d'appels absente." }))).into_response();
+    };
+    if calls.is_empty() || calls.len() > MAX_BATCH {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "Requête invalide : nombre d'appels groupés." }))).into_response();
+    }
+    let route = route.to_string();
+    let result = tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let origin = Origin::Remote(token);
+        calls
+            .into_iter()
+            .map(|call| {
+                let Some(cmd) = call.get("cmd").and_then(Value::as_str).map(String::from) else {
+                    return json!({ "error": "Requête invalide : commande absente." });
+                };
+                let args = match remote_value_args(call.get("args").cloned().unwrap_or(Value::Null), ip.clone(), &route) {
+                    Ok(a) => a,
+                    Err(msg) => return json!({ "error": msg }),
+                };
+                match crate::rpc::dispatch(&state, &origin, &cmd, args) {
+                    Ok(v) => json!({ "ok": v }),
+                    Err(e) => json!({ "error": e.to_string() }),
+                }
+            })
+            .collect::<Vec<Value>>()
+    })
+    .await;
+    match result {
+        Ok(results) => Json(json!({ "results": results })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
 /// Photos (produits, logo, QR code). Depuis Internet, une session est exigée (`?t=<jeton>`).
 async fn media_handler(
     State(app): State<App>,
@@ -293,12 +363,13 @@ async fn media_handler(
     let id: i64 = id.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let (_, route) = client_route(&addr, &headers);
     let token = query.get("t").cloned();
+    let size = crate::services::media::thumb_size(query.get("s").map(String::as_str));
     let found = tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
         if route == "internet" && state.user(&Origin::Remote(token)).is_none() {
             return Err(StatusCode::UNAUTHORIZED);
         }
-        let found = crate::services::media::get(&state.conn(), id).ok().flatten();
+        let found = crate::services::media::get_sized(&state, id, size).ok().flatten();
         found.ok_or(StatusCode::NOT_FOUND)
     })
     .await

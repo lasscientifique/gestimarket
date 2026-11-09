@@ -52,6 +52,7 @@ import { IDLE_DISPLAY, publishDisplay, type DisplayLine } from "../lib/display";
 import { isMobileApp, isTauri, posteName } from "../lib/transport";
 import type { CashSession, Category, CreditNote, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, QuoteLine, Sale } from "../types";
 import { locale, tl } from "../lib/i18n";
+import { every } from "../lib/visibility";
 
 interface CartLine {
   product: Product;
@@ -277,13 +278,16 @@ export default function PosPage() {
     const t = setTimeout(pushLive, 350);
     return () => clearTimeout(t);
   }, [liveContent, modal, pushLive]);
-  useEffect(() => {
-    const t = setInterval(() => {
-      pushLive();
-      api.liveCarts(posteId()).then((l) => setOthersCount(l.length)).catch(() => undefined);
-    }, 4000);
-    return () => clearInterval(t);
-  }, [pushLive]);
+  // Toutes les 10 s (la caisse reste « en ligne » 25 s) et jamais quand l'application est cachée :
+  // sur téléphone et par Internet, ces envois occupaient la connexion de la boutique.
+  useEffect(
+    () =>
+      every(10_000, () => {
+        pushLive();
+        api.liveCarts(posteId()).then((l) => setOthersCount(l.length)).catch(() => undefined);
+      }),
+    [pushLive],
+  );
 
   /** Reprise du client d'un collègue : son ticket arrive ici, prêt à encaisser. */
   const takeOver = async (c: LiveCart) => {
@@ -332,10 +336,16 @@ export default function PosPage() {
     api.listCategories().then(setCategories).catch(toast.error);
   }, [loadSession, toast]);
 
+  // Numéro de la dernière recherche : une réponse plus ancienne arrivée en retard (réseau lent) est ignorée.
+  const productSeq = useRef(0);
   const loadProducts = useCallback(() => {
     const term = search.includes("*") ? search.split("*")[1] : search;
+    const seq = ++productSeq.current;
     // Une recherche texte porte sur tout le catalogue ; sans recherche, on affiche la catégorie ouverte.
-    api.listProducts({ search: term, category_id: term.trim() ? null : categoryId, limit: 80 }).then(setProducts).catch(toast.error);
+    api
+      .listProducts({ search: term, category_id: term.trim() ? null : categoryId, limit: 80 })
+      .then((list) => seq === productSeq.current && setProducts(list))
+      .catch(toast.error);
   }, [search, categoryId, toast]);
 
   useEffect(() => {
@@ -1584,8 +1594,7 @@ function OtherTillsModal({ onClose, onTake }: { onClose: () => void; onTake: (c:
   useEffect(() => {
     const load = () => api.liveCarts(posteId()).then(setList).catch(() => setList([]));
     load();
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
+    return every(3000, load);
   }, []);
   const followed = list?.find((c) => c.poste_id === follow) ?? null;
   return (

@@ -6,6 +6,7 @@ import { Badge } from "./ui";
 import { isMobileApp, isTauri } from "../lib/transport";
 import type { BoutiquesInfo } from "../types";
 import { tl } from "../lib/i18n";
+import { every } from "../lib/visibility";
 
 /**
  * Plusieurs boutiques sur ce PC (5 au maximum) : chacune s'ouvre dans sa propre fenêtre,
@@ -21,8 +22,7 @@ export function BoutiquesPanel({ compact }: { compact?: boolean }) {
     // Téléphone et tablette : une seule boutique par application.
     if (!isTauri || isMobileApp) return;
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    return every(5000, load);
   }, []);
   if (!isTauri || isMobileApp || !info) return null;
 

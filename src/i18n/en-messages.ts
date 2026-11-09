@@ -655,4 +655,9 @@ export const EN_MESSAGES: Record<string, string> = {
   "Fonds rendus au client": "Funds given back to the customer",
   "Retour {}": "Return {}",
   "Aucun achat depuis {} mois": "No purchase for {} months",
+  "Requête invalide : commande absente.": "Invalid request: command missing.",
+  "Requête invalide : liste d'appels absente.": "Invalid request: call list missing.",
+  "Requête invalide : nombre d'appels groupés.": "Invalid request: number of grouped calls.",
+  "Erreur non envoyée à Eden Dev : {}": "Error not sent to Eden Dev: {}",
+  "Panne du moteur : {} ({})": "Engine failure: {} ({})",
 };

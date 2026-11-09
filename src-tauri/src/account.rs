@@ -238,6 +238,11 @@ fn pc_rpc(name: &str, body: Value) -> Result<Value, String> {
     call(request(&format!("/rest/v1/rpc/{name}"), None), body)
 }
 
+/// Erreur du programme envoyée à Eden Dev (voir report.rs : aucune donnée commerciale).
+pub fn report_error(body: Value) -> Result<Value, String> {
+    pc_rpc("gm_report_error", body)
+}
+
 /// Après un paiement, la licence est vérifiée toutes les 2 minutes pendant 24 h (au lieu de 30 minutes),
 /// pour qu'elle se mette à jour peu après la validation par Eden Dev ou par Cybersource.
 static FAST_SYNC_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);

@@ -124,6 +124,11 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl AppState {
+    /// Dossier des vignettes de photos de cette boutique (à côté de la base).
+    pub fn thumbs_dir(&self) -> std::path::PathBuf {
+        self.db_path.parent().map(|d| d.join("Vignettes")).unwrap_or_else(|| std::path::PathBuf::from("Vignettes"))
+    }
+
     pub fn new(conn: Connection, db_path: std::path::PathBuf) -> Self {
         Self {
             db: Mutex::new(conn),

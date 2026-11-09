@@ -104,6 +104,27 @@ export function Badge({ children, tone = "default" }: { children: ReactNode; ton
   return <span className={`badge badge-${tone}`}>{children}</span>;
 }
 
+/**
+ * Longues listes (produits, ventes, stock…) : seules les 100 premières lignes sont dessinées, puis
+ * « Afficher plus ». Des milliers de lignes d'un coup figeaient les téléphones. Les totaux et les exports
+ * continuent d'utiliser toute la liste. `resetKey` : une nouvelle recherche repart des premières lignes.
+ */
+export function useShowMore<T>(list: T[], resetKey: string, step = 100): { visible: T[]; more: ReactNode } {
+  const [count, setCount] = useState(step);
+  useEffect(() => setCount(step), [resetKey, step]);
+  if (list.length <= count) return { visible: list, more: null };
+  return {
+    visible: list.slice(0, count),
+    more: (
+      <div className="show-more">
+        <button type="button" className="btn" onClick={() => setCount((c) => c + step * 2)}>
+          {tl("Afficher plus ({0} sur {1})", [count, list.length])}
+        </button>
+      </div>
+    ),
+  };
+}
+
 export function Field({ label, children, hint, span }: { label: ReactNode; children: ReactNode; hint?: ReactNode; span?: 2 }) {
   return (
     <label className={`field ${span === 2 ? "span-2" : ""}`}>
@@ -128,7 +149,8 @@ export function Thumb({
   size?: number;
   rounded?: number;
 }) {
-  const url = mediaUrl(imageId);
+  // Vignette du serveur à la taille affichée (deux fois plus de pixels pour les écrans fins).
+  const url = mediaUrl(imageId, Math.min(320, size * 2));
   const [failedUrl, setFailedUrl] = useState<string | undefined>();
   const style = { width: size, height: size, borderRadius: rounded, flexShrink: 0 } as const;
   if (url && failedUrl !== url) {

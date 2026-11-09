@@ -26,13 +26,15 @@ pub async fn rpc(state: State<'_, AppState>, cmd: String, args: Option<Value>) -
 // Les chemins proviennent toujours des boîtes de dialogue du système (choix de l'utilisateur).
 
 /// Contact Eden Dev (Paramètres → Développeur Eden Dev) : ouvre la messagerie, WhatsApp ou l'appel
-/// avec le programme par défaut de ce PC. Seules ces trois adresses fixes peuvent être ouvertes.
+/// avec le programme par défaut de ce PC. Seules ces adresses fixes peuvent être ouvertes
+/// (« releases » : page de téléchargement de la dernière version de GestiMarket).
 #[tauri::command]
 pub async fn open_contact(app: AppHandle, kind: String) -> AppResult<()> {
     let url = match kind.as_str() {
         "email" => "mailto:lasscientifique@gmail.com",
         "whatsapp" => "https://wa.me/22376593676",
         "phone" => "tel:+22376593676",
+        "releases" => "https://github.com/lasscientifique/gestimarket/releases/latest",
         _ => return invalid("Contact inconnu."),
     };
     open_url(&app, url)

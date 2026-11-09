@@ -9,6 +9,7 @@ mod license;
 mod live;
 mod network;
 mod printer;
+mod report;
 mod rpc;
 mod services;
 mod state;
@@ -23,6 +24,8 @@ use crate::state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Pannes du moteur : notées dans le journal et envoyées à Eden Dev si la boutique le permet.
+    report::install_panic_hook();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -41,10 +44,14 @@ pub fn run() {
                 .next()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0);
+            // « ?s=96 » : vignette (listes, caisse) au lieu de la photo entière.
+            let size = services::media::thumb_size(
+                request.uri().query().and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("s="))),
+            );
             let found = ctx
                 .app_handle()
                 .try_state::<AppState>()
-                .and_then(|state| services::media::get(&state.conn(), id).ok().flatten());
+                .and_then(|state| services::media::get_sized(&state, id, size).ok().flatten());
             match found {
                 Some((mime, data)) => Response::builder()
                     .header("Content-Type", mime)
@@ -108,6 +115,7 @@ pub fn run() {
             }
             // Licence de cette boutique (vérifiée hors ligne) et horloge mémorisée.
             license::init(&conn, &root, &dir, slot);
+            report::init(&conn);
             app.manage(AppState::new(conn, db_path));
             app.manage(current);
 

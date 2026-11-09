@@ -36,6 +36,14 @@ jobs:
         run: |
           set -o pipefail
           cargo test --color never 2>&1 | tee ../cargo-test.log
+      # Grosse boutique (20 000 produits, 200 000 lignes de vente) : les écrans principaux restent rapides.
+      - name: Vitesse avec une grosse boutique
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo test --color never perf_grosse_boutique -- --ignored --nocapture 2>&1 | tee -a ../cargo-test.log | grep -E " ms |données|test result|panicked" || true
+          grep -q "test services::tests::perf_grosse_boutique ... ok" ../cargo-test.log
+          echo "::notice title=Grosse boutique::$(grep -E ' ms \(objectif' ../cargo-test.log | tr '\n' ' ' | cut -c1-900)"
       # Erreurs de compilation et tests en échec recopiés en annotations : lisibles sans connexion à GitHub.
       - name: Erreurs Rust (annotations)
         if: failure()
@@ -59,6 +67,8 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npx vite build
+      - name: Compatibilité anciens Android et iPhone (Chrome 70, iOS 13)
+        run: node scripts/check-compat.mjs
       - name: cargo check (Windows)
         working-directory: src-tauri
         run: cargo check --all-targets --color never
@@ -87,10 +97,10 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      - name: Playwright (Chromium)
+      - name: Playwright (Chromium, et WebKit comme Safari)
         run: |
           npm i --no-save playwright@1.49.1
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
       - name: Compilation (debug)
         run: npx tauri build --debug --no-bundle
       - name: Lancement en mode serveur sous Xvfb

@@ -112,7 +112,26 @@ const SLOW_COMMANDS = new Set([
   "license_sync", "account_signup", "account_login", "account_create_store", "account_link", "account_card_start",
 ]);
 
+// Erreurs venues du moteur ou du réseau (stock insuffisant, serveur injoignable…) : attendues, déjà
+// montrées à l'utilisateur, jamais envoyées à Eden Dev comme des pannes.
+const expected = new WeakSet<object>();
+
+/** L'erreur vient-elle d'une opération refusée ou du réseau (et non d'une panne de l'interface) ? */
+export function isExpectedError(e: unknown): boolean {
+  return typeof e === "object" && e !== null && expected.has(e);
+}
+
 export async function rpc<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await rpcCall<T>(cmd, args);
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    expected.add(err);
+    throw err;
+  }
+}
+
+async function rpcCall<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (remoteBase === null) {
     try {
       return await invoke<T>("rpc", { cmd, args: args ?? {} });
@@ -120,6 +139,19 @@ export async function rpc<T>(cmd: string, args?: Record<string, unknown>): Promi
       throw toError(e);
     }
   }
+  if (batchSupported && !SLOW_COMMANDS.has(cmd)) return queueCall<T>(cmd, args ?? {});
+  return remoteCall<T>(cmd, args ?? {});
+}
+
+function networkError(aborted: boolean): Error {
+  if (aborted) {
+    return new Error(tl("Le serveur ne répond pas (délai dépassé). Vérifiez le réseau, puis réessayez : une vente déjà enregistrée ne sera pas comptée deux fois."));
+  }
+  return new Error(tl("Serveur injoignable ({0}). Vérifiez que le poste serveur est allumé et sur le même réseau.", [remoteBase]));
+}
+
+/** Un appel envoyé seul au poste serveur. */
+async function remoteCall<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
   // Délai maximum : sur un réseau qui coupe (Wi-Fi faible, 4G), le bouton ne tourne pas sans fin.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SLOW_COMMANDS.has(cmd) ? 180_000 : 45_000);
@@ -128,20 +160,98 @@ export async function rpc<T>(cmd: string, args?: Record<string, unknown>): Promi
     res = await fetch(`${remoteBase}/rpc/${cmd}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(args ?? {}),
+      body: JSON.stringify(args),
       signal: controller.signal,
     });
   } catch {
     clearTimeout(timer);
-    if (controller.signal.aborted) {
-      throw new Error(tl("Le serveur ne répond pas (délai dépassé). Vérifiez le réseau, puis réessayez : une vente déjà enregistrée ne sera pas comptée deux fois."));
-    }
-    throw new Error(tl("Serveur injoignable ({0}). Vérifiez que le poste serveur est allumé et sur le même réseau.", [remoteBase]));
+    throw networkError(controller.signal.aborted);
   }
   const data = await res.json().catch(() => ({ error: tl("Réponse invalide du serveur ({0}).", [res.status]) }));
   clearTimeout(timer);
   if (data.error) throw new Error(data.error);
   return data.ok as T;
+}
+
+// ───────────── Appels groupés ─────────────
+// Les appels lancés au même moment (ouverture d'un écran : produits, catégories, emplacements…) partent
+// ensemble, en un seul aller-retour (/rpc-batch). Par Internet ou en 4G, chaque aller-retour coûte
+// 0,2 à 0,5 s. Un poste serveur plus ancien (sans /rpc-batch) reçoit à nouveau des appels séparés.
+
+interface Pending {
+  cmd: string;
+  args: Record<string, unknown>;
+  resolve: (v: unknown) => void;
+  reject: (e: Error) => void;
+}
+
+const MAX_BATCH = 20;
+let batchSupported = true;
+let queue: Pending[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function queueCall<T>(cmd: string, args: Record<string, unknown>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    queue.push({ cmd, args, resolve: resolve as (v: unknown) => void, reject });
+    if (queue.length >= MAX_BATCH) flushQueue();
+    else flushTimer ??= setTimeout(flushQueue, 0);
+  });
+}
+
+function settleAlone(p: Pending) {
+  remoteCall(p.cmd, p.args).then(p.resolve, p.reject);
+}
+
+function flushQueue() {
+  if (flushTimer !== null) clearTimeout(flushTimer);
+  flushTimer = null;
+  const calls = queue;
+  queue = [];
+  if (calls.length === 0) return;
+  if (calls.length === 1 || !batchSupported) {
+    calls.forEach(settleAlone);
+    return;
+  }
+  void sendBatch(calls);
+}
+
+async function sendBatch(calls: Pending[]) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
+  let res: Response;
+  try {
+    res = await fetch(`${remoteBase}/rpc-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ calls: calls.map((c) => ({ cmd: c.cmd, args: c.args })) }),
+      signal: controller.signal,
+    });
+  } catch {
+    clearTimeout(timer);
+    const e = networkError(controller.signal.aborted);
+    calls.forEach((c) => c.reject(e));
+    return;
+  }
+  clearTimeout(timer);
+  // Poste serveur d'avant la 0.20 : pas d'appels groupés.
+  if (res.status === 404 || res.status === 405) {
+    batchSupported = false;
+    calls.forEach(settleAlone);
+    return;
+  }
+  const data = await res.json().catch(() => null);
+  const results: unknown[] | null = data && Array.isArray(data.results) ? data.results : null;
+  if (!results || results.length !== calls.length) {
+    // Refus global (formule, requête) : le même message pour chaque appel.
+    const e = new Error(data?.error ?? tl("Réponse invalide du serveur ({0}).", [res.status]));
+    calls.forEach((c) => c.reject(e));
+    return;
+  }
+  calls.forEach((c, i) => {
+    const r = results[i] as { ok?: unknown; error?: string };
+    if (r && r.error) c.reject(new Error(r.error));
+    else c.resolve(r?.ok);
+  });
 }
 
 /** Commande propre à ce PC (fichiers locaux, réseau, fenêtres). */

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { LicenseFeature, LicenseStatus, PlanInfo } from "../types";
 import { locale, tl } from "./i18n";
+import { every } from "./visibility";
 
 /**
  * État de la licence du poste serveur (ou de ce PC), partagé par le bandeau et les pages.
@@ -9,7 +10,7 @@ import { locale, tl } from "./i18n";
  */
 let current: LicenseStatus | null = null;
 const listeners = new Set<(s: LicenseStatus | null) => void>();
-let timer: number | null = null;
+let stopTimer: (() => void) | null = null;
 
 function publish(s: LicenseStatus | null) {
   current = s;
@@ -36,15 +37,15 @@ export function useLicense(): LicenseStatus | null {
     listeners.add(setS);
     if (listeners.size === 1) {
       refreshLicense();
-      timer = window.setInterval(refreshLicense, 60_000);
+      stopTimer = every(60_000, refreshLicense);
     } else {
       setS(current);
     }
     return () => {
       listeners.delete(setS);
-      if (listeners.size === 0 && timer !== null) {
-        window.clearInterval(timer);
-        timer = null;
+      if (listeners.size === 0 && stopTimer !== null) {
+        stopTimer();
+        stopTimer = null;
       }
     };
   }, []);

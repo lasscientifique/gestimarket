@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { isMobileApp, isTauri } from "../lib/transport";
 import { appCacheDir, join } from "@tauri-apps/api/path";
 import { readFile, remove, writeFile } from "@tauri-apps/plugin-fs";
+import { every } from "../lib/visibility";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
@@ -586,6 +587,14 @@ function SecurityTab({ f, setF }: { f: Settings; setF: (s: Settings) => void }) 
   return (
     <>
       <div className="card">
+        <h3 className="card-title"><Lock size={18} />  {tl("Pannes du programme")}</h3>
+        <label className="check">
+          <input type="checkbox" checked={f.error_reports !== "0"} onChange={(e) => setF({ ...f, error_reports: e.target.checked ? "1" : "0" })} />
+          {"  "}{tl("Envoyer les pannes du programme à Eden Dev, pour qu'elles soient corrigées")}
+        </label>
+        <p className="muted small">{tl("Seuls partent le message de la panne, l'écran, la version et le modèle d'appareil. Jamais de ventes, produits, clients ni montants.")}</p>
+      </div>
+      <div className="card">
         <h3 className="card-title"><Lock size={18} />  {tl("Confirmation par code PIN en caisse")}</h3>
         <div className="form-grid">
           <Field label={tl("Retirer un article, diminuer une quantité, vider le ticket")}>
@@ -700,8 +709,7 @@ function MobileAppSettings({ f, setF }: { f: Settings; setF: (s: Settings) => vo
   const load = () => api.cloudStatus().then(setStatus).catch(() => undefined);
   useEffect(() => {
     load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
+    return every(15_000, load);
   }, []);
   const code = status?.shop_code || f.shop_code || "";
   useEffect(() => {
@@ -780,8 +788,7 @@ function InternetAddressSettings() {
   const load = () => api.tunnelStatus().then(setSt).catch(() => undefined);
   useEffect(() => {
     load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
+    return every(15_000, load);
   }, []);
 
   const setup = async (e: FormEvent) => {

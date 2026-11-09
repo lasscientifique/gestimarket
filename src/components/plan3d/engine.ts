@@ -92,7 +92,7 @@ export class StoreEngine {
   private walk = { x: 0, z: 0, yaw: 0, pitch: -0.05, forward: 0, turn: 0 };
   private keys = new Set<string>();
   private lastTick = 0;
-  private resize: ResizeObserver;
+  private resize: { disconnect(): void };
   private raycaster = new THREE.Raycaster();
   private textureLoader = new THREE.TextureLoader();
   private photoCache = new Map<number, THREE.Texture>();
@@ -148,8 +148,16 @@ export class StoreEngine {
     canvas.addEventListener("keydown", this.onKey);
     canvas.addEventListener("keyup", this.onKey);
     canvas.addEventListener("blur", () => this.keys.clear());
-    this.resize = new ResizeObserver(() => this.onResize());
-    this.resize.observe(container);
+    // iOS 13.0 à 13.3 n'a pas ResizeObserver : on suit alors la taille de la fenêtre.
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => this.onResize());
+      ro.observe(container);
+      this.resize = ro;
+    } else {
+      const onWin = () => this.onResize();
+      window.addEventListener("resize", onWin);
+      this.resize = { disconnect: () => window.removeEventListener("resize", onWin) };
+    }
     this.onResize();
   }
 
@@ -523,7 +531,7 @@ export class StoreEngine {
     }
     // Photos des produits sur la façade des cases.
     for (const p of photos) {
-      const url = mediaUrl(p.image);
+      const url = mediaUrl(p.image, 160);
       if (!url) continue;
       let tex = this.photoCache.get(p.image);
       if (!tex) {
