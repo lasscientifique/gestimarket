@@ -196,11 +196,12 @@ async function film({ id, token, hash, steps }) {
   await new Promise((r) => ff.on("close", r));
   await ctx.close();
 
-  // Son : chaque phrase posée à son moment (adelay), mélangées, puis vidéo finale (H.264 + AAC).
+  // Son : chaque phrase posée à son moment (adelay), additionnées sans le réglage automatique d'amix
+  // (il rendait chaque phrase plus forte que la précédente, jusqu'à saturer), puis vidéo finale (H.264 + AAC).
   const out = path.join(OUT, `${name}.mp4`);
   const inputs = voices.flatMap((v) => ["-i", v.file]);
   const filters = voices.map((v, i) => `[${i + 1}:a]adelay=${v.at}|${v.at}[a${i}]`).join(";");
-  const mix = `${voices.map((_, i) => `[a${i}]`).join("")}amix=inputs=${voices.length}:dropout_transition=0,volume=${voices.length}[a]`;
+  const mix = `${voices.map((_, i) => `[a${i}]`).join("")}amix=inputs=${voices.length}:dropout_transition=0:normalize=0,alimiter=limit=0.95[a]`;
   const r = spawnSync("ffmpeg", ["-y", "-loglevel", "error", "-i", raw, ...inputs, "-filter_complex", `${filters};${mix}`, "-map", "0:v", "-map", "[a]",
     "-c:v", "libx264", "-preset", "medium", "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", out], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`ffmpeg : ${r.stderr?.slice(0, 400)}`);
@@ -356,7 +357,7 @@ function actionVideos(tok) {
           { say: { fr: "En 3D, le chemin vert part de l'entrée.", en: "In 3D, the green path starts at the entrance." },
             do: async (p) => { await moveTo(p, p.locator(".finder-views button").nth(1), true); await sleep(3000); } },
           { say: { fr: "Visite : la caméra marche toute seule jusqu'au produit, à hauteur d'homme.", en: "Visit: the camera walks by itself to the product, at eye level." },
-            do: async (p) => { await moveTo(p, p.locator(".finder-views button").nth(2), true); await sleep(9000); } },
+            do: async (p) => { await moveTo(p, p.locator(".finder-views button").nth(2), true); await sleep(1200); await moveTo(p, p.locator(".finder-tour .icon-btn").last(), true); await sleep(8000); } },
           { say: { fr: "Arrivé devant le meuble, la case du produit clignote. Regarder autour permet de marcher librement.", en: "In front of the fixture, the product's slot blinks. Look around lets you walk freely." },
             do: async (p) => moveTo(p, p.locator(".finder-tour .btn").last()) },
         ],
