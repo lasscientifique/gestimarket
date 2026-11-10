@@ -184,6 +184,8 @@ async function film({ id, token, hash, steps }) {
       } catch (e) {
         console.log(`  [${name}] action : ${e.message.split("\n")[0]}`);
       }
+      // Une fenêtre a pu s'ouvrir pendant l'action : le sous-titre se replace au-dessus.
+      await caption(page, text);
     })();
     await Promise.all([action, sleep(v.seconds * 1000 + 450)]);
   }
