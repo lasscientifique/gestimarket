@@ -104,6 +104,7 @@ export class StoreEngine {
   /** Visite guidée : chemin depuis l'entrée, distance parcourue, vitesse (m/s). */
   private tour: { path: Point[]; dist: number[]; total: number; t: number; speed: number; paused: boolean; done: boolean; target: number } | null = null;
   private onTourState: ((s: TourState | null) => void) | null = null;
+  private tourEmitted = 0;
   private keys = new Set<string>();
   private lastTick = 0;
   private resize: { disconnect(): void };
@@ -331,8 +332,12 @@ export class StoreEngine {
     this.render();
   }
 
-  private emitTour() {
+  /** État de la visite pour l'écran : au plus 5 fois par seconde pendant la marche (sinon tout de suite). */
+  private emitTour(force = true) {
     const t = this.tour;
+    const now = performance.now();
+    if (!force && now - this.tourEmitted < 200) return;
+    this.tourEmitted = now;
     this.onTourState?.(
       t ? { progress: t.total ? Math.min(1, t.t / t.total) : 1, paused: t.paused, done: t.done, speed: t.speed / 1.1, remaining: Math.max(0, t.total - t.t) } : null,
     );
@@ -354,7 +359,7 @@ export class StoreEngine {
   /** Avance la visite guidée de dt secondes (appelé à chaque image). */
   private stepTour(dt: number) {
     const t = this.tour!;
-    t.t = Math.min(t.total, t.t + t.speed * dt);
+    t.t = Math.min(t.total, t.t + t.speed * Math.max(0, dt));
     const p = this.tourPoint(t.t);
     // Regard un peu en avant sur le chemin (virages adoucis).
     const ahead = this.tourPoint(t.t + 0.9);
@@ -370,7 +375,7 @@ export class StoreEngine {
       this.flyTo(t.target);
       this.animate(720, () => undefined, () => this.lookAtFoundCell());
     }
-    this.emitTour();
+    this.emitTour(t.done);
   }
 
   /** Incline le regard vers la case du produit (haute ou basse). */

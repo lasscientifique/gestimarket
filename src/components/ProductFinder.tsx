@@ -92,6 +92,8 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
   const place = places[Math.min(focus, places.length - 1)] ?? null;
   const mapFloor = place && plan ? plan.floors.find((f) => f.id === place.floor_id) ?? null : null;
   const mapFloorId = mapFloor?.id ?? null;
+  // Meubles du niveau : même liste d'un affichage à l'autre (la 3D ne se reconstruit pas à chaque image).
+  const floorFixtures = useMemo(() => (plan && mapFloorId ? plan.fixtures.filter((f) => f.floor_id === mapFloorId) : []), [plan, mapFloorId]);
   useEffect(() => {
     if (!mapFloorId || view === "plan") return;
     api.planFloorFill(mapFloorId).then(setFill).catch(() => setFill([]));
@@ -212,7 +214,7 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
                       <Suspense fallback={<div className="plan3d plan3d-loading" style={{ height: 320 }}>{tl("Chargement de la 3D…")}</div>}>
                         <Store3D
                           floor={mapFloor}
-                          fixtures={plan!.fixtures.filter((f) => f.floor_id === mapFloor.id)}
+                          fixtures={floorFixtures}
                           fill={fill}
                           mode={view === "walk" ? "walk" : "orbit"}
                           highlight={{ fixtureId: place.fixture_id, level: place.level, section: place.section }}

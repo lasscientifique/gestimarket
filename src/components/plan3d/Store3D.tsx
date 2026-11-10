@@ -122,7 +122,9 @@ export default function Store3D(p: Store3DProps) {
   useEffect(() => {
     if (p.openFixtureId == null) engine.current?.closeDoors();
   }, [p.openFixtureId]);
-  // Visite guidée : après le mode et le produit recherché (effets ci-dessus), et à chaque nouveau produit.
+  // Visite guidée : après le mode et le produit recherché (effets ci-dessus), et à chaque nouveau produit
+  // ou nouveau plan (pas à chaque affichage : la visite ne recommence pas en marchant).
+  const fixturesKey = p.fixtures.map((f) => `${f.id}:${f.x}:${f.y}`).join(",");
   useEffect(() => {
     const e = engine.current;
     if (!e) return;
@@ -141,7 +143,7 @@ export default function Store3D(p: Store3DProps) {
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p.tour, h?.fixtureId, h?.level, h?.section, p.fixtures]);
+  }, [p.tour, h?.fixtureId, h?.level, h?.section, fixturesKey]);
   useEffect(() => {
     engine.current?.setOptions(opts);
     try {
