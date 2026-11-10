@@ -63,7 +63,7 @@ async function screenPages(browser, url, tokens, lang) {
         await page.waitForTimeout(1200);
         const shot = (await page.screenshot({ type: "jpeg", quality: 70 })).toString("base64");
         let help = null;
-        const btn = page.locator(".page-header .btn-help").first();
+        const btn = page.locator(".btn-help").first();
         if (await btn.count()) {
           await btn.click();
           await page.waitForSelector(".help-panel", { timeout: 4000 }).catch(() => {});

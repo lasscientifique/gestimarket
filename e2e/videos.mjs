@@ -96,6 +96,10 @@ async function caption(page, text) {
     if (!s) return;
     s.textContent = t;
     s.style.display = t ? "block" : "none";
+    // Fenêtre ouverte (paiement, fiche…) : sous-titre en haut, pour ne pas cacher ses boutons.
+    const modal = !!document.querySelector(".modal-backdrop");
+    s.style.top = modal ? "14px" : "auto";
+    s.style.bottom = modal ? "auto" : "26px";
   }, text).catch(() => {});
 }
 
@@ -219,7 +223,7 @@ async function helpText(token, route) {
   const { ctx, page } = await openPage(token, `#/${route}`);
   let help = null;
   try {
-    await page.locator(".page-header .btn-help").first().click({ timeout: 8000 });
+    await page.locator(".btn-help").first().click({ timeout: 8000 });
     await page.waitForSelector(".help-panel", { timeout: 5000 });
     help = await page.evaluate(() => {
       const panel = document.querySelector(".help-panel");
@@ -241,7 +245,7 @@ async function helpText(token, route) {
 /** La souris parcourt les éléments de l'écran (boutons, onglets, lignes) pendant le commentaire. */
 function explore(i) {
   return async (page) => {
-    const targets = page.locator(".page-header .btn, .tabbar .tab-item, .card .btn, .stat-card, table tbody tr, .tile, .mode-card, .card-title");
+    const targets = page.locator(".page-header .btn, .tabbar .tab-item, .card .btn, .stat-card, table tbody tr, .product-tile, .mode-card, .card-title");
     const n = await targets.count();
     if (!n) return;
     await moveTo(page, targets.nth(Math.min(n - 1, i * 3)));
@@ -269,7 +273,7 @@ function actionVideos(tok) {
         id: "vente", token: tok.cashier, hash: "#/pos",
         steps: [
           { say: { fr: "Pour vendre, scannez l'article avec la douchette ou la caméra, ou tapez son nom.", en: "To sell, scan the item with the barcode scanner or the camera, or type its name." },
-            do: async (p) => { await typeSlowly(p, p.locator(".pos-search input"), "Riz"); await sleep(900); await moveTo(p, p.locator(".tile"), true); } },
+            do: async (p) => { await typeSlowly(p, p.locator(".pos-search input"), "Riz"); await sleep(900); await moveTo(p, p.locator(".product-tile"), true); } },
           { say: { fr: "Tapez six, étoile, puis le code-barres : six articles d'un coup.", en: "Type six, star, then the barcode: six items at once." },
             do: async (p) => { await typeSlowly(p, p.locator(".pos-search input"), "6*5449000000996"); await p.keyboard.press("Enter"); } },
           { say: { fr: "Le ticket montre les articles, le prix de gros à partir de vingt-quatre, et les promotions.", en: "The ticket shows the items, the wholesale price from twenty-four, and the promotions." },
@@ -285,7 +289,7 @@ function actionVideos(tok) {
         id: "paiement-mobile", token: tok.cashier, hash: "#/pos",
         steps: [
           { say: { fr: "Le client veut payer par Orange Money. Ajoutez les articles comme d'habitude.", en: "The customer wants to pay with Orange Money. Add the items as usual." },
-            do: async (p) => { await typeSlowly(p, p.locator(".pos-search input"), "Huile"); await sleep(900); await moveTo(p, p.locator(".tile"), true); } },
+            do: async (p) => { await typeSlowly(p, p.locator(".pos-search input"), "Huile"); await sleep(900); await moveTo(p, p.locator(".product-tile"), true); } },
           { say: { fr: "Touche F9, puis Orange Money.", en: "Press F9, then Orange Money." },
             do: async (p) => { await p.keyboard.press("F9"); await sleep(800); await moveTo(p, p.locator(".method-grid .method").filter({ hasText: "Orange" }), true); } },
           { say: { fr: "Le QR code du marchand s'affiche, ici et sur l'écran client. Le client le scanne et paie avec son téléphone.", en: "The merchant QR code is shown, here and on the customer display. The customer scans it and pays with the phone." },
