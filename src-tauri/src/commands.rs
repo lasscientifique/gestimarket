@@ -265,6 +265,40 @@ pub async fn save_network_config(
     Ok(())
 }
 
+/// Aide hors ligne de ce poste : fichiers présents et téléchargement en cours.
+#[tauri::command]
+pub async fn help_offline_status(state: State<'_, AppState>) -> AppResult<serde_json::Value> {
+    Ok(crate::aide::status(&crate::aide::dir_of(&state.db_path)))
+}
+
+/// Télécharge les vidéos d'aide et le manuel (en arrière-plan) pour les lire sans Internet.
+#[tauri::command]
+pub async fn help_offline_download(state: State<'_, AppState>, names: Vec<String>) -> AppResult<()> {
+    crate::aide::start_download(crate::aide::dir_of(&state.db_path), names).map_err(AppError::Validation)
+}
+
+/// Ouvre un fichier d'aide (manuel PDF) : celui de ce poste s'il est téléchargé, sinon l'adresse en ligne.
+#[tauri::command]
+pub async fn open_help(app: AppHandle, state: State<'_, AppState>, name: String) -> AppResult<()> {
+    if !crate::aide::valid_name(&name) {
+        return invalid("Fichier d'aide inconnu.");
+    }
+    let path = crate::aide::dir_of(&state.db_path).join(&name);
+    if path.exists() {
+        #[cfg(mobile)]
+        {
+            use tauri_plugin_opener::OpenerExt;
+            return app
+                .opener()
+                .open_path(path.to_string_lossy(), None::<&str>)
+                .map_err(|e| AppError::Validation(format!("Impossible d'ouvrir le lien : {e}")));
+        }
+        #[cfg(desktop)]
+        return open_url(&app, &path.to_string_lossy());
+    }
+    open_url(&app, &format!("{}/{name}", crate::aide::HELP_RELEASE))
+}
+
 /// Boutiques GestiMarket trouvées sur le Wi-Fi ou le partage de connexion de cet appareil.
 #[tauri::command]
 pub async fn discover_servers() -> AppResult<Vec<serde_json::Value>> {

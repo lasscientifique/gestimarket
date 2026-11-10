@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Box, MapPin, Map as MapIcon, ScanSearch, X, Package, Camera, Star } from "lucide-react";
+import { Box, MapPin, Map as MapIcon, ScanSearch, X, Package, Camera, Star, Footprints, Pause, Play, RotateCcw, Maximize2, Minimize2, Eye } from "lucide-react";
 import { CameraScanner } from "./CameraScanner";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
@@ -11,6 +11,8 @@ import { categoryPath } from "./CategorySelect";
 import { Badge, LocationBadge, Thumb } from "./ui";
 import { tl, tm } from "../lib/i18n";
 import { saveView, savedView, webglAvailable, type PlanView } from "./plan3d/support";
+import type { TourControls } from "./plan3d/Store3D";
+import type { TourState } from "./plan3d/engine";
 
 const Store3D = lazy(() => import("./plan3d/Store3D"));
 const VIEW_KEY = "gm-finder-view";
@@ -34,6 +36,11 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
   const [focus, setFocus] = useState(0);
   const [view, setViewState] = useState<PlanView>(() => savedView(VIEW_KEY, "3d"));
   const [fill, setFill] = useState<CellFill[]>([]);
+  // Visite guidée : état de la marche, commandes, plein écran (téléphone et tablette).
+  const [tour, setTour] = useState<TourState | null>(null);
+  const tourRef = useRef<TourControls | null>(null);
+  const [full, setFull] = useState(false);
+  const [fast, setFast] = useState(false);
   const setView = (v: PlanView) => {
     setViewState(v);
     saveView(VIEW_KEY, v);
@@ -193,23 +200,59 @@ export function ProductFinder({ autoFocus = true, onClose }: { autoFocus?: boole
                   {mapFloor && place && webglAvailable() && (
                     <div className="segmented finder-views">
                       <button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}><MapIcon size={14} />  {tl("Dessus")}</button>
-                      <button className={view !== "plan" ? "active" : ""} onClick={() => setView("3d")}><Box size={14} />  {tl("3D et chemin")}</button>
+                      <button className={view === "3d" ? "active" : ""} onClick={() => setView("3d")}><Box size={14} />  {tl("3D et chemin")}</button>
+                      <button className={view === "walk" ? "active" : ""} onClick={() => setView("walk")}><Footprints size={14} />  {tl("Visite")}</button>
                     </div>
                   )}
+                  {mapFloor && place && view === "walk" && plan!.floors.length > 1 && mapFloor.id !== plan!.floors[0].id && (
+                    <div className="alert alert-info">{tl("Le produit est à « {0} » : montez, puis suivez la visite depuis l'entrée de cet étage.", [tm(mapFloor.name)])}</div>
+                  )}
                   {mapFloor && place && view !== "plan" && (
-                    <Suspense fallback={<div className="plan3d plan3d-loading" style={{ height: 320 }}>{tl("Chargement de la 3D…")}</div>}>
-                      <Store3D
-                        floor={mapFloor}
-                        fixtures={plan!.fixtures.filter((f) => f.floor_id === mapFloor.id)}
-                        fill={fill}
-                        mode="orbit"
-                        highlight={{ fixtureId: place.fixture_id, level: place.level, section: place.section }}
-                        showPath
-                        onUnavailable={() => setView("plan")}
-                        height={320}
-                        compact
-                      />
-                    </Suspense>
+                    <div className={`finder-3d${full ? " full" : ""}`}>
+                      <Suspense fallback={<div className="plan3d plan3d-loading" style={{ height: 320 }}>{tl("Chargement de la 3D…")}</div>}>
+                        <Store3D
+                          floor={mapFloor}
+                          fixtures={plan!.fixtures.filter((f) => f.floor_id === mapFloor.id)}
+                          fill={fill}
+                          mode={view === "walk" ? "walk" : "orbit"}
+                          highlight={{ fixtureId: place.fixture_id, level: place.level, section: place.section }}
+                          showPath
+                          tour={view === "walk"}
+                          onTourState={setTour}
+                          tourRef={tourRef}
+                          onUnavailable={() => setView("plan")}
+                          height={full ? "100%" : 320}
+                          compact
+                        />
+                      </Suspense>
+                      {view === "walk" && (
+                        <div className="finder-tour">
+                          <div className="finder-tour-bar"><span style={{ width: `${Math.round((tour?.progress ?? 0) * 100)}%` }} /></div>
+                          <span className="finder-tour-text">
+                            {!tour
+                              ? tl("Visite libre : flèches ou boutons pour marcher.")
+                              : tour.done
+                                ? [tl("Vous y êtes :"), tm(place.fixture_name), place.etage && tl("étage {0}", [place.etage]), place.rangee && tl("case {0}", [place.rangee])].filter(Boolean).join(" ")
+                                : tl("Encore {0} m", [tour.remaining.toFixed(0)])}
+                          </span>
+                          {tour && !tour.done && (
+                            <button type="button" className="icon-btn" onClick={() => tourRef.current?.pause(!tour.paused)} aria-label={tour.paused ? tl("Reprendre") : tl("Pause")} title={tour.paused ? tl("Reprendre") : tl("Pause")}>
+                              {tour.paused ? <Play size={16} /> : <Pause size={16} />}
+                            </button>
+                          )}
+                          <button type="button" className="icon-btn" onClick={() => tourRef.current?.restart()} aria-label={tl("Recommencer depuis l'entrée")} title={tl("Recommencer depuis l'entrée")}><RotateCcw size={16} /></button>
+                          {tour && !tour.done && (
+                            <button type="button" className="btn btn-sm" onClick={() => { tourRef.current?.speed(fast ? 1 : 2); setFast(!fast); }} title={tl("Vitesse de la visite")}>{fast ? "×2" : "×1"}</button>
+                          )}
+                          {tour && (
+                            <button type="button" className="btn btn-sm" onClick={() => tourRef.current?.stop()} title={tl("Marcher librement à partir d'ici")}><Eye size={14} />  {tl("Regarder autour")}</button>
+                          )}
+                          <button type="button" className="icon-btn" onClick={() => setFull(!full)} aria-label={full ? tl("Réduire") : tl("Plein écran")} title={full ? tl("Réduire") : tl("Plein écran")}>
+                            {full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {mapFloor && place && view === "plan" && (
                     <StoreMap

@@ -99,7 +99,7 @@ jobs:
       - run: npm ci
       - name: Playwright (Chromium, et WebKit comme Safari)
         run: |
-          npm i --no-save playwright@1.49.1
+          npm i --no-save playwright@1.49.1 marked@15.0.12
           npx playwright install --with-deps chromium webkit
       - name: Compilation (debug)
         run: npx tauri build --debug --no-bundle
@@ -153,6 +153,17 @@ jobs:
           find e2e/out -type f -size 0 -delete
           gh release create "e2e-${{ github.run_number }}" e2e/out/* --target "${{ github.sha }}" --title "Test d'interface ${{ github.run_number }}" --notes "Captures Playwright sous Xvfb, résultats dans results.json." --prerelease > /tmp/gh.txt 2>&1 \
             || { echo "::error title=Publication des captures::$(tail -6 /tmp/gh.txt | tr '\n' ' ')"; exit 1; }
+      # Manuel PDF à jour dans la pré-release « aide » (adresse fixe ouverte par l'application).
+      - name: Manuel d'utilisation dans la pré-release « aide »
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l e2e/out/GestiMarket_manuel_fr.pdf e2e/out/GestiMarket_manuel_en.pdf
+          gh release view aide > /dev/null 2>&1 \
+            || gh release create aide --prerelease --target "${{ github.sha }}" --title "Aide GestiMarket (vidéos et manuel)" \
+                 --notes "Vidéos d'aide et manuel d'utilisation, mis à jour automatiquement. Voix de synthèse Piper : SIWIS (français) et LibriTTS-R (anglais), licence CC BY 4.0."
+          gh release upload aide e2e/out/GestiMarket_manuel_fr.pdf e2e/out/GestiMarket_manuel_en.pdf --clobber
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

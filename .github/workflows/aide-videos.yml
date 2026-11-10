@@ -1,0 +1,101 @@
+# Vidéos d'aide de GestiMarket (e2e/videos.mjs) : le vrai logiciel filmé sous Xvfb, voix de synthèse Piper
+# (SIWIS en français, LibriTTS-R en anglais, licence CC BY 4.0), sous-titres incrustés, en français et en anglais.
+# Publiées dans la pré-release « aide » (adresse fixe lue par l'application), avec le manuel PDF.
+# Déclenché par une étiquette de version « v* », par un changement du tournage sur main, ou à la main.
+name: Vidéos d'aide
+
+on:
+  push:
+    tags: ["v*"]
+    # Essai sur main quand le tournage lui-même change.
+    branches: [main]
+    paths:
+      - "e2e/videos.mjs"
+      - "e2e/boutique-exemple.mjs"
+      - ".github/workflows/aide-videos.yml"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Vidéos à refaire (ex. vente,ecran-pos), vide = toutes"
+        required: false
+        default: ""
+
+concurrency:
+  group: aide-videos
+  cancel-in-progress: false
+
+jobs:
+  tournage:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dépendances système (WebKitGTK, Xvfb, ffmpeg, polices)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb ffmpeg fonts-noto-color-emoji fonts-dejavu
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Playwright (Chromium)
+        run: |
+          npm i --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Voix de synthèse Piper (SIWIS, LibriTTS-R)
+        run: |
+          pip install piper-tts==1.2.0
+          mkdir -p voices
+          base=https://huggingface.co/rhasspy/piper-voices/resolve/main
+          for v in fr/fr_FR/siwis/medium/fr_FR-siwis-medium en/en_US/libritts_r/medium/en_US-libritts_r-medium; do
+            curl -sSfL -o "voices/$(basename $v).onnx" "$base/$v.onnx"
+            curl -sSfL -o "voices/$(basename $v).onnx.json" "$base/$v.onnx.json"
+          done
+          ls -l voices
+          echo "Bonjour, ceci est un essai de la voix." | piper --model voices/fr_FR-siwis-medium.onnx --output_file /tmp/essai.wav
+          ls -l /tmp/essai.wav
+      - name: Compilation (debug)
+        run: npx tauri build --debug --no-bundle
+      - name: Lancement en mode serveur sous Xvfb
+        run: |
+          mkdir -p ~/.local/share/com.gestimarket.app
+          echo '{"mode":"server","poste_name":"Caisse 1","port":7878,"server_url":""}' > ~/.local/share/com.gestimarket.app/network.json
+          Xvfb :99 -screen 0 1366x850x24 > /dev/null 2>&1 &
+          Xvfb :100 -screen 0 1280x720x24 > /dev/null 2>&1 &
+          sleep 2
+          DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 GM_NO_ERROR_REPORTS=1 nohup src-tauri/target/debug/gestimarket > aide-app.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:7878/api/ping && break; sleep 2; done
+          curl -sf http://127.0.0.1:7878/api/ping || (cat aide-app.log; exit 1)
+      - name: Tournage des vidéos
+        env:
+          VIDEO_DISPLAY: ":100"
+          PIPER_VOICES: voices
+          VIDEOS_ONLY: ${{ github.event.inputs.only }}
+        run: node e2e/videos.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aide-videos
+          path: |
+            aide/out/videos.json
+            aide-app.log
+      - name: Publier dans la pré-release « aide »
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l aide/out
+          gh release view aide > /dev/null 2>&1 \
+            || gh release create aide --prerelease --target "${{ github.sha }}" --title "Aide GestiMarket (vidéos et manuel)" \
+                 --notes "Vidéos d'aide et manuel d'utilisation, mis à jour automatiquement. Voix de synthèse Piper : SIWIS (français) et LibriTTS-R (anglais), licence CC BY 4.0."
+          gh release upload aide aide/out/*.mp4 aide/out/videos.json --clobber
+          echo "::notice title=Vidéos d'aide::$(ls aide/out/*.mp4 | wc -l) vidéos publiées, $(du -sh aide/out | cut -f1)"

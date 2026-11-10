@@ -27,6 +27,17 @@ export interface EngineCallbacks {
   onBlocked: (problem: PlacementProblem) => void;
 }
 
+/** Visite guidée (Localiser un produit) : où en est la marche jusqu'au produit. */
+export interface TourState {
+  /** 0 à 1 */
+  progress: number;
+  paused: boolean;
+  done: boolean;
+  speed: number;
+  /** Mètres restants jusqu'au meuble. */
+  remaining: number;
+}
+
 export interface Highlight {
   fixtureId: number;
   level?: number | null;
@@ -90,6 +101,9 @@ export class StoreEngine {
   private tints: Record<number, string> | null = null;
   private look: { x: number; y: number; yaw: number; pitch: number } | null = null;
   private walk = { x: 0, z: 0, yaw: 0, pitch: -0.05, forward: 0, turn: 0 };
+  /** Visite guidée : chemin depuis l'entrée, distance parcourue, vitesse (m/s). */
+  private tour: { path: Point[]; dist: number[]; total: number; t: number; speed: number; paused: boolean; done: boolean; target: number } | null = null;
+  private onTourState: ((s: TourState | null) => void) | null = null;
   private keys = new Set<string>();
   private lastTick = 0;
   private resize: { disconnect(): void };
@@ -254,6 +268,7 @@ export class StoreEngine {
 
   setMode(mode: ViewMode) {
     if (mode === this.mode) return;
+    if (mode !== "walk" && this.tour) this.stopTour();
     this.mode = mode;
     this.controls.enabled = mode === "orbit";
     this.keys.clear();
@@ -263,6 +278,114 @@ export class StoreEngine {
     if (mode === "walk") this.startWalk();
     else this.resetView(true);
     this.render();
+  }
+
+  // ───────────────────────────── Visite guidée ─────────────────────────────
+  // À hauteur d'homme, la caméra part de l'entrée et marche toute seule jusqu'au meuble du produit
+  // recherché (même chemin que les chevrons verts), puis se tourne vers la case qui clignote.
+
+  /** Démarre (ou recommence) la visite guidée vers le meuble mis en évidence. Faux si aucun chemin. */
+  startTour(onState?: (s: TourState | null) => void): boolean {
+    if (onState) this.onTourState = onState;
+    const target = this.highlight ? this.entries.get(this.highlight.fixtureId)?.fixture : undefined;
+    if (!target || !this.floor) return false;
+    const path = this.bestPath(target);
+    if (!path || path.length < 2) return false;
+    if (this.mode !== "walk") this.setMode("walk");
+    this.anims = [];
+    const dist = [0];
+    for (let i = 1; i < path.length; i++) dist.push(dist[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
+    const speed = this.tour?.speed ?? 1.1;
+    this.tour = { path, dist, total: dist[dist.length - 1], t: 0, speed, paused: false, done: false, target: target.id };
+    this.walk.x = path[0].x;
+    this.walk.z = path[0].y;
+    this.walk.yaw = Math.atan2(-(path[1].x - path[0].x), -(path[1].y - path[0].y));
+    this.walk.pitch = -0.05;
+    this.applyWalkCamera();
+    this.lastTick = performance.now();
+    this.emitTour();
+    this.render();
+    return true;
+  }
+
+  /** Pause ou reprise de la visite guidée. */
+  pauseTour(paused: boolean) {
+    if (!this.tour || this.tour.done) return;
+    this.tour.paused = paused;
+    this.lastTick = performance.now();
+    this.emitTour();
+    this.render();
+  }
+
+  /** Vitesse de marche : ×1 (pas tranquille) ou ×2. */
+  setTourSpeed(factor: number) {
+    if (!this.tour) return;
+    this.tour.speed = 1.1 * factor;
+    this.emitTour();
+  }
+
+  /** « Regarder autour » : fin de la visite guidée, la visite libre continue d'ici. */
+  stopTour() {
+    this.tour = null;
+    this.emitTour();
+    this.render();
+  }
+
+  private emitTour() {
+    const t = this.tour;
+    this.onTourState?.(
+      t ? { progress: t.total ? Math.min(1, t.t / t.total) : 1, paused: t.paused, done: t.done, speed: t.speed / 1.1, remaining: Math.max(0, t.total - t.t) } : null,
+    );
+  }
+
+  /** Point du chemin à la distance d (mètres depuis l'entrée). */
+  private tourPoint(d: number): Point {
+    const t = this.tour!;
+    const k = Math.max(0, Math.min(t.total, d));
+    let i = 1;
+    while (i < t.dist.length - 1 && t.dist[i] < k) i++;
+    const a = t.path[i - 1];
+    const b = t.path[i];
+    const seg = t.dist[i] - t.dist[i - 1] || 1;
+    const r = (k - t.dist[i - 1]) / seg;
+    return { x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r };
+  }
+
+  /** Avance la visite guidée de dt secondes (appelé à chaque image). */
+  private stepTour(dt: number) {
+    const t = this.tour!;
+    t.t = Math.min(t.total, t.t + t.speed * dt);
+    const p = this.tourPoint(t.t);
+    // Regard un peu en avant sur le chemin (virages adoucis).
+    const ahead = this.tourPoint(t.t + 0.9);
+    const want = Math.hypot(ahead.x - p.x, ahead.y - p.y) > 0.05 ? Math.atan2(-(ahead.x - p.x), -(ahead.y - p.y)) : this.walk.yaw;
+    this.walk.x = p.x;
+    this.walk.z = p.y;
+    this.walk.yaw += shortAngle(want - this.walk.yaw) * Math.min(1, dt * 4);
+    this.walk.pitch = -0.05;
+    this.applyWalkCamera();
+    if (t.t >= t.total) {
+      t.done = true;
+      // Arrivée : face au meuble, regard vers la case qui clignote.
+      this.flyTo(t.target);
+      this.animate(720, () => undefined, () => this.lookAtFoundCell());
+    }
+    this.emitTour();
+  }
+
+  /** Incline le regard vers la case du produit (haute ou basse). */
+  private lookAtFoundCell() {
+    const box = this.findBits?.box;
+    if (!box || this.mode !== "walk") return;
+    const w = new THREE.Vector3();
+    box.getWorldPosition(w);
+    const horiz = Math.hypot(w.x - this.walk.x, w.z - this.walk.z) || 1;
+    const pitch = Math.max(-0.75, Math.min(0.5, Math.atan2(w.y - EYE, horiz)));
+    const from = this.walk.pitch;
+    this.animate(500, (k) => {
+      this.walk.pitch = from + (pitch - from) * k;
+      this.applyWalkCamera();
+    });
   }
 
   /** Commandes de la visite (boutons à l'écran) : avancer / reculer, tourner. */
@@ -636,8 +759,9 @@ export class StoreEngine {
     if (this.showPath && this.floor) this.drawPath(e.fixture);
   }
 
-  private drawPath(target: Fixture) {
-    if (!this.floor) return;
+  /** Chemin le plus court de l'entrée jusque devant un meuble (évite les autres meubles). */
+  private bestPath(target: Fixture): Point[] | null {
+    if (!this.floor) return null;
     const obstacles = this.fixtures.filter((f) => f.id !== target.id && !isFloorItem(f) && f.model !== "porte").map((f) => footprint(f));
     const from = entryPoint(this.fixtures, this.floor);
     let best: Point[] | null = null;
@@ -651,6 +775,11 @@ export class StoreEngine {
         bestLen = len;
       }
     }
+    return best;
+  }
+
+  private drawPath(target: Fixture) {
+    const best = this.bestPath(target);
     if (!best || best.length < 2) return;
     // Chevrons verts tous les 50 cm.
     const shape = new THREE.Shape();
@@ -726,6 +855,12 @@ export class StoreEngine {
       this.lastTick = now;
       const fwd = this.walk.forward + (this.keys.has("f") ? 1 : 0) - (this.keys.has("b") ? 1 : 0);
       const turn = this.walk.turn + (this.keys.has("l") ? 1 : 0) - (this.keys.has("r") ? 1 : 0);
+      // L'utilisateur marche lui-même : la visite guidée s'arrête là.
+      if ((fwd || turn) && this.tour) this.stopTour();
+      if (this.tour && !this.tour.paused && !this.tour.done) {
+        this.stepTour(dt);
+        more = true;
+      }
       if (fwd || turn) {
         this.walk.yaw += turn * 1.6 * dt;
         this.stepWalk(fwd * 2.2 * dt);

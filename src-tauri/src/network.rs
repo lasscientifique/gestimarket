@@ -233,6 +233,7 @@ pub fn start_server(app: AppHandle, port: u16) {
             .route("/rpc/{cmd}", post(rpc_handler))
             .route("/rpc-batch", post(rpc_batch_handler))
             .route("/media/{id}", get(media_handler))
+            .route("/aide/{file}", get(aide_handler))
             .route("/api/ping", get(ping_handler))
             .fallback(get(asset_handler))
             .layer(cors())
@@ -493,6 +494,21 @@ async fn media_handler(
         // « private » : ne pas laisser un cache partagé (tunnel) servir l'image sans contrôle.
         Ok((mime, data)) => ([(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, "private, max-age=31536000, immutable".into())], data).into_response(),
         Err(code) => code.into_response(),
+    }
+}
+
+/// Aide hors ligne servie aux téléphones et tablettes de la boutique (vidéos, manuel), sans Internet.
+async fn aide_handler(State(app): State<App>, Path(file): Path<String>) -> Response {
+    let found = tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        crate::aide::read(&crate::aide::dir_of(&state.db_path), &file)
+    })
+    .await
+    .ok()
+    .flatten();
+    match found {
+        Some((mime, data)) => ([(header::CONTENT_TYPE, mime.to_string()), (header::CACHE_CONTROL, "public, max-age=86400".to_string())], data).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 

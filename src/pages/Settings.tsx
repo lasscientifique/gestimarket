@@ -28,6 +28,7 @@ import { appCacheDir, join } from "@tauri-apps/api/path";
 import { readFile, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { every } from "../lib/visibility";
 import { markBackupShared } from "../components/PhoneBanners";
+import { OfflineHelpCard } from "../components/OfflineHelp";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
@@ -455,6 +456,7 @@ function DeveloperTab({ version }: { version?: string }) {
         ))}
       </div>
       {isTauri && <JournalCard openWhatsApp={openLink("whatsapp")} />}
+      {isTauri && !isRemote() && <OfflineHelpCard />}
       {version && <p className="muted small" style={{ marginTop: 12 }}>{tl("GestiMarket version {0}", [version])}</p>}
     </div>
   );

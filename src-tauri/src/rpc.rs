@@ -759,6 +759,8 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
                 "internet_ok": cloud.public_ok,
             }))
         }
+        // Aide hors ligne du poste serveur : noms des vidéos et du manuel téléchargés.
+        "help_offline_files" => out(crate::aide::files(&crate::aide::dir_of(&state.db_path))),
         // TV (écran client) : noms des caisses à choisir, sans connexion (rien d'autre que les noms).
         "display_postes" => {
             let mut names: Vec<String> = state

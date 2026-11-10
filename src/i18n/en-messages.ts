@@ -665,4 +665,8 @@ export const EN_MESSAGES: Record<string, string> = {
   "Serveur de la boutique arrêté (port {})": "Shop server stopped (port {})",
   "Un iPhone ou un iPad ne peut pas être poste serveur : choisissez « Poste client » ou « Poste unique ».": "An iPhone or iPad cannot be the server station: choose “Client station” or “Single station”.",
   "Votre connexion au compte boutique a expiré : reconnectez-vous.": "Your shop account session has expired: sign in again.",
+  "Aide hors ligne : {} non téléchargé ({})": "Offline help: {} not downloaded ({})",
+  "Aucun fichier d'aide à télécharger.": "No help file to download.",
+  "Fichier d'aide inconnu.": "Unknown help file.",
+  "{} fichier(s) non téléchargé(s) : vérifiez Internet, puis recommencez.": "{} file(s) not downloaded: check the Internet, then try again.",
 };

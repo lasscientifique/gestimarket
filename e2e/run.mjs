@@ -13,6 +13,7 @@ import fs from "node:fs";
 import { chromium } from "playwright";
 import { phoneTour } from "./mobile.mjs";
 import { speedTest } from "./vitesse.mjs";
+import { buildManuals } from "./manuel.mjs";
 
 const SRV = "http://127.0.0.1:7878";
 const PUB = "http://127.0.0.1:8080";
@@ -340,6 +341,18 @@ try {
   await seen(pc, "Localiser un produit", "Réfrigérateur vitré FR1");
   await pc.waitForTimeout(2000);
   await shot(pc, "09-localiser-un-produit.png");
+  // Visite guidée : la caméra marche toute seule de l'entrée jusqu'au frigo du produit.
+  if (has3d) {
+    await pc.locator(".finder-views button").filter({ hasText: "Visite" }).click();
+    await pc.locator(".finder-tour").waitFor({ timeout: 20_000 }).catch(() => {});
+    await pc.waitForTimeout(2500);
+    const walked = await pc.evaluate(() => parseFloat(document.querySelector(".finder-tour-bar span")?.style.width ?? "0"));
+    await pc.waitForTimeout(6000);
+    const arrived = await pc.locator(".finder-tour-text").innerText().catch(() => "");
+    check("Localiser un produit : visite guidée de l'entrée jusqu'au produit", walked > 0 && /Vous y êtes|Encore/.test(arrived), `${walked} % puis « ${arrived} »`);
+    await shot(pc, "09b-visite-guidee.png");
+    await pc.locator(".finder-views button").filter({ hasText: "Dessus" }).click();
+  }
   // Plan proposé pour une boutique à deux activités (supérette + quincaillerie), aux vraies dimensions.
   const layout = { floor_id: null, name: "Magasin 2", width: 14, depth: 10, height: 3.5, entry: "bottom", storage_room: true, activities: ["superette", "hardware"] };
   const preview = await rpc("plan_preview_layout", { input: layout }, admin);
@@ -595,6 +608,10 @@ try {
 
   // ── Vitesse sur un petit téléphone en 4G, et Safari (WebKit) sur iPhone.
   await speedTest({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, check });
+
+  // ── Manuel d'utilisation (PDF, français et anglais) : captures et aide des écrans de la boutique d'exemple.
+  const cashierManual = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;
+  await buildManuals({ browser, url: SRV, adminToken: await login(), cashierToken: cashierManual, out: OUT, check });
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

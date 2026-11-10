@@ -1,4 +1,5 @@
 mod account;
+mod aide;
 mod boutique;
 mod cloud;
 mod commands;
@@ -56,6 +57,19 @@ pub fn run() {
                 Some((mime, data)) => Response::builder()
                     .header("Content-Type", mime)
                     .header("Cache-Control", "public, max-age=31536000, immutable")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(data)
+                    .unwrap_or_default(),
+                None => Response::builder().status(404).body(Vec::new()).unwrap_or_default(),
+            }
+        })
+        // Aide hors ligne : aide://localhost/<fichier> (vidéos et manuel téléchargés sur ce poste).
+        .register_uri_scheme_protocol("aide", |ctx, request| {
+            let name = request.uri().path().trim_start_matches('/').to_string();
+            let found = ctx.app_handle().try_state::<AppState>().and_then(|state| aide::read(&aide::dir_of(&state.db_path), &name));
+            match found {
+                Some((mime, data)) => Response::builder()
+                    .header("Content-Type", mime)
                     .header("Access-Control-Allow-Origin", "*")
                     .body(data)
                     .unwrap_or_default(),
@@ -211,6 +225,9 @@ pub fn run() {
             commands::get_network_config,
             commands::save_network_config,
             commands::discover_servers,
+            commands::help_offline_status,
+            commands::help_offline_download,
+            commands::open_help,
             commands::owner,
             commands::restart_app,
             commands::list_monitors,

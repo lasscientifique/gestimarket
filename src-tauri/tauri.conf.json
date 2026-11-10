@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "GestiMarket",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "identifier": "com.gestimarket.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: media: http://media.localhost https://media.localhost http: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost http: https:"
+      "csp": "default-src 'self'; img-src 'self' data: blob: media: http://media.localhost https://media.localhost http: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' blob: aide: http://aide.localhost https://aide.localhost http: https:; connect-src ipc: http://ipc.localhost http: https:"
     }
   },
   "bundle": {

@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Image, Layers, Maximize, Package, RotateCcw, Rotate
 import { useApp } from "../../context/AppContext";
 import type { CellFill, Fixture, Floor } from "../../types";
 import { DRAG_TYPE, geometryOf, problemMessage, type Geometry } from "../plan/StoreMap";
-import { StoreEngine, type EngineOptions, type Highlight, type ViewMode } from "./engine";
+import { StoreEngine, type EngineOptions, type Highlight, type TourState, type ViewMode } from "./engine";
 import { tl } from "../../lib/i18n";
 import { isPhoneLike } from "../../lib/visibility";
 
@@ -46,6 +46,18 @@ export interface Store3DProps {
   tints?: Record<number, string> | null;
   /** Reçoit la fonction qui capture la vue actuelle en image PNG (export du plan). */
   snapshotRef?: { current: (() => string | null) | null };
+  /** Visite guidée jusqu'au produit (mode « walk ») : démarre toute seule. */
+  tour?: boolean;
+  onTourState?: (s: TourState | null) => void;
+  /** Commandes de la visite guidée (pause, recommencer, vitesse, regarder autour). */
+  tourRef?: { current: TourControls | null };
+}
+
+export interface TourControls {
+  pause(paused: boolean): void;
+  restart(): void;
+  speed(factor: number): void;
+  stop(): void;
 }
 
 /**
@@ -110,6 +122,26 @@ export default function Store3D(p: Store3DProps) {
   useEffect(() => {
     if (p.openFixtureId == null) engine.current?.closeDoors();
   }, [p.openFixtureId]);
+  // Visite guidée : après le mode et le produit recherché (effets ci-dessus), et à chaque nouveau produit.
+  useEffect(() => {
+    const e = engine.current;
+    if (!e) return;
+    if (!p.tour) {
+      e.stopTour();
+      return;
+    }
+    const started = e.startTour((st) => props.current.onTourState?.(st));
+    if (!started) props.current.onTourState?.(null);
+    if (props.current.tourRef) {
+      props.current.tourRef.current = {
+        pause: (b) => e.pauseTour(b),
+        restart: () => e.startTour(),
+        speed: (f) => e.setTourSpeed(f),
+        stop: () => e.stopTour(),
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.tour, h?.fixtureId, h?.level, h?.section, p.fixtures]);
   useEffect(() => {
     engine.current?.setOptions(opts);
     try {

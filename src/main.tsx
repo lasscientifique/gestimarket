@@ -7,6 +7,7 @@ import { getNetwork, initTransport, isMobileApp, posteName } from "./lib/transpo
 import { startPresence } from "./lib/presence";
 import { getLang, loadDictionary } from "./lib/i18n";
 import { captureErrors, reportError } from "./lib/errors";
+import { loadOfflineHelp } from "./lib/videos";
 import { hasAndroidBridge, serverService } from "./lib/android";
 import "@fontsource-variable/inter";
 import "./styles.css";
@@ -44,6 +45,8 @@ async function start() {
   if (isMobileApp && hasAndroidBridge()) serverService(getNetwork()?.config.mode === "server");
   // Chaque poste se signale au serveur (liste des postes connectés, état de la liaison).
   startPresence(posteName);
+  // Aide hors ligne (vidéos, manuel) sur ce poste ou sur le poste serveur.
+  void loadOfflineHelp();
 
   captureErrors();
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement, {
