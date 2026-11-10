@@ -2458,7 +2458,7 @@ export const EN: Record<string, string> = {
   "En vidéo": "Videos",
   "Manuel d'utilisation (PDF)": "User manual (PDF)",
   "Aide hors ligne : vidéos et manuel": "Offline help: videos and manual",
-  "Les vidéos d'aide et le manuel se lisent en ligne. Téléchargez-les une fois sur ce poste (environ 100 Mo) : ils marchent ensuite sans Internet, ici et sur les téléphones et tablettes reliés à ce poste serveur.": "The help videos and the manual are read online. Download them once on this station (about 100 MB): they then work without Internet, here and on the phones and tablets connected to this server station.",
+  "Les vidéos d'aide et le manuel se lisent en ligne. Téléchargez-les une fois sur ce poste (environ 25 Mo) : ils marchent ensuite sans Internet, ici et sur les téléphones et tablettes reliés à ce poste serveur.": "The help videos and the manual are read online. Download them once on this station (about 25 MB): they then work without Internet, here and on the phones and tablets connected to this server station.",
   "Téléchargement : {0} sur {1} ({2} Mo)…": "Downloading: {0} of {1} ({2} MB)…",
   "{0} fichier(s) sur {1} sur ce poste ({2} Mo).": "{0} of {1} file(s) on this station ({2} MB).",
   "Aide téléchargée": "Help downloaded",

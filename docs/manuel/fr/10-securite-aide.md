@@ -17,7 +17,7 @@
 
 - Le bouton **Aide** de chaque écran explique l'écran, pas à pas, avec ses **vidéos**.
 - Les petits boutons **?** expliquent chaque fonction ; « Voir en vidéo » montre la fonction en action.
-- **Aide hors ligne** (Paramètres → Développeur Eden Dev) : téléchargez une fois les vidéos et ce manuel (environ 100 Mo). Ils marchent ensuite sans Internet, et le serveur les sert aux téléphones de la boutique.
+- **Aide hors ligne** (Paramètres → Développeur Eden Dev) : téléchargez une fois les vidéos et ce manuel (environ 25 Mo). Ils marchent ensuite sans Internet, et le serveur les sert aux téléphones de la boutique.
 
 ## Contact Eden Dev
 

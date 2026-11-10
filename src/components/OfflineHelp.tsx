@@ -57,7 +57,7 @@ export function OfflineHelpCard() {
     <div className="card">
       <h3 className="card-title"><PlayCircle size={18} />  {tl("Aide hors ligne : vidéos et manuel")}</h3>
       <p className="muted">
-        {tl("Les vidéos d'aide et le manuel se lisent en ligne. Téléchargez-les une fois sur ce poste (environ 100 Mo) : ils marchent ensuite sans Internet, ici et sur les téléphones et tablettes reliés à ce poste serveur.")}
+        {tl("Les vidéos d'aide et le manuel se lisent en ligne. Téléchargez-les une fois sur ce poste (environ 25 Mo) : ils marchent ensuite sans Internet, ici et sur les téléphones et tablettes reliés à ce poste serveur.")}
       </p>
       {st && (
         <p>
