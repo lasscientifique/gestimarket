@@ -345,10 +345,14 @@ try {
   if (has3d) {
     await pc.locator(".finder-views button").filter({ hasText: "Visite" }).click();
     await pc.locator(".finder-tour").waitFor({ timeout: 20_000 }).catch(() => {});
-    await pc.waitForTimeout(2500);
-    const walked = await pc.evaluate(() => parseFloat(document.querySelector(".finder-tour-bar span")?.style.width ?? "0"));
-    await pc.waitForTimeout(6000);
-    const arrived = await pc.locator(".finder-tour-text").innerText().catch(() => "");
+    // La caméra avance (moteur 3D logiciel, peu d'images par seconde) : progression lue jusqu'à 25 s.
+    let walked = 0;
+    let arrived = "";
+    for (let i = 0; i < 25 && !/Vous y êtes/.test(arrived); i++) {
+      await pc.waitForTimeout(1000);
+      walked = await pc.evaluate(() => parseFloat(document.querySelector(".finder-tour-bar span")?.style.width ?? "0"));
+      arrived = await pc.locator(".finder-tour-text").innerText().catch(() => "");
+    }
     check("Localiser un produit : visite guidée de l'entrée jusqu'au produit", walked > 0 && /Vous y êtes|Encore/.test(arrived), `${walked} % puis « ${arrived} »`);
     await shot(pc, "09b-visite-guidee.png");
     await pc.locator(".finder-views button").filter({ hasText: "Dessus" }).click();

@@ -851,14 +851,16 @@ export class StoreEngine {
       if (this.controls.update() || now < this.dampUntil) more = true;
     }
     if (this.mode === "walk") {
-      const dt = Math.min(0.05, (now - (this.lastTick || now)) / 1000);
+      const elapsed = (now - (this.lastTick || now)) / 1000;
+      const dt = Math.min(0.05, elapsed);
       this.lastTick = now;
       const fwd = this.walk.forward + (this.keys.has("f") ? 1 : 0) - (this.keys.has("b") ? 1 : 0);
       const turn = this.walk.turn + (this.keys.has("l") ? 1 : 0) - (this.keys.has("r") ? 1 : 0);
       // L'utilisateur marche lui-même : la visite guidée s'arrête là.
       if ((fwd || turn) && this.tour) this.stopTour();
       if (this.tour && !this.tour.paused && !this.tour.done) {
-        this.stepTour(dt);
+        // Vitesse réelle même sur un appareil lent (peu d'images par seconde).
+        this.stepTour(Math.min(0.3, elapsed));
         more = true;
       }
       if (fwd || turn) {
