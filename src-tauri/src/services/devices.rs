@@ -2,6 +2,7 @@
 //!  - par le compte boutique (e-mail et mot de passe Eden Dev) : téléphone de l'administrateur ;
 //!  - par un code d'accès de 8 lettres et chiffres, généré par l'administrateur pour une personne :
 //!    valable 7 jours, pour un seul téléphone, qui reste ensuite autorisé pour elle seule.
+//!
 //! Le jeton du téléphone (gardé par le navigateur) et les codes ne sont enregistrés que hachés.
 
 use argon2::password_hash::rand_core::{OsRng, RngCore};

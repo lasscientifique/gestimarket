@@ -715,7 +715,7 @@ fn check_places(conn: &Connection, moves: &[(i64, i64, Rect)]) -> AppResult<()> 
             if floor != floor_id || s.free {
                 continue;
             }
-            if !inside(r, fw, fd) && was(s).map_or(true, |w| inside(w, fw, fd)) {
+            if !inside(r, fw, fd) && was(s).is_none_or(|w| inside(w, fw, fd)) {
                 return invalid(format!("{} sortirait du niveau « {} » : le meuble revient à sa place.", s.name, floor_name));
             }
             for o in &list {
@@ -1215,7 +1215,7 @@ pub fn sales_map(conn: &Connection, from: &str, to: &str) -> AppResult<SalesMap>
             None => unplaced += s.revenue,
         }
     }
-    fixtures.sort_by(|a, b| b.revenue.cmp(&a.revenue));
+    fixtures.sort_by_key(|f| std::cmp::Reverse(f.revenue));
     Ok(SalesMap { from: from.to_string(), to: to.to_string(), total, unplaced, fixtures })
 }
 
@@ -1404,7 +1404,7 @@ fn layout_pieces(lw: f64, ld: f64, storage_room: bool, acts: &[Activity], upstai
 /// allées du meuble principal, comptoir ou vitrine réfrigérée face aux clients.
 fn department(v: &mut Vec<Piece>, palette: &[&'static str], (bx0, bx1): (f64, f64), first: bool, last: bool, r: &Room) {
     const AISLE: f64 = 1.3;
-    let has = |c: &str| palette.iter().any(|p| *p == c);
+    let has = |c: &str| palette.contains(&c);
     let first_two = &palette[..palette.len().min(2)];
     let (lw, ld) = (r.lw, r.ld);
     let bw = bx1 - bx0;

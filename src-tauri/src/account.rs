@@ -561,33 +561,6 @@ pub fn owner_declare(dir: &std::path::Path, store_code: &str, plan: &str, months
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mots_de_passe_refuses() {
-        for weak in ["court1", "12345678", "abcdefgh", "Azerty123", "11111111", "GestiMarket"] {
-            assert!(password_ok(weak).is_err(), "{weak}");
-        }
-        for ok in ["Boutique-Eden-2026", "kadi7seydou", "Sikasso4892"] {
-            assert!(password_ok(ok).is_ok(), "{ok}");
-        }
-    }
-
-    #[test]
-    fn card_page_posts_escaped_fields_to_cybersource_only() {
-        let mut fields = serde_json::Map::new();
-        fields.insert("amount".into(), json!("18000"));
-        fields.insert("bill_to_address_line1".into(), json!("Rue \"12\" <ACI>"));
-        let page = card_page("https://testsecureacceptance.cybersource.com/pay", &fields).unwrap();
-        assert!(page.contains("action=\"https://testsecureacceptance.cybersource.com/pay\""));
-        assert!(page.contains("name=\"amount\" value=\"18000\""));
-        assert!(page.contains("value=\"Rue &quot;12&quot; &lt;ACI&gt;\""));
-        assert!(card_page("https://pirate.example.com/pay", &fields).is_err());
-        assert!(card_page("https://secureacceptance.cybersource.com.pirate.example/pay", &fields).is_err());
-    }
-}
 
 /// Espace propriétaire et mot de passe du compte : commande « owner » de cet appareil (jamais servie au réseau).
 pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Value, String> {
@@ -664,4 +637,32 @@ pub fn sync(state: &AppState) -> Result<String, String> {
     })();
     license::set_sync_result(&result);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mots_de_passe_refuses() {
+        for weak in ["court1", "12345678", "abcdefgh", "Azerty123", "11111111", "GestiMarket"] {
+            assert!(password_ok(weak).is_err(), "{weak}");
+        }
+        for ok in ["Boutique-Eden-2026", "kadi7seydou", "Sikasso4892"] {
+            assert!(password_ok(ok).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn card_page_posts_escaped_fields_to_cybersource_only() {
+        let mut fields = serde_json::Map::new();
+        fields.insert("amount".into(), json!("18000"));
+        fields.insert("bill_to_address_line1".into(), json!("Rue \"12\" <ACI>"));
+        let page = card_page("https://testsecureacceptance.cybersource.com/pay", &fields).unwrap();
+        assert!(page.contains("action=\"https://testsecureacceptance.cybersource.com/pay\""));
+        assert!(page.contains("name=\"amount\" value=\"18000\""));
+        assert!(page.contains("value=\"Rue &quot;12&quot; &lt;ACI&gt;\""));
+        assert!(card_page("https://pirate.example.com/pay", &fields).is_err());
+        assert!(card_page("https://secureacceptance.cybersource.com.pirate.example/pay", &fields).is_err());
+    }
 }

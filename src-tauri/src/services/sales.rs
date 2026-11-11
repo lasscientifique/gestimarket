@@ -709,7 +709,7 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
     let mut discount_note = String::new();
     if all_discount > 0 && all_discount * 100 > free_percent * gross_total {
         let level_ok = |u: &SessionUser| crate::state::role_level(&u.role) >= discount_level;
-        let approved = if level_ok(user) { Some(user) } else { approver.filter(|a| level_ok(*a)) };
+        let approved = if level_ok(user) { Some(user) } else { approver.filter(|a| level_ok(a)) };
         let Some(a) = approved else {
             return invalid(format!(
                 "Remise de {} % : au-delà de {free_percent} %, elle doit être validée par {} (code PIN).",

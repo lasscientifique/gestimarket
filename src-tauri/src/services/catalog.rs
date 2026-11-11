@@ -566,7 +566,7 @@ fn save_packagings(conn: &Connection, product_id: i64, packs: &[Packaging]) -> A
         if p.sale_price < 0 {
             return invalid("Le prix d'un conditionnement ne peut pas être négatif.");
         }
-        check_wholesale(&name, p.sale_price, p.wholesale_price, p.wholesale_min_qty)?;
+        check_wholesale(name, p.sale_price, p.wholesale_price, p.wholesale_min_qty)?;
         let barcode = match db::clean(&p.barcode) {
             Some(b) => b,
             None => generate_barcode(conn)?,

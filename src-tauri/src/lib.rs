@@ -185,7 +185,7 @@ pub fn run() {
                     if let Some(state) = handle.try_state::<AppState>() {
                         license::tick(&state.conn());
                         // Toutes les 30 minutes ; toutes les 2 minutes dans les 24 h qui suivent un paiement.
-                        let due = minutes % 30 == 0 || (minutes % 2 == 0 && account::fast_sync());
+                        let due = minutes.is_multiple_of(30) || (minutes.is_multiple_of(2) && account::fast_sync());
                         if due && license::should_sync() {
                             let r = account::sync(&state);
                             journal::state("Synchronisation de la licence", r.as_ref().map(|_| ()).map_err(|e| e.as_str()));
