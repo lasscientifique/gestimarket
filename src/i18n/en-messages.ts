@@ -707,4 +707,6 @@ export const EN_MESSAGES: Record<string, string> = {
   "Session expirée : recommencez.": "Session expired: start again.",
   "Tapez le code reçu par e-mail (6 chiffres).": "Type the code received by e-mail (6 digits).",
   "{} — par {}": "{} — by {}",
+  "Service des licences indisponible.": "Licence service unavailable.",
+  "Téléchargement de la licence impossible : réessayez plus tard.": "Could not download the licence: try again later.",
 };
