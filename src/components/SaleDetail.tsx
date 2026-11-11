@@ -107,7 +107,6 @@ export function SaleDetailModal({ sale, onClose, onChanged }: { sale: Sale; onCl
           <tr><td colSpan={4}><strong>{tl("Total TTC")}</strong></td><td className="num"><strong>{money(current.total)}</strong></td></tr>
           {current.tax_total > 0 && <tr className="muted"><td colSpan={4}>{tl("dont TVA")}</td><td className="num">{money(current.tax_total)}</td></tr>}
           {current.returned_total > 0 && <tr><td colSpan={4}>{tl("Rendu par des retours")}</td><td className="num">-{money(current.returned_total)}</td></tr>}
-          {settings && false && <tr className="muted"><td colSpan={4}>{tl("Marge brute")}</td><td className="num">{money(current.total - current.cost_total)}</td></tr>}
         </tfoot>
       </table>
 

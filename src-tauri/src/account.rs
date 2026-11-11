@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::license::{self, SUPABASE_KEY, SUPABASE_URL};
+use crate::license::{self, SUPABASE_KEY};
 use crate::state::AppState;
 
 fn agent() -> ureq::Agent {
@@ -19,7 +19,14 @@ fn agent() -> ureq::Agent {
 }
 
 fn request(path: &str, token: Option<&str>) -> ureq::Request {
-    let r = agent().post(&format!("{SUPABASE_URL}{path}")).set("apikey", SUPABASE_KEY).set("Content-Type", "application/json");
+    request_method("POST", path, token)
+}
+
+fn request_method(method: &str, path: &str, token: Option<&str>) -> ureq::Request {
+    let r = agent()
+        .request(method, &format!("{}{path}", license::supabase_url()))
+        .set("apikey", SUPABASE_KEY)
+        .set("Content-Type", "application/json");
     match token {
         Some(t) => r.set("Authorization", &format!("Bearer {t}")),
         None => r,
@@ -37,6 +44,9 @@ fn error_message(code: u16, v: &Value) -> String {
         "email_not_confirmed" => Some("Confirmez d'abord votre adresse e-mail (lien reçu par e-mail), puis reconnectez-vous."),
         "over_email_send_rate_limit" | "over_request_rate_limit" => Some("Trop de tentatives : réessayez dans quelques minutes."),
         "signup_disabled" => Some("Les inscriptions sont fermées pour le moment : contactez Eden Dev."),
+        "same_password" => Some("Le nouveau mot de passe doit être différent de l'ancien."),
+        "otp_expired" | "otp_disabled" => Some("Code incorrect ou expiré : demandez un nouveau code."),
+        "reauthentication_needed" | "session_not_found" | "bad_jwt" => Some("Session expirée : recommencez."),
         "email_address_not_authorized" => {
             Some("Inscription impossible : Eden Dev doit désactiver la confirmation des e-mails dans Supabase.")
         }
@@ -145,9 +155,7 @@ pub fn signup(state: &AppState, input: SignupInput) -> Result<Value, String> {
     if !email.contains('@') || !email.contains('.') {
         return Err("Adresse e-mail invalide.".into());
     }
-    if input.password.chars().count() < 8 {
-        return Err("Le mot de passe doit contenir au moins 8 caractères.".into());
-    }
+    password_ok(&input.password)?;
     input.store.validate()?;
     let v = call(
         request("/auth/v1/signup", None),
@@ -160,6 +168,78 @@ pub fn signup(state: &AppState, input: SignupInput) -> Result<Value, String> {
     remember(&email, token);
     let store = rpc_call("gm_register_store", token, json!({ "p": input.store.to_json() }))?;
     link(state, store["code"].as_str().unwrap_or_default())
+}
+
+/// Nouveau mot de passe du compte Eden Dev : 8 caractères au moins, des lettres et des chiffres, et pas un
+/// mot de passe connu de tous (ce compte ouvre la boutique à distance et paie l'abonnement).
+pub fn password_ok(password: &str) -> Result<(), String> {
+    const COMMON: &[&str] = &[
+        "12345678", "123456789", "1234567890", "87654321", "12341234", "11223344", "a1234567", "aa123456", "abc12345",
+        "abcd1234", "password", "password1", "password123", "motdepasse", "motdepasse1", "azerty123", "azerty1234",
+        "qwerty123", "qwerty1234", "azertyuiop", "gestimarket", "gestimarket1", "boutique1", "bamako123", "mali2024",
+        "mali2025", "mali2026", "iloveyou1", "bonjour1", "bonjour123",
+    ];
+    if password.chars().count() < 8 {
+        return Err("Mot de passe trop court : au moins 8 caractères, avec des lettres et des chiffres.".into());
+    }
+    if !password.chars().any(char::is_alphabetic) || !password.chars().any(|c| c.is_ascii_digit()) {
+        return Err("Mot de passe trop faible : mélangez des lettres et des chiffres.".into());
+    }
+    let lower = password.to_lowercase();
+    let first = lower.chars().next().unwrap_or(' ');
+    if COMMON.contains(&lower.as_str()) || lower.chars().all(|c| c == first) {
+        return Err("Mot de passe trop connu : choisissez-en un autre.".into());
+    }
+    Ok(())
+}
+
+/// « Mot de passe oublié » : Supabase envoie un code à l'adresse du compte (rien n'indique si l'adresse
+/// existe : même réponse dans tous les cas).
+pub fn password_recover(email: &str) -> Result<Value, String> {
+    let email = email.trim().to_lowercase();
+    if !email.contains('@') || !email.contains('.') {
+        return Err("Adresse e-mail invalide.".into());
+    }
+    call(request("/auth/v1/recover", None), json!({ "email": email }))?;
+    Ok(json!({ "sent": true }))
+}
+
+fn set_password(access: &str, password: &str) -> Result<(), String> {
+    call(request_method("PUT", "/auth/v1/user", Some(access)), json!({ "password": password })).map(|_| ())
+}
+
+/// Code reçu par e-mail et nouveau mot de passe. `login` : la propriétaire reste connectée sur cet appareil
+/// (Espace propriétaire).
+pub fn password_reset(dir: &std::path::Path, email: &str, code: &str, password: &str, login: bool) -> Result<Value, String> {
+    password_ok(password)?;
+    let code: String = code.chars().filter(char::is_ascii_digit).collect();
+    if code.len() < 6 {
+        return Err("Tapez le code reçu par e-mail (6 chiffres).".into());
+    }
+    let email = email.trim().to_lowercase();
+    let v = call(request("/auth/v1/verify", None), json!({ "type": "recovery", "email": email, "token": code }))?;
+    let access = v["access_token"].as_str().ok_or("Code incorrect ou expiré : demandez un nouveau code.")?;
+    set_password(access, password)?;
+    if login {
+        owner_login(dir, &email, password)?;
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// Changer le mot de passe : l'actuel est vérifié d'abord. L'Espace propriétaire de cet appareil reste connecté.
+pub fn password_change(dir: &std::path::Path, email: &str, current: &str, password: &str) -> Result<Value, String> {
+    password_ok(password)?;
+    if current == password {
+        return Err("Le nouveau mot de passe doit être différent de l'actuel.".into());
+    }
+    let email = email.trim().to_lowercase();
+    let access = password_login(&email, current)?;
+    set_password(&access, password)?;
+    // Supabase peut fermer les autres sessions du compte : on reconnecte celle de cet appareil.
+    if owner_saved(dir).is_some_and(|(e, _)| e == email) {
+        let _ = owner_login(dir, &email, password);
+    }
+    Ok(json!({ "ok": true }))
 }
 
 /// Connexion : retourne les boutiques du compte (à rattacher, ou à créer).
@@ -486,6 +566,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn mots_de_passe_refuses() {
+        for weak in ["court1", "12345678", "abcdefgh", "Azerty123", "11111111", "GestiMarket"] {
+            assert!(password_ok(weak).is_err(), "{weak}");
+        }
+        for ok in ["Boutique-Eden-2026", "kadi7seydou", "Sikasso4892"] {
+            assert!(password_ok(ok).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
     fn card_page_posts_escaped_fields_to_cybersource_only() {
         let mut fields = serde_json::Map::new();
         fields.insert("amount".into(), json!("18000"));
@@ -496,6 +586,42 @@ mod tests {
         assert!(page.contains("value=\"Rue &quot;12&quot; &lt;ACI&gt;\""));
         assert!(card_page("https://pirate.example.com/pay", &fields).is_err());
         assert!(card_page("https://secureacceptance.cybersource.com.pirate.example/pay", &fields).is_err());
+    }
+}
+
+/// Espace propriétaire et mot de passe du compte : commande « owner » de cet appareil (jamais servie au réseau).
+pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Value, String> {
+    let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    match action {
+        "status" => Ok(owner_status(dir)),
+        "login" => owner_login(dir, &text("email"), &text("password")),
+        "logout" => {
+            owner_logout(dir);
+            Ok(Value::Null)
+        }
+        "stores" => owner_stores(dir),
+        "payments" => owner_payments(dir, &text("store_code")),
+        "redeem" => owner_redeem(dir, &text("store_code"), &text("code")),
+        "declare" => owner_declare(
+            dir,
+            &text("store_code"),
+            &text("plan"),
+            a.get("months").and_then(Value::as_i64).unwrap_or(1),
+            &text("method"),
+            &text("reference"),
+            &text("phone"),
+        ),
+        "options" => options(),
+        "recover" => password_recover(&text("email")),
+        "reset_password" => password_reset(
+            dir,
+            &text("email"),
+            &text("code"),
+            &text("password"),
+            a.get("login").and_then(Value::as_bool).unwrap_or(false),
+        ),
+        "change_password" => password_change(dir, &text("email"), &text("current"), &text("password")),
+        _ => Err("Action inconnue.".to_string()),
     }
 }
 
@@ -520,7 +646,7 @@ pub fn sync(state: &AppState) -> Result<String, String> {
                 let path = v["path"].as_str().unwrap_or_default();
                 let path_ok = path.len() == 16 && path.ends_with(".gml") && path.as_bytes()[..12].iter().all(u8::is_ascii_alphanumeric);
                 if license::current_license_id().as_deref() != Some(id) && path_ok {
-                    let url = format!("{SUPABASE_URL}/storage/v1/object/public/licences/{path}?v={id}");
+                    let url = format!("{}/storage/v1/object/public/licences/{path}?v={id}", license::supabase_url());
                     let text = agent()
                         .get(&url)
                         .call()

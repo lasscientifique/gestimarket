@@ -128,7 +128,7 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
     }
     // Sans projet saisi : celui d'Eden Dev, lu par l'application mobile GestiMarket.
     let (base, key) = if base.trim().is_empty() && key.trim().is_empty() {
-        (crate::license::SUPABASE_URL.to_string(), crate::license::SUPABASE_KEY.to_string())
+        (crate::license::supabase_url(), crate::license::SUPABASE_KEY.to_string())
     } else {
         (base, key)
     };

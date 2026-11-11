@@ -14,12 +14,12 @@ jobs:
   test:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Dépendances système (WebKitGTK)
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -51,13 +51,61 @@ jobs:
           msg=$(grep -E -A16 '^(error(\[E[0-9]+\])?:|---- .* stdout ----|thread .* panicked)' cargo-test.log | head -200 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=cargo test::${msg:-voir le journal}"
 
+  # Contrôle du code : ESLint (interface, tests, scripts), clippy (moteur Rust) et failles connues des modules
+  # (npm audit : strict pour les modules livrés, « high » pour les outils ; cargo audit). Aucun autre job n'en dépend.
+  qualite:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Dépendances système (WebKitGTK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: qualite
+      - run: npm ci
+      - name: ESLint
+        run: npx eslint . --max-warnings 20
+      - name: Failles des modules web (npm audit)
+        run: |
+          npm audit --omit=dev --audit-level=moderate
+          npm audit --audit-level=high
+      - name: clippy
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --color never -- -D warnings \
+            -A clippy::too_many_arguments -A clippy::type_complexity -A clippy::large_enum_variant -A clippy::result_large_err 2>&1 | tee ../clippy.log
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Failles des modules Rust (cargo audit)
+        working-directory: src-tauri
+        run: |
+          set -o pipefail
+          cargo audit --color never 2>&1 | tee ../cargo-audit.log
+      - name: Remarques (annotations)
+        if: failure()
+        run: |
+          msg=$(cat clippy.log cargo-audit.log 2>/dev/null | grep -E -A8 '^(error|warning)(\[|:)|^Crate:|^ID:|^Title:' | head -220 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Contrôle du code::${msg:-voir le journal}"
+
   # Le code propre à Windows (impression directe par la file d'impression, explorateur) n'est pas compilé
   # par les tests Ubuntu : sa compilation est vérifiée sur Windows à chaque push, avant toute version.
   windows-check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -83,12 +131,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Dépendances système (WebKitGTK, Xvfb, ImageMagick)
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb imagemagick gdb
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -112,7 +160,8 @@ jobs:
           # Si le poste serveur s'arrête net, un fichier core permet de lire sa pile d'appels (étape suivante).
           sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
           ulimit -c unlimited
-          DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 nohup src-tauri/target/debug/gestimarket > e2e-app.log 2>&1 &
+          # Compte Eden Dev, licence et mot de passe : faux Supabase du test (compilation de développement seulement).
+          DISPLAY=:99 WEBKIT_DISABLE_COMPOSITING_MODE=1 GM_SUPABASE_URL=http://127.0.0.1:54321 nohup src-tauri/target/debug/gestimarket > e2e-app.log 2>&1 &
           for i in $(seq 1 90); do curl -sf http://127.0.0.1:7878/api/ping && break; sleep 2; done
           curl -sf http://127.0.0.1:7878/api/ping || (cat e2e-app.log; exit 1)
       - name: Scénario Playwright
@@ -140,7 +189,7 @@ jobs:
             echo "::error title=Pile d'appels du poste serveur::$(grep -E '^Program terminated|^\[Current thread|^#[0-9]|^\* ' e2e/out/pile-serveur.txt | cut -c1-200 | head -70 | oneline)"
           done
           echo "::warning title=Fin du journal du poste serveur::$(tail -8 e2e-app.log | oneline)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: e2e-captures
@@ -182,12 +231,12 @@ jobs:
             args: "--target universal-apple-darwin"
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm

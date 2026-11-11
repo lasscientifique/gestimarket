@@ -150,11 +150,14 @@ try {
   check("application Android : mode poste unique au premier lancement", info.config.mode === "local", info.config.mode);
   check("interface : application installée reconnue (pas de WebView FlutterFlow)", await page.evaluate(() => "__TAURI_INTERNALS__" in window && /Android/.test(navigator.userAgent)));
 
-  // Premier démarrage : trois façons de travailler (boutique sur ce téléphone, rejoindre, espace propriétaire).
+  // Premier démarrage : boutique sur ce téléphone, rejoindre, espace propriétaire, ou restaurer une sauvegarde.
   const choices = await page.locator(".start-choice").allInnerTexts().catch(() => []);
   check(
-    "premier démarrage : « Ma boutique sur ce téléphone », « Rejoindre une boutique », « Espace propriétaire »",
-    choices.length === 3 && choices.some((t) => t.includes("Ma boutique sur ce téléphone")) && choices.some((t) => t.includes("Espace propriétaire")),
+    "premier démarrage : « Ma boutique sur ce téléphone », « Rejoindre une boutique », « Espace propriétaire », « J'ai une sauvegarde »",
+    choices.length === 4 &&
+      choices.some((t) => t.includes("Ma boutique sur ce téléphone")) &&
+      choices.some((t) => t.includes("Espace propriétaire")) &&
+      choices.some((t) => t.includes("J'ai une sauvegarde")),
     choices.map((t) => t.split(/\r?\n/)[0]).join(", "),
   );
   await shot("a-01b-choix-du-demarrage.png");
@@ -168,6 +171,7 @@ try {
   }
   const lic = await rpc("license_status");
   check("identifiant de l'appareil pour la licence", /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(lic.pc_id), lic.pc_id);
+  check("téléphone sans Internet : essai gratuit de 14 jours dès la configuration", lic.phase === "trial" && !lic.read_only, `${lic.phase} ${lic.days_left} j`);
   await rpc("license_import", { text: await testLicense(lic.pc_id) });
   const coca = await rpc("save_product", { id: null, input: { name: "Coca-Cola 33 cl", purchase_price: 300, sale_price: 500, initial_stock: 48 } });
   check("base SQLite du téléphone : produit créé avec un code-barres", coca?.id > 0 && !!coca?.barcode, coca?.barcode);

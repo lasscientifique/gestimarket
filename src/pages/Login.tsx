@@ -13,6 +13,7 @@ import { BrandLogo } from "../components/Brand";
 import type { LoginInfo, LoginUser } from "../types";
 import { deviceLabel, setDeviceToken } from "../lib/device";
 import { tl } from "../lib/i18n";
+import { ForgotPasswordModal } from "../components/AccountPassword";
 
 const initials = (n: string) =>
   n
@@ -387,6 +388,7 @@ function ForgotAdminPin({ onClose, onDone }: { onClose: () => void; onDone: (ful
   const [f, setF] = useState({ email: "", password: "", username: "", pin: "", confirm: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState(false);
   const submit = async () => {
     if (f.pin !== f.confirm) return setError(tl("Les deux codes PIN ne correspondent pas."));
     setBusy(true);
@@ -417,6 +419,10 @@ function ForgotAdminPin({ onClose, onDone }: { onClose: () => void; onDone: (ful
       <div className="form-grid one">
         <Field label={tl("E-mail du compte boutique")}><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoFocus /></Field>
         <Field label={tl("Mot de passe du compte boutique")}><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
+        {isTauri && (
+          <button type="button" className="link-btn small" onClick={() => setForgot(true)}>{tl("Mot de passe du compte oublié ?")}</button>
+        )}
+        {forgot && <ForgotPasswordModal email={f.email} onClose={() => setForgot(false)} />}
         <Field label={tl("Identifiant de l'administrateur")} hint={tl("Vide : le premier administrateur (admin).")}>
           <input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} placeholder="admin" />
         </Field>

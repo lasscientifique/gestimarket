@@ -27,7 +27,11 @@ export function LicenceBanner() {
       </span>
       {user?.role === "admin" && (
         <NavLink to="/licence" className="btn btn-sm">
-          {lic.phase === "none" ? tl("Activer") : lic.phase === "expired" || lic.level !== "ok" ? tl("Renouveler") : tl("Abonnement & licence")}
+          {lic.phase === "none" || lic.phase === "trial" || lic.phase === "trial_over"
+            ? tl("Créer le compte")
+            : lic.phase === "expired" || lic.level !== "ok"
+              ? tl("Renouveler")
+              : tl("Abonnement & licence")}
         </NavLink>
       )}
       {!lic.read_only && (

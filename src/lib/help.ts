@@ -277,6 +277,8 @@ export const TIPS: Record<string, string> = {
     tl("Poste unique : tout sur ce PC. Serveur : ce PC garde la base et la partage aux autres caisses (Wi-Fi ou câble). Client : ce PC utilise la base du serveur."),
   customer_display:
     tl("Ouvre une fenêtre plein écran sur le 2ᵉ écran (tourné vers le client) : articles, prix, total, montant reçu et monnaie à rendre."),
+  backup_password: tl("Mot de passe des sauvegardes : chaque copie (automatique ou envoyée ailleurs) est chiffrée. Pour la restaurer sur un autre appareil, il faut ce mot de passe. Notez-le sur papier : sans lui, la copie est perdue."),
+  backup_restore: tl("Restaurer : choisissez le fichier de sauvegarde (clé USB, Google Drive, WhatsApp, carte SD) ou une copie de cet appareil. Son contenu est montré avant. Les données actuelles sont copiées dans le dossier des sauvegardes, puis remplacées. Chacun se reconnecte avec les codes PIN de la sauvegarde."),
   auto_backup: tl("Une copie de la base est faite chaque jour dans ce dossier. Choisissez une clé USB, un disque externe ou un dossier synchronisé (Drive, OneDrive)."),
   allow_negative: tl("Si coché, on peut vendre un produit même si le stock indique 0 (stock mal saisi). Déconseillé : le stock devient faux."),
   require_session: tl("Oblige chaque caissier à ouvrir sa caisse (fond de caisse) avant de vendre : indispensable pour contrôler les espèces."),

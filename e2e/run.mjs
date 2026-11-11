@@ -10,6 +10,8 @@
 // Résultats : e2e/out/*.png et e2e/out/results.json ; code de sortie 1 si une vérification échoue.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { chromium } from "playwright";
 import { phoneTour } from "./mobile.mjs";
 import { speedTest } from "./vitesse.mjs";
@@ -57,6 +59,23 @@ async function testLicense(pcId) {
   return JSON.stringify({ format: "gestimarket-licence", kid: 99, payload: bytes.toString("base64"), sig: sig.toString("base64") }, null, 2);
 }
 
+// Commandes propres à l'appareil (restauration, Espace propriétaire) : route de test des compilations de
+// développement, avec la session du jeton (dans l'application, elles ne passent jamais par le réseau).
+async function localCmd(cmd, args = {}, token = null) {
+  const r = await fetch(`${SRV}/__test/local/${cmd}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(args),
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(`${cmd} : ${d.error}`);
+  return d.ok;
+}
+
+// Compte Eden Dev de la propriétaire dans le faux Supabase (e2e/mocks.mjs).
+const OWNER_EMAIL = "proprietaire@exemple.ml";
+const OWNER_PASSWORD = "Proprietaire-2026";
+
 function startMock(kind) {
   const p = spawn(process.execPath, ["e2e/mocks.mjs", kind], { stdio: "inherit" });
   return p;
@@ -83,6 +102,13 @@ const tauriBridge = (lanIp) => `
       if (cmd === "rpc") {
         const t = sessionStorage.getItem("gm-token");
         const r = await fetch("/rpc/" + args.cmd, { method: "POST", headers: { "Content-Type": "application/json", ...(t ? { Authorization: "Bearer " + t } : {}) }, body: JSON.stringify(args.args || {}) });
+        const d = await r.json();
+        if (d.error) throw d.error;
+        return d.ok;
+      }
+      if (cmd === "owner" || cmd.startsWith("backup_")) {
+        const t = sessionStorage.getItem("gm-token");
+        const r = await fetch("/__test/local/" + cmd, { method: "POST", headers: { "Content-Type": "application/json", ...(t ? { Authorization: "Bearer " + t } : {}) }, body: JSON.stringify(args || {}) });
         const d = await r.json();
         if (d.error) throw d.error;
         return d.ok;
@@ -166,13 +192,19 @@ try {
   const admin = setupToken ?? (await login());
   const oldPassword = await rpc("login_password", { username: "admin", password: "secret123" }).then(() => "acceptée", (e) => e.message);
   check("plus de mot de passe : connexion par identifiant et code PIN", oldPassword.includes("PIN"), oldPassword);
-  const second = await rpc("login", { username: "admin", pin: PIN }).then(() => "acceptée", (e) => e.message);
-  check("sans licence : une 2ᵉ session est refusée (FREE, 1 poste)", second.includes("Nombre maximal"), second);
-
-  // ── Licence : sans licence, lecture seule ; licence BUSINESS signée avec la clé de test (compilation debug)
-  const before = await rpc("save_category", { id: null, input: { name: "Essai lecture seule" } }, admin).then(() => "accepté", (e) => e.message);
-  check("sans licence : écriture refusée (lecture seule)", before.includes("Lecture seule"), before);
+  // ── Essai gratuit sans Internet : commencé dès la première configuration (formule PRO, 3 postes, 14 jours).
   const lic = await rpc("license_status", {}, admin);
+  check(
+    "essai sans Internet commencé à la configuration (PRO, 3 postes, 14 jours)",
+    lic.phase === "trial" && lic.trial === true && !lic.read_only && lic.plan === "pro" && lic.max_postes === 3 && lic.days_left >= 13,
+    `${lic.phase} ${lic.plan} ${lic.max_postes} postes, ${lic.days_left} j`,
+  );
+  const during = await rpc("generate_barcode", {}, admin).then(() => "acceptée", (e) => e.message);
+  check("essai : ventes et modifications permises sans compte ni Internet", during === "acceptée", during);
+  const second = await rpc("login", { username: "admin", pin: PIN }).then(() => "acceptée", (e) => e.message);
+  check("essai : une 2ᵉ session est acceptée (3 postes)", second === "acceptée", second);
+
+  // ── Licence BUSINESS signée avec la clé de test (compilation debug) : elle passe avant l'essai.
   check("identifiant du PC affiché", /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(lic.pc_id), lic.pc_id);
   const installed = await rpc("license_import", { text: await testLicense(lic.pc_id) }, admin);
   check("licence de test installée (BUSINESS, écriture permise)", installed.plan === "business" && !installed.read_only, `${installed.plan} ${installed.message}`);
@@ -606,6 +638,99 @@ try {
   const ping = await fetch(`${SRV}/api/ping`).then((r) => r.json());
   check("serveur : nom du poste et type d'appareil dans /api/ping (recherche des boutiques)", typeof ping.poste === "string" && ping.device === "pc", JSON.stringify(ping));
 
+  // ── TV Android simulée : la boutique est trouvée sur le réseau, on choisit la caisse, l'écran client s'ouvre.
+  const tvUa = "Mozilla/5.0 (Linux; Android 12; BRAVIA 4K VH2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  const tvBridge = `
+    localStorage.setItem("gm-force-tv", "1");
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (cmd, args) => {
+        const net = JSON.parse(localStorage.getItem("tv-net") || "null");
+        if (cmd === "get_network_config") return net ?? { config: { mode: "local", poste_name: "TV salon", port: 7878, server_url: "" }, local_ips: [], hostname: "TV", os: "android" };
+        if (cmd === "discover_servers") return [{ url: location.origin, shop_name: "Eden Superrette", version: ${JSON.stringify(ping.version)}, poste: "Caisse 1", device: "pc" }];
+        if (cmd === "save_network_config") {
+          localStorage.setItem("tv-net", JSON.stringify({ config: args.config, local_ips: [], hostname: "TV", os: "android" }));
+          return null;
+        }
+        if (cmd === "rpc") {
+          const r = await fetch("/rpc/" + args.cmd, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args.args || {}) });
+          const d = await r.json();
+          if (d.error) throw d.error;
+          return d.ok;
+        }
+        if (cmd === "restart_app") return null;
+        throw "Commande non disponible dans le test : " + cmd;
+      },
+      transformCallback: (cb) => { const id = Math.floor(Math.random() * 1e9); window["_" + id] = cb; return id; },
+      convertFileSrc: (p) => p,
+    };`;
+  const tvCtx = await browser.newContext({ viewport: { width: 1280, height: 720 }, userAgent: tvUa, locale: "fr-FR" });
+  await tvCtx.addInitScript({ content: tvBridge });
+  const tv = await tvCtx.newPage();
+  tv.on("pageerror", (e) => console.log(`[tv] erreur : ${e.message}`));
+  await tv.goto(`${SRV}/#/`);
+  await seen(tv, "TV (premier démarrage)", "La TV et le serveur de la boutique");
+  try {
+    await tv.locator(".shop-finder-list .shop-card", { hasText: "Eden Superrette" }).first().click({ timeout: 20_000 });
+    await seen(tv, "TV (choix de la caisse)", "quelle caisse cette TV affiche-t-elle");
+    await shot(tv, "27-tv-choix-de-la-caisse.png");
+    await tv.locator(".tv-postes .shop-card").first().click();
+    await tv.waitForURL(/#\/display/, { timeout: 20_000 });
+    await tv.locator(".cd-tv-settings").waitFor({ state: "visible", timeout: 20_000 });
+    const shopName = (await tv.locator(".cd-shop").first().textContent()) ?? "";
+    const saved = await tv.evaluate(() => JSON.parse(localStorage.getItem("tv-net") || "null")?.config);
+    check(
+      "TV : écran client de la caisse choisie, relié au serveur (poste client)",
+      shopName.includes("Eden Superrette") && saved?.mode === "client" && saved?.server_url === SRV,
+      `${shopName} ${JSON.stringify(saved)}`,
+    );
+    await shot(tv, "28-tv-ecran-client.png");
+    // La TV rouverte plus tard va directement à l'écran client.
+    await tv.goto(`${SRV}/#/`);
+    await tv.waitForURL(/#\/display/, { timeout: 20_000 }).then(
+      () => check("TV rouverte : écran client directement", true),
+      () => check("TV rouverte : écran client directement", false, tv.url()),
+    );
+  } catch (e) {
+    await shot(tv, "27-tv-echec.png").catch(() => undefined);
+    check("TV : choix de la boutique et de la caisse", false, e.message);
+  }
+  await tvCtx.close();
+
+  // ── Espace propriétaire (compte Eden Dev, faux Supabase) : connexion, boutiques, paiements, mot de passe.
+  const ownerCall = (action, args = {}) => localCmd("owner", { action, args }, admin);
+  const outcome = (p) => p.then(() => "acceptée", (e) => e.message);
+  const badOwner = await outcome(ownerCall("login", { email: OWNER_EMAIL, password: "pas-le-bon-1" }));
+  check("Espace propriétaire : mauvais mot de passe refusé", badOwner.includes("incorrect"), badOwner);
+  const owned = await ownerCall("login", { email: OWNER_EMAIL, password: OWNER_PASSWORD });
+  const shop0 = owned?.stores?.[0];
+  check(
+    "Espace propriétaire : boutiques du compte et état de leur serveur",
+    shop0?.code === "GM-E2E" && shop0?.server?.active === true && owned.email === OWNER_EMAIL,
+    JSON.stringify(owned).slice(0, 300),
+  );
+  const pays = await ownerCall("payments", { store_code: "GM-E2E" });
+  check("Espace propriétaire : paiements de la boutique", Array.isArray(pays) && pays.length === 1 && pays[0].status === "pending", JSON.stringify(pays).slice(0, 200));
+  const weakPwd = await outcome(ownerCall("change_password", { email: OWNER_EMAIL, current: OWNER_PASSWORD, password: "12345678" }));
+  check("mot de passe du compte : mot de passe faible refusé", weakPwd.includes("trop"), weakPwd);
+  await ownerCall("change_password", { email: OWNER_EMAIL, current: OWNER_PASSWORD, password: "Nouveau-mdp-2026" });
+  const oldPwd = await outcome(ownerCall("login", { email: OWNER_EMAIL, password: OWNER_PASSWORD }));
+  check("mot de passe du compte changé (l'ancien est refusé)", oldPwd.includes("incorrect"), oldPwd);
+  await ownerCall("logout");
+  await ownerCall("recover", { email: OWNER_EMAIL });
+  const badCode = await outcome(ownerCall("reset_password", { email: OWNER_EMAIL, code: "000000", password: "Retrouve-mdp-2026", login: true }));
+  check("mot de passe oublié : mauvais code refusé", badCode.includes("Code incorrect"), badCode);
+  await ownerCall("reset_password", { email: OWNER_EMAIL, code: "246810", password: "Retrouve-mdp-2026", login: true });
+  const afterReset = await ownerCall("status");
+  check("mot de passe oublié : nouveau mot de passe avec le code reçu, propriétaire connectée", afterReset.connected === true, JSON.stringify(afterReset));
+  const ownerPage = await server.context().newPage();
+  await ownerPage.goto(`${SRV}/#/proprietaire`);
+  await seen(ownerPage, "Espace propriétaire (écran)", "Boutique du compte E2E");
+  await shot(ownerPage, "29-espace-proprietaire.png");
+  await ownerCall("logout");
+  await ownerPage.reload();
+  await seen(ownerPage, "Espace propriétaire déconnecté", "Mot de passe oublié ?");
+  await ownerPage.close();
+
   // ── Version mobile : toutes les pages sur un téléphone de 360 px, par Internet (administrateur et caissière).
   const cashierToken = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;
   await phoneTour({ browser, url: PUB, adminToken: await login(), cashierToken, out: OUT, strict: process.env.MOBILE_STRICT !== "0", check });
@@ -616,6 +741,37 @@ try {
   // ── Manuel d'utilisation (PDF, français et anglais) : captures et aide des écrans de la boutique d'exemple.
   const cashierManual = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;
   await buildManuals({ browser, url: SRV, adminToken: await login(), cashierToken: cashierManual, out: OUT, check });
+
+  // ── Sauvegarde protégée et restauration (en dernier : la restauration ferme toutes les sessions).
+  let tok = await login();
+  const prot = await rpc("backup_protect", { password: "Sauvegarde-E2E-2026", pin: PIN }, tok);
+  check("sauvegardes protégées par un mot de passe", prot.protected === true, JSON.stringify(prot));
+  const savePath = path.join(os.tmpdir(), "gm-e2e-sauvegarde.gmsave");
+  await rpc("backup_database", { path: savePath }, tok);
+  const head = fs.readFileSync(savePath).subarray(0, 16);
+  check("copie protégée chiffrée (en-tête GMSAUV01, aucune base lisible)", head.subarray(0, 8).toString() === "GMSAUV01" && !head.toString().startsWith("SQLite"), head.toString("hex"));
+  const marker = `Ajoutée après la copie ${Date.now()}`;
+  await rpc("save_category", { id: null, input: { name: marker } }, tok);
+  const wrongPwd = await localCmd("backup_inspect", { path: savePath, password: "faux-mot-de-passe" }, tok).then(() => "acceptée", (e) => e.message);
+  check("restauration : mauvais mot de passe refusé", wrongPwd.includes("incorrect"), wrongPwd);
+  const info = await localCmd("backup_inspect", { path: savePath }, tok);
+  check(
+    "restauration : contenu lu avant (copie de cette boutique, sans retaper le mot de passe)",
+    info.protected && !info.needs_password && info.shop_name === "Eden Superrette" && info.products > 0 && !info.newer,
+    JSON.stringify(info),
+  );
+  const restoreNoPin = await localCmd("backup_restore", { path: savePath }, tok).then(() => "acceptée", (e) => e.message);
+  check("restauration refusée sans le code PIN de l'administrateur", restoreNoPin.includes("PIN"), restoreNoPin);
+  const done = await localCmd("backup_restore", { path: savePath, pin: PIN }, tok);
+  check("sauvegarde restaurée, copie de sécurité faite avant", !!done.safety_copy && fs.existsSync(done.safety_copy), JSON.stringify(done));
+  const gone = await rpc("current_user", {}, tok);
+  check("restauration : toutes les sessions fermées", gone === null, JSON.stringify(gone));
+  tok = await login();
+  const cats = await rpc("list_categories", {}, tok);
+  check("restauration : données de la sauvegarde revenues (catégorie ajoutée après la copie absente)", Array.isArray(cats) && !cats.some((c) => c.name === marker), String(cats.length));
+  const licAfter = await rpc("license_status", {}, tok);
+  check("restauration : licence de ce poste gardée", licAfter.plan === "business" && !licAfter.read_only, `${licAfter.phase} ${licAfter.plan}`);
+  await rpc("backup_protect", { password: null, pin: PIN }, tok);
 } catch (e) {
   check("scénario exécuté sans exception", false, e.stack ?? e.message);
 } finally {

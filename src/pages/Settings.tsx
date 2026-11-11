@@ -29,6 +29,9 @@ import { readFile, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { every } from "../lib/visibility";
 import { markBackupShared } from "../components/PhoneBanners";
 import { OfflineHelpCard } from "../components/OfflineHelp";
+import { RestoreBackupModal } from "../components/RestoreBackup";
+import { BackupProtectionCard } from "../components/BackupProtection";
+import { ArchiveRestore } from "lucide-react";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
@@ -74,6 +77,7 @@ export default function SettingsPage() {
     setLoyalty(minorToInput(Number(settings.loyalty_step || 0)));
   }, [settings]);
   const [backupState, setBackupState] = useState<BackupStatus | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const loadInfo = () => {
     api.appInfo().then(setInfo).catch(() => undefined);
     api.backupStatus().then(setBackupState).catch(() => undefined);
@@ -102,16 +106,18 @@ export default function SettingsPage() {
 
   const backup = async () => {
     try {
+      // Sauvegarde protégée par un mot de passe : fichier .gmsave (chiffré).
+      const ext = backupState?.protected ? "gmsave" : "db";
       const path = await save({
         title: tl("Sauvegarder la base de données"),
-        defaultPath: `gestimarket-sauvegarde-${isoDate()}.db`,
-        filters: [{ name: "Base SQLite", extensions: ["db"] }],
+        defaultPath: `gestimarket-sauvegarde-${isoDate()}.${ext}`,
+        filters: [{ name: backupState?.protected ? tl("Sauvegarde GestiMarket protégée") : "Base SQLite", extensions: [ext] }],
       });
       if (!path) return;
       if (isMobileApp) {
         // Téléphone et tablette : copie faite dans le cache de l'application, puis écrite dans le fichier
         // choisi (Drive, Fichiers, carte SD…), que seul le module fs sait ouvrir.
-        const tmp = await join(await appCacheDir(), `gestimarket-copie-${Date.now()}.db`);
+        const tmp = await join(await appCacheDir(), `gestimarket-copie-${Date.now()}.${ext}`);
         await api.backupDatabase(tmp);
         try {
           await writeFile(path, await readFile(tmp));
@@ -400,6 +406,18 @@ export default function SettingsPage() {
           </p>
         )}
       </div>
+      <BackupProtectionCard status={backupState} onChange={setBackupState} />
+      {isTauri && !isRemote() && (
+        <div className="card">
+          <h3 className="card-title"><ArchiveRestore size={18} />  {tl("Restaurer une sauvegarde")} <HelpTip k="backup_restore" /></h3>
+          <p className="muted">
+            {tl("Revenir à une copie : téléphone ou PC changé, erreur à annuler, passage du téléphone au PC. Les données actuelles sont d'abord copiées, puis remplacées par celles de la sauvegarde.")}</p>
+          <div className="row-start">
+            <button className="btn" onClick={() => setRestoreOpen(true)}><ArchiveRestore size={16} />  {tl("Restaurer une sauvegarde…")}</button>
+          </div>
+        </div>
+      )}
+      {restoreOpen && <RestoreBackupModal onClose={() => setRestoreOpen(false)} />}
         </>
       )}
 

@@ -1,16 +1,19 @@
 # First start
 
-## On a phone or tablet: three choices
+## On a phone or tablet: four choices
 
 When the app opens for the first time, it asks how the device will be used:
 
 - **My shop on this phone**: the whole shop is on this phone, without a computer, even without Internet. The TV and other tills can connect to it later.
 - **Join a shop**: one more till. The phone looks for shops on the Wi-Fi or hotspot by itself; tap yours. You can also scan the server's QR code or type its address.
 - **Owner space**: your shops remotely, with your Eden Dev account (see “Owner space”).
+- **I have a backup**: phone changed, broken or reset. Choose the backup file (Google Drive, WhatsApp, SD card…): the shop comes back as it was when the copy was made, with its PIN codes.
+
+On a new PC, the first screen also offers **“Restore the backup”**.
 
 ## Creating the shop (PC or “My shop on this phone”)
 
-1. **The shop account at Eden Dev**: e-mail, password, shop name, owner, country, city, type of business. The Internet is needed for this step only. Without Internet, “Continue without an account”: GestiMarket stays read-only until it is activated.
+1. **The shop account at Eden Dev**: e-mail, password, shop name, owner, country, city, type of business. The Internet is needed for this step only. Without Internet, “Continue without an account”: **14-day free trial** with every feature of the PRO plan. Create the account as soon as you have Internet (Subscription & licence); after 14 days without an account, GestiMarket becomes read-only. The trial happens only once per shop.
 2. **The shop**: currency, address, phone.
 3. **The team**: each person has a **username** and a **PIN code** (no password). Random codes are suggested: note them or change them. An administrator, a manager and a cashier are created by default.
 

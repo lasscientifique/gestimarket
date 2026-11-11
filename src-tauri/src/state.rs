@@ -273,6 +273,12 @@ impl AppState {
         n + before - sessions.len()
     }
 
+    /// Ferme toutes les sessions (base remplacée par une sauvegarde : chacun se reconnecte).
+    pub fn logout_all(&self) {
+        *lock(&self.session) = None;
+        lock(&self.remote_sessions).clear();
+    }
+
     /// Ferme les sessions ouvertes depuis un téléphone retiré.
     pub fn kick_device(&self, device_id: i64) -> usize {
         let mut sessions = lock(&self.remote_sessions);

@@ -905,6 +905,36 @@ export interface BackupStatus {
   error: string | null;
   /** Pas de sauvegarde automatique réussie depuis 48 h (ou jamais). */
   stale: boolean;
+  /** Copies protégées par un mot de passe (fichiers .gmsave). */
+  protected: boolean;
+}
+
+/** Contenu d'une sauvegarde, lu avant de la restaurer. */
+export interface BackupInfo {
+  file: string;
+  size: number;
+  protected: boolean;
+  /** Protégée : le mot de passe est nécessaire pour la lire. */
+  needs_password: boolean;
+  shop_name: string | null;
+  products: number;
+  customers: number;
+  sales: number;
+  users: number;
+  last_activity: string | null;
+  /** Faite par une version plus récente de GestiMarket. */
+  newer: boolean;
+}
+
+/** Copie de sauvegarde gardée sur cet appareil. */
+export interface BackupFile {
+  name: string;
+  path: string;
+  size: number;
+  modified: string | null;
+  protected: boolean;
+  /** Copie faite juste avant une restauration. */
+  safety: boolean;
 }
 
 export interface DiscountRow {
@@ -1042,7 +1072,7 @@ export type LicenseFeature = "write" | "server" | "internet" | "customer_display
 export interface LicenseStatus {
   /** Identifiant de ce PC (et de cette boutique sur le PC) : K7QM-2XPA-9DTR */
   pc_id: string;
-  /** none, not_yet, active, expired */
+  /** none, not_yet, active, expired, trial (essai sans Internet), trial_over */
   phase: string;
   plan: PlanCode;
   plan_label: string;
@@ -1060,6 +1090,8 @@ export interface LicenseStatus {
   level: "ok" | "warning" | "danger";
   clock_warning: string | null;
   load_error: string | null;
+  /** Essai gratuit sans Internet (en cours ou terminé). */
+  trial: boolean;
   account: { email: string; store_code: string; store_name: string };
   last_sync: string | null;
   last_sync_error: string | null;

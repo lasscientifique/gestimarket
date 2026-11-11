@@ -8,6 +8,7 @@ import { NetworkForm } from "../components/NetworkForm";
 import { BusinessTypeGrid, useBusinessProfiles } from "../components/BusinessType";
 import { HelpTip } from "../components/Help";
 import { AccountForm } from "../components/AccountForm";
+import { RestoreBackupModal } from "../components/RestoreBackup";
 import { PlanProposal, defaultProposal, proposalInput, type ProposalValue } from "../components/plan/PlanProposal";
 import type { AccountLinkResult, Role, TeamMember } from "../types";
 import { getLang, tl, tm } from "../lib/i18n";
@@ -192,6 +193,7 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
     setStep("shop");
   };
 
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const joinModal = joinOpen && (
     <Modal title={tl("Rejoindre un poste serveur")} onClose={() => setJoinOpen(false)} width={720}>
       <NetworkForm />
@@ -215,12 +217,19 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
             {tl("Vous ajoutez une caisse supplémentaire à un magasin déjà équipé ?")}{" "}
             <button type="button" className="link-btn" onClick={() => setJoinOpen(true)}>{tl("Se connecter au poste serveur")}</button>
           </div>
+          {isTauri && (
+            <div className="alert alert-info">
+              {tl("Vous avez une sauvegarde de votre boutique (téléphone ou PC changé) ?")}{" "}
+              <button type="button" className="link-btn" onClick={() => setRestoreOpen(true)}>{tl("Restaurer la sauvegarde")}</button>
+            </div>
+          )}
           <AccountForm onLinked={accountLinked} />
           <p className="muted small" style={{ marginTop: 14 }}>
             {tl("Pas d'Internet pour l'instant ?")}{" "}
-            <button type="button" className="link-btn" onClick={() => setStep("shop")}>{tl("Continuer sans compte")}</button>  {tl(": GestiMarket restera en lecture seule jusqu'à l'activation (menu Abonnement & licence).")}</p>
+            <button type="button" className="link-btn" onClick={() => setStep("shop")}>{tl("Continuer sans compte")}</button>  {tl(": essai gratuit de 14 jours avec toutes les fonctions de la formule PRO. Créez le compte plus tard, dès que vous avez Internet (menu Abonnement & licence).")}</p>
         </div>
         {joinModal}
+        {restoreOpen && <RestoreBackupModal fresh onClose={() => setRestoreOpen(false)} />}
       </div>
     );
   }

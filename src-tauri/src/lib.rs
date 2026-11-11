@@ -8,6 +8,7 @@ mod error;
 mod journal;
 mod license;
 mod live;
+mod local;
 mod network;
 mod printer;
 mod report;
@@ -229,6 +230,9 @@ pub fn run() {
             commands::help_offline_download,
             commands::open_help,
             commands::owner,
+            commands::backup_inspect,
+            commands::backup_restore,
+            commands::backup_list,
             commands::restart_app,
             commands::list_monitors,
             commands::toggle_customer_display,

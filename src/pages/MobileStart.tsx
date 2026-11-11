@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ArrowLeft, MessageCircle, Smartphone, Store, UserRound, Wifi } from "lucide-react";
+import { ArchiveRestore, ArrowLeft, MessageCircle, Smartphone, Store, UserRound, Wifi } from "lucide-react";
+import { RestoreBackupModal } from "../components/RestoreBackup";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { ShopFinder, joinShop } from "../components/ShopFinder";
 import { useApp } from "../context/AppContext";
@@ -20,6 +21,7 @@ export default function MobileStartPage({ onLocal }: { onLocal: () => void }) {
   const { toast } = useApp();
   const [join, setJoin] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
 
   const pick = async (shop: FoundShop) => {
     setBusy(true);
@@ -73,6 +75,11 @@ export default function MobileStartPage({ onLocal }: { onLocal: () => void }) {
                 <strong>{tl("Espace propriétaire")}</strong>
                 <span>{tl("Vos boutiques à distance : serveur allumé ou éteint, ventes, abonnements. Internet nécessaire.")}</span>
               </button>
+              <button type="button" className="start-choice" onClick={() => setRestoreOpen(true)}>
+                <ArchiveRestore size={26} />
+                <strong>{tl("J'ai une sauvegarde")}</strong>
+                <span>{tl("Téléphone changé, cassé ou réinitialisé : retrouvez la boutique (produits, clients, dettes, ventes, codes PIN) à partir de son fichier de sauvegarde.")}</span>
+              </button>
             </div>
             <p className="muted small start-contact">
               <button type="button" className="link-btn" onClick={() => (window.location.hash = "#/proprietaire?tab=contact")}>
@@ -90,6 +97,7 @@ export default function MobileStartPage({ onLocal }: { onLocal: () => void }) {
           </>
         )}
       </div>
+      {restoreOpen && <RestoreBackupModal fresh onClose={() => setRestoreOpen(false)} onRestored={() => remember("local")} />}
     </div>
   );
 }

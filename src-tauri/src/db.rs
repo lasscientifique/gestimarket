@@ -46,6 +46,17 @@ fn configure(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// Version du schéma de cette version de GestiMarket (une sauvegarde plus récente ne peut pas être relue).
+pub fn schema_version() -> i64 {
+    MIGRATIONS.len() as i64
+}
+
+/// Base restaurée depuis une sauvegarde : mêmes réglages et migrations qu'à l'ouverture.
+pub fn upgrade(conn: &Connection) -> AppResult<()> {
+    configure(conn)?;
+    migrate(conn)
+}
+
 fn migrate(conn: &Connection) -> AppResult<()> {
     let current: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if current >= MIGRATIONS.len() as i64 {

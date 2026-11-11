@@ -96,6 +96,9 @@ const INTERNAL: &[&str] = &[
     "account_email",
     "account_store_code",
     "account_store_name",
+    // Essai gratuit sans Internet (date de début) et clé des sauvegardes protégées (jamais montrée).
+    "trial_started_at",
+    "backup_key",
 ];
 
 pub fn get_all(conn: &Connection) -> AppResult<BTreeMap<String, String>> {

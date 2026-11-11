@@ -181,10 +181,8 @@ try {
   console.log("plein écran :", e.message);
 }
 
-let souris = { x: 640, y: 360 };
 async function aller(x, y, etapes = 24) {
   await page.mouse.move(x, y, { steps: etapes });
-  souris = { x, y };
 }
 async function cliquer(loc, pause = 250) {
   const l = loc.first();

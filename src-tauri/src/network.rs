@@ -234,7 +234,12 @@ pub fn start_server(app: AppHandle, port: u16) {
             .route("/rpc-batch", post(rpc_batch_handler))
             .route("/media/{id}", get(media_handler))
             .route("/aide/{file}", get(aide_handler))
-            .route("/api/ping", get(ping_handler))
+            .route("/api/ping", get(ping_handler));
+        // Tests d'interface : commandes propres à l'appareil (restauration, Espace propriétaire).
+        // Absent des compilations publiées.
+        #[cfg(debug_assertions)]
+        let router = router.route("/__test/local/{cmd}", post(test_local_handler));
+        let router = router
             .fallback(get(asset_handler))
             .layer(cors())
             // gzip / brotli selon le navigateur (les photos, déjà compressées, ne le sont pas).
@@ -395,6 +400,37 @@ async fn rpc_handler(
     let result = tokio::task::spawn_blocking(move || {
         let state = app.state::<AppState>();
         crate::rpc::dispatch(&state, &Origin::Remote(token), &cmd, args)
+    })
+    .await;
+    match result {
+        Ok(Ok(v)) => Json(json!({ "ok": v })).into_response(),
+        Ok(Err(e)) => Json(json!({ "error": e.to_string() })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+/// Tests d'interface (compilations de développement seulement, depuis ce PC) : les commandes que
+/// l'application appelle sur l'appareil lui-même (local.rs), avec la session du jeton du test.
+#[cfg(debug_assertions)]
+async fn test_local_handler(
+    State(app): State<App>,
+    Path(cmd): Path<String>,
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !addr.ip().to_canonical().is_loopback() || headers.contains_key("cf-ray") {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(String::from);
+    let args: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    let result = tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        crate::local::call(&state, &Origin::Remote(token), &cmd, args)
     })
     .await;
     match result {

@@ -311,34 +311,30 @@ pub async fn discover_servers() -> AppResult<Vec<serde_json::Value>> {
 pub async fn owner(state: State<'_, AppState>, action: String, args: Option<serde_json::Value>) -> AppResult<serde_json::Value> {
     let dir = state.db_path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
     let a = args.unwrap_or(serde_json::Value::Null);
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let text = |k: &str| a.get(k).and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
-        match action.as_str() {
-            "status" => Ok(crate::account::owner_status(&dir)),
-            "login" => crate::account::owner_login(&dir, &text("email"), &text("password")),
-            "logout" => {
-                crate::account::owner_logout(&dir);
-                Ok(serde_json::Value::Null)
-            }
-            "stores" => crate::account::owner_stores(&dir),
-            "payments" => crate::account::owner_payments(&dir, &text("store_code")),
-            "redeem" => crate::account::owner_redeem(&dir, &text("store_code"), &text("code")),
-            "declare" => crate::account::owner_declare(
-                &dir,
-                &text("store_code"),
-                &text("plan"),
-                a.get("months").and_then(serde_json::Value::as_i64).unwrap_or(1),
-                &text("method"),
-                &text("reference"),
-                &text("phone"),
-            ),
-            "options" => crate::account::options(),
-            _ => Err("Action inconnue.".to_string()),
-        }
-    })
-    .await
-    .map_err(internal)?;
+    let result = tauri::async_runtime::spawn_blocking(move || crate::account::owner_action(&dir, &action, &a)).await.map_err(internal)?;
     result.map_err(AppError::Validation)
+}
+
+// ───────────────────────────── Restauration des sauvegardes ─────────────────────────────
+// Commandes de cet appareil seulement (jamais servies au réseau), voir local.rs. Commandes asynchrones :
+// elles tournent hors du fil de l'interface (pas de copie de l'AppHandle vers un autre fil, voir network.rs).
+
+/// Ce que contient une sauvegarde (avant de la restaurer), ou le mot de passe qu'il faut.
+#[tauri::command]
+pub async fn backup_inspect(state: State<'_, AppState>, path: String, password: Option<String>) -> AppResult<Value> {
+    crate::local::call(&state, &Origin::Local, "backup_inspect", serde_json::json!({ "path": path, "password": password }))
+}
+
+/// Remplace la base de cette boutique par une sauvegarde (appareil neuf, ou administrateur et son code PIN).
+#[tauri::command]
+pub async fn backup_restore(state: State<'_, AppState>, path: String, password: Option<String>, pin: Option<String>) -> AppResult<Value> {
+    crate::local::call(&state, &Origin::Local, "backup_restore", serde_json::json!({ "path": path, "password": password, "pin": pin }))
+}
+
+/// Copies de sauvegarde gardées sur cet appareil.
+#[tauri::command]
+pub async fn backup_list(state: State<'_, AppState>) -> AppResult<Value> {
+    crate::local::call(&state, &Origin::Local, "backup_list", Value::Null)
 }
 
 /// Relance l'application (nouveau mode réseau). Sur téléphone et tablette, l'interface se recharge elle-même :

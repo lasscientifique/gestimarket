@@ -7,6 +7,7 @@ import { isoDateTime } from "../lib/license";
 import type { AccountLinkResult, AccountOptions, AccountStore, StoreInput } from "../types";
 import { tl } from "../lib/i18n";
 import { countryName } from "../lib/countries";
+import { ForgotPasswordModal, passwordProblem } from "./AccountPassword";
 
 const EMPTY_STORE: StoreInput = { name: "", owner_name: "", phone: "", country: "ML", city: "", address: "", shop_type: "" };
 
@@ -75,6 +76,7 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
   const [mode, setMode] = useState<"signup" | "login" | "choose" | "new-store">(startWith);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [forgot, setForgot] = useState(false);
   const [confirmPwd, setConfirmPwd] = useState("");
   const [store, setStore] = useState<StoreInput>(EMPTY_STORE);
   const [stores, setStores] = useState<AccountStore[]>([]);
@@ -112,7 +114,8 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
 
   const signup = (e: FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) return setError(tl("Le mot de passe doit contenir au moins 8 caractères."));
+    const weak = passwordProblem(password);
+    if (weak) return setError(weak);
     if (password !== confirmPwd) return setError(tl("Les mots de passe ne correspondent pas."));
     const m = missing(store);
     if (m) return setError(m);
@@ -204,6 +207,10 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
           <button className="btn btn-primary btn-lg btn-block" disabled={busy || !email || !password}>
             {busy ? tl("Connexion…") : tl("Se connecter")}
           </button>
+          <p className="muted small">
+            <button type="button" className="link-btn" onClick={() => setForgot(true)}>{tl("Mot de passe oublié ?")}</button>
+          </p>
+          {forgot && <ForgotPasswordModal email={email} onClose={() => setForgot(false)} />}
         </form>
       )}
 

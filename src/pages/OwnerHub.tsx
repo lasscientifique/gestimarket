@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  ArrowLeft, BadgeCheck, CircleOff, Gift, LogIn, LogOut, Mail, MessageCircle, Phone, Power, RefreshCw, Smartphone, Store, WifiOff,
+  ArrowLeft, BadgeCheck, CircleOff, Gift, KeyRound, LogIn, LogOut, Mail, MessageCircle, Phone, Power, RefreshCw, Smartphone, Store, WifiOff,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { LanguageSwitch } from "../components/LanguageSwitch";
+import { ChangePasswordModal, ForgotPasswordModal } from "../components/AccountPassword";
 import { BrandLogo } from "../components/Brand";
 import { Badge, Field, Modal } from "../components/ui";
 import { owner, pingShop, sameVersion, type OwnerPayment, type OwnerStore, type OwnerStores } from "../lib/owner";
@@ -38,6 +39,7 @@ export default function OwnerHubPage() {
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>(() => (window.location.hash.includes("tab=contact") ? "contact" : "shops"));
   const [selected, setSelected] = useState<string | null>(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -97,9 +99,11 @@ export default function OwnerHubPage() {
           <button className={tab === "shops" ? "active" : ""} onClick={() => setTab("shops")}><Store size={16} />  {tl("Mes boutiques")}</button>
           <button className={tab === "subscriptions" ? "active" : ""} onClick={() => setTab("subscriptions")}><BadgeCheck size={16} />  {tl("Abonnements")}</button>
           <button className={tab === "contact" ? "active" : ""} onClick={() => setTab("contact")}><MessageCircle size={16} />  {tl("Contact")}</button>
+          <button onClick={() => setPasswordOpen(true)}><KeyRound size={16} />  {tl("Mot de passe")}</button>
           <button onClick={logout}><LogOut size={16} />  {tl("Se déconnecter")}</button>
         </nav>
       )}
+      {passwordOpen && <ChangePasswordModal email={data?.email} onClose={() => setPasswordOpen(false)} />}
 
       <main className="owner-body">
         {connected === null && <div className="muted owner-loading">{tl("Chargement…")}</div>}
@@ -122,6 +126,7 @@ function OwnerLogin({ onDone, onContact }: { onDone: (d: OwnerStores) => void; o
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -144,6 +149,15 @@ function OwnerLogin({ onDone, onContact }: { onDone: (d: OwnerStores) => void; o
         <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       </Field>
       <button className="btn btn-primary btn-block" disabled={busy}><LogIn size={16} />  {busy ? tl("Connexion…") : tl("Se connecter")}</button>
+      <button type="button" className="link-btn small" onClick={() => setForgot(true)}>{tl("Mot de passe oublié ?")}</button>
+      {forgot && (
+        <ForgotPasswordModal
+          email={email}
+          login
+          onClose={() => setForgot(false)}
+          onDone={() => void owner.stores().then(onDone).catch((e) => toast.error(e))}
+        />
+      )}
       <p className="muted small">
         {tl("Pas encore de compte ? Il se crée avec « Ma boutique sur ce téléphone » ou sur le PC de la boutique.")}{" "}
         <button type="button" className="link-btn" onClick={onContact}>{tl("Contacter Eden Dev")}</button>

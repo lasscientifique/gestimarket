@@ -268,7 +268,6 @@ function screenVideo(key, route, token) {
 
 // ───────────── Vidéos d'action ─────────────
 function actionVideos(tok) {
-  const press = (key) => async (page) => page.keyboard.press(key);
   const byText = (page, sel, fr) => page.locator(sel).filter({ hasText: T(fr) });
   return {
     vente: () =>

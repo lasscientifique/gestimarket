@@ -29,7 +29,7 @@ GestiMarket est le logiciel de caisse et de gestion des boutiques, supérettes, 
 | **PRO** | Boutique avec plusieurs appareils | 3 postes, serveur de la boutique (PC ou téléphone), accès par Internet, écran client (TV), logo, client fidèle |
 | **BUSINESS** | Grande surface | 10 postes, tout PRO |
 
-Une nouvelle installation commence par **14 jours d'essai de la formule PRO**. L'abonnement se paie depuis GestiMarket : carte de bon, Orange Money, Moov Money ou carte Visa (voir le chapitre « Abonnement et licence »).
+Une nouvelle installation commence par **14 jours d'essai de la formule PRO**, même sans Internet : le compte de la boutique peut être créé plus tard. L'abonnement se paie depuis GestiMarket : carte de bon, Orange Money, Moov Money ou carte Visa (voir le chapitre « Abonnement et licence »).
 
 ## Vos données restent chez vous
 

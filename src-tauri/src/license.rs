@@ -28,6 +28,27 @@ use crate::services::settings;
 pub const SUPABASE_URL: &str = "https://wpuchfnyuyujdflbmqpn.supabase.co";
 pub const SUPABASE_KEY: &str = "sb_publishable_cbsxEz9jKifmGN8ahIIYcg_M14lFLv3";
 
+/// Adresse du projet Supabase. Compilations de développement seulement : `GM_SUPABASE_URL` la remplace
+/// (faux Supabase des tests d'interface). Une compilation publiée utilise toujours celle d'Eden Dev.
+pub fn supabase_url() -> String {
+    if cfg!(debug_assertions) {
+        if let Ok(url) = std::env::var("GM_SUPABASE_URL") {
+            if !url.trim().is_empty() {
+                return url.trim().trim_end_matches('/').to_string();
+            }
+        }
+    }
+    SUPABASE_URL.to_string()
+}
+
+/// Essai gratuit sans Internet : dès la première configuration, une fois par boutique (la date de début
+/// voyage avec les sauvegardes). Mêmes fonctions que l'essai en ligne (formule PRO, 3 postes), sans
+/// l'accès par Internet, qui demande le compte de la boutique.
+pub const TRIAL_DAYS: i64 = 14;
+const TRIAL_PLAN: &str = "pro";
+const TRIAL_FEATURES: &[&str] = &["write", "server", "customer_display", "logo"];
+const TRIAL_POSTES: u32 = 3;
+
 /// Clés publiques de vérification : (numéro de clé, clé Ed25519 en base64).
 /// La clé privée correspondante est rangée dans Vault (Supabase) et n'en sort jamais.
 const PUBLIC_KEYS: &[(u32, &str)] = &[(1, "A1fkc7Q+x/In+KcnyrD6Shx73x2Nd4KmQM6jzj2pteM=")];
@@ -177,7 +198,8 @@ fn machine_id(root: &Path) -> String {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Effective {
-    /// none (aucune licence), not_yet (pas encore commencée), active, expired
+    /// none (aucune licence), not_yet (pas encore commencée), active, expired,
+    /// trial (essai sans Internet en cours), trial_over (essai terminé, sans licence)
     pub phase: &'static str,
     pub plan: String,
     pub features: Vec<String>,
@@ -214,6 +236,29 @@ pub fn evaluate(p: Option<&Payload>, now: DateTime<Utc>) -> Effective {
     }
     let read_only = !features.iter().any(|f| f == "write");
     Effective { phase: "active", plan: p.plan.clone(), features, max_postes, read_only }
+}
+
+/// Droits de l'essai sans Internet commencé à `start`.
+pub fn evaluate_trial(start: DateTime<Utc>, now: DateTime<Utc>) -> Effective {
+    if now < start + Duration::days(TRIAL_DAYS) {
+        Effective {
+            phase: "trial",
+            plan: TRIAL_PLAN.into(),
+            features: TRIAL_FEATURES.iter().map(|f| f.to_string()).collect(),
+            max_postes: TRIAL_POSTES,
+            read_only: false,
+        }
+    } else {
+        free("trial_over")
+    }
+}
+
+/// Droits de la boutique : la licence si elle existe (même expirée), sinon l'essai sans Internet.
+pub fn evaluate_all(p: Option<&Payload>, trial: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Effective {
+    match (p, trial) {
+        (None, Some(start)) => evaluate_trial(start, now),
+        _ => evaluate(p, now),
+    }
 }
 
 pub fn plan_label(code: &str) -> String {
@@ -253,6 +298,8 @@ struct Engine {
     last_sync_error: Option<String>,
     remote_status: Option<String>,
     account: Account,
+    /// Début de l'essai gratuit sans Internet.
+    trial_start: Option<DateTime<Utc>>,
 }
 
 static ENGINE: OnceLock<Mutex<Engine>> = OnceLock::new();
@@ -286,6 +333,7 @@ pub fn init(conn: &Connection, root: &Path, dir: &Path, slot: u8) {
         last_sync_error: None,
         remote_status: None,
         account: Account { email: get("account_email"), store_code: get("account_store_code"), store_name: get("account_store_name") },
+        trial_start: parse_time(&get("trial_started_at")).ok(),
     };
     let text = get("license_file");
     if !text.trim().is_empty() {
@@ -296,6 +344,64 @@ pub fn init(conn: &Connection, root: &Path, dir: &Path, slot: u8) {
     }
     persist_clock(conn, &engine);
     let _ = ENGINE.set(Mutex::new(engine));
+    ensure_trial(conn);
+}
+
+/// Commence l'essai gratuit sans Internet si la boutique est configurée, sans licence ni compte, et ne l'a
+/// jamais eu. Appelé au démarrage, après la première configuration et après une restauration.
+pub fn ensure_trial(conn: &Connection) {
+    let Some(m) = ENGINE.get() else { return };
+    let mut e = lock(m);
+    if e.trial_start.is_some() || e.license.is_some() || !e.account.store_code.is_empty() {
+        return;
+    }
+    if crate::services::auth::needs_setup(conn).unwrap_or(true) {
+        return;
+    }
+    let start = now_of(&e);
+    if settings::set(conn, "trial_started_at", &start.to_rfc3339()).is_ok() {
+        e.trial_start = Some(start);
+        crate::journal::info(format!("Essai gratuit de {TRIAL_DAYS} jours commencé (sans Internet)"));
+    }
+}
+
+/// Base remplacée par une sauvegarde (`before` : paramètres de cet appareil relus juste avant).
+/// - Licence : celle de cet appareil s'il en a une ; sinon celle de la sauvegarde si elle a été émise pour
+///   cet appareil ; sinon aucune (l'appareil sera relié au compte de la boutique) et le compte de la
+///   sauvegarde n'est pas repris.
+/// - Essai sans Internet : la date la plus ancienne des deux (l'essai ne recommence pas avec une restauration).
+/// - Horloge mémorisée : celle de cet appareil.
+pub fn after_restore(conn: &Connection, before: &std::collections::HashMap<&'static str, String>) {
+    const LICENSE_KEYS: [&str; 4] = ["license_file", "account_email", "account_store_code", "account_store_name"];
+    let Some(m) = ENGINE.get() else { return };
+    let mut e = lock(m);
+    let get = |k: &str| settings::get(conn, k).unwrap_or_default();
+    let device = |k: &str| before.get(k).cloned().unwrap_or_default();
+    if e.license.is_some() {
+        for k in LICENSE_KEYS {
+            let _ = settings::set(conn, k, &device(k));
+        }
+    } else {
+        let restored = get("license_file");
+        match verify(&restored).and_then(|p| check_pc(&p, &e.pc_id).map(|_| p)) {
+            Ok(payload) => {
+                e.license = Some(Installed { payload });
+                e.load_error = None;
+            }
+            Err(_) => {
+                let had_account = !device("account_store_code").is_empty();
+                for k in LICENSE_KEYS {
+                    let value = if had_account { device(k) } else { String::new() };
+                    let _ = settings::set(conn, k, &value);
+                }
+            }
+        }
+    }
+    e.account = Account { email: get("account_email"), store_code: get("account_store_code"), store_name: get("account_store_name") };
+    let trial = [device("trial_started_at"), get("trial_started_at")].iter().filter_map(|s| parse_time(s).ok()).min();
+    let _ = settings::set(conn, "trial_started_at", &trial.map(|t| t.to_rfc3339()).unwrap_or_default());
+    e.trial_start = trial;
+    persist_clock(conn, &e);
 }
 
 fn check_pc(p: &Payload, pc_id: &str) -> Result<(), String> {
@@ -328,7 +434,7 @@ pub fn effective() -> Effective {
     match ENGINE.get() {
         Some(m) => {
             let e = lock(m);
-            evaluate(e.license.as_ref().map(|l| &l.payload), now_of(&e))
+            evaluate_all(e.license.as_ref().map(|l| &l.payload), e.trial_start, now_of(&e))
         }
         None => uninitialized(),
     }
@@ -460,7 +566,7 @@ const ALWAYS: &[&str] = &[
     "save_user", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",
     "tunnel_status", "tunnel_setup", "tunnel_remove",
-    "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup", "backup_status",
+    "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup", "backup_status", "backup_protect",
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
     "account_create_store", "account_link", "account_payments", "account_redeem_voucher", "account_declare_orange_money",
     "account_card_start", "list_sessions", "kick_session", "update_status", "report_error", "display_postes", "help_offline_files",
@@ -481,6 +587,7 @@ pub fn command_allowed_read_only(cmd: &str) -> bool {
 
 fn read_only_reason(e: &Effective, expires: Option<DateTime<Utc>>) -> String {
     match e.phase {
+        "trial_over" => format!("l'essai gratuit de {TRIAL_DAYS} jours est terminé"),
         "expired" => format!(
             "l'abonnement {} a expiré{}",
             plan_label(&e.plan),
@@ -551,6 +658,8 @@ pub struct LicenseStatus {
     pub level: String,
     pub clock_warning: Option<String>,
     pub load_error: Option<String>,
+    /// Essai gratuit sans Internet (en cours ou terminé) : `starts_at` et `expires_at` en sont les dates.
+    pub trial: bool,
     pub account: Account,
     pub last_sync: Option<String>,
     pub last_sync_error: Option<String>,
@@ -561,12 +670,41 @@ fn fmt_local(d: DateTime<Utc>) -> String {
     d.with_timezone(&Local).format("%d/%m/%Y à %H:%M").to_string()
 }
 
-/// Message et avertissement d'expiration (fonction pure, testée).
-pub fn describe(e: &Effective, p: Option<&Payload>, now: DateTime<Utc>) -> (String, Option<String>, String, Option<i64>) {
+/// Message et avertissement d'expiration (fonction pure, testée). `expires` : fin de la licence ou de l'essai.
+pub fn describe(e: &Effective, expires: Option<DateTime<Utc>>, now: DateTime<Utc>) -> (String, Option<String>, String, Option<i64>) {
     let label = plan_label(&e.plan);
-    let expires = p.and_then(|p| parse_time(&p.expires_at).ok());
     let days_left = expires.map(|x| (x.with_timezone(&Local).date_naive() - now.with_timezone(&Local).date_naive()).num_days());
     match e.phase {
+        "trial" => {
+            let until = expires.map(fmt_local).unwrap_or_default();
+            let d = days_left.unwrap_or(0).max(0);
+            let message = format!(
+                "Essai gratuit sans Internet (formule {label}) : {d} jour(s) restant(s), jusqu'au {until}. Créez le compte de la boutique \
+                 dès que vous avez Internet (Abonnement & licence) pour continuer ensuite."
+            );
+            let warning = match d {
+                0 => Some(format!(
+                    "L'essai gratuit se termine aujourd'hui ({until}) : créez le compte de la boutique et choisissez une formule (Internet nécessaire)."
+                )),
+                1..=3 => Some(format!(
+                    "L'essai gratuit se termine dans {d} jour(s), le {until} : créez le compte de la boutique et choisissez une formule (Internet nécessaire)."
+                )),
+                _ => None,
+            };
+            let level = match d {
+                0 | 1 => "danger",
+                2 | 3 => "warning",
+                _ => "ok",
+            };
+            (message, warning, level.into(), Some(d))
+        }
+        "trial_over" => {
+            let m = format!(
+                "L'essai gratuit de {TRIAL_DAYS} jours est terminé : GestiMarket est en lecture seule. Vos données sont conservées ; \
+                 créez ou reliez le compte de la boutique (Abonnement & licence, Internet nécessaire) pour reprendre les ventes."
+            );
+            (m.clone(), Some(m), "danger".into(), days_left)
+        }
         "active" if e.read_only => {
             let m = format!("Formule {label} : consultation uniquement (aucune vente ni modification).");
             (m.clone(), Some(m), "danger".into(), days_left)
@@ -633,6 +771,7 @@ pub fn status() -> LicenseStatus {
             level: "ok".into(),
             clock_warning: None,
             load_error: None,
+            trial: false,
             account: Account::default(),
             last_sync: None,
             last_sync_error: None,
@@ -642,8 +781,14 @@ pub fn status() -> LicenseStatus {
     let g = lock(m);
     let now = now_of(&g);
     let payload = g.license.as_ref().map(|l| &l.payload);
-    let e = evaluate(payload, now);
-    let (message, warning, level, days_left) = describe(&e, payload, now);
+    let e = evaluate_all(payload, g.trial_start, now);
+    // Essai sans Internet : ses dates de début et de fin sont montrées comme celles d'une licence.
+    let trial = if payload.is_none() { g.trial_start } else { None };
+    let expires = match trial {
+        Some(t) => Some(t + Duration::days(TRIAL_DAYS)),
+        None => payload.and_then(|p| parse_time(&p.expires_at).ok()),
+    };
+    let (message, warning, level, days_left) = describe(&e, expires, now);
     let clock_warning = if Utc::now() + Duration::minutes(10) < g.clock {
         Some(format!("L'horloge de ce PC a été reculée : GestiMarket utilise la date du {}. Corrigez la date et l'heure dans Windows.", fmt_local(g.clock)))
     } else {
@@ -666,14 +811,15 @@ pub fn status() -> LicenseStatus {
         read_only: e.read_only,
         store_code: payload.map(|p| p.store_code.clone()),
         store_name: payload.map(|p| p.store_name.clone()),
-        starts_at: payload.map(|p| p.starts_at.clone()),
-        expires_at: payload.map(|p| p.expires_at.clone()),
+        starts_at: trial.map(|t| t.to_rfc3339()).or_else(|| payload.map(|p| p.starts_at.clone())),
+        expires_at: expires.filter(|_| trial.is_some()).map(|t| t.to_rfc3339()).or_else(|| payload.map(|p| p.expires_at.clone())),
         days_left,
         message,
         warning,
         level,
         clock_warning,
         load_error: g.load_error.clone(),
+        trial: trial.is_some(),
         account: g.account.clone(),
         last_sync: g.last_sync.map(fmt_local),
         last_sync_error: g.last_sync_error.clone(),
@@ -792,7 +938,7 @@ mod tests {
         let p = payload("pro", &["write", "server"], "2026-11-01T00:00:00Z", "2026-12-01T12:00:00Z");
         let warn = |now: &str| {
             let now = at(now);
-            describe(&evaluate(Some(&p), now), Some(&p), now)
+            describe(&evaluate(Some(&p), now), parse_time(&p.expires_at).ok(), now)
         };
         assert!(warn("2026-11-10T12:00:00Z").1.is_none());
         let (_, w, level, days) = warn("2026-11-24T12:00:00Z");
@@ -802,6 +948,33 @@ mod tests {
         assert!(warn("2026-12-01T06:00:00Z").1.unwrap().contains("aujourd'hui"));
         let (m, w, level, _) = warn("2026-12-02T00:00:00Z");
         assert!(m.contains("lecture seule") && w.is_some() && level == "danger");
+    }
+
+    #[test]
+    fn essai_sans_internet() {
+        let start = at("2026-11-01T10:00:00Z");
+        let e = evaluate_all(None, Some(start), at("2026-11-05T10:00:00Z"));
+        assert_eq!((e.phase, e.plan.as_str(), e.read_only, e.max_postes), ("trial", "pro", false, 3));
+        assert!(e.allows("write") && e.allows("server") && !e.allows("internet"));
+        // 14 jours pile : terminé, lecture seule.
+        let e = evaluate_all(None, Some(start), at("2026-11-15T10:00:00Z"));
+        assert_eq!((e.phase, e.read_only), ("trial_over", true));
+        // Une licence (même expirée) passe avant l'essai.
+        let p = payload("starter", &["write"], "2026-10-01T00:00:00Z", "2026-10-31T00:00:00Z");
+        assert_eq!(evaluate_all(Some(&p), Some(start), at("2026-11-05T10:00:00Z")).phase, "expired");
+        // Messages : jours restants, avertissement les 3 derniers jours.
+        let end = start + Duration::days(TRIAL_DAYS);
+        let now = at("2026-11-05T10:00:00Z");
+        let (m, w, level, days) = describe(&evaluate_all(None, Some(start), now), Some(end), now);
+        assert!(m.contains("Essai gratuit") && w.is_none() && level == "ok", "{m}");
+        assert_eq!(days, Some(10));
+        let now = at("2026-11-13T10:00:00Z");
+        let (_, w, level, _) = describe(&evaluate_all(None, Some(start), now), Some(end), now);
+        assert!(w.unwrap().contains("se termine dans") && level == "warning");
+        let now = at("2026-11-16T10:00:00Z");
+        let (m, w, level, _) = describe(&evaluate_all(None, Some(start), now), Some(end), now);
+        assert!(m.contains("terminé") && w.is_some() && level == "danger");
+        assert!(read_only_reason(&evaluate_all(None, Some(start), now), None).contains("essai"));
     }
 
     #[test]

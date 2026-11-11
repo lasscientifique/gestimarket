@@ -4,6 +4,8 @@ import type {
   AccountOptions,
   AccountStore,
   AuditEntry,
+  BackupFile,
+  BackupInfo,
   BackupStatus,
   BoutiquesInfo,
   BusinessProfile,
@@ -347,6 +349,13 @@ export const api = {
   backupDatabase: (path: string) => call<void>("backup_database", { path }),
   runAutoBackup: () => call<string>("run_auto_backup"),
   backupStatus: () => call<BackupStatus>("backup_status"),
+  /** Protège les sauvegardes par un mot de passe (null : plus de mot de passe). */
+  backupProtect: (password: string | null, pin: string) => call<BackupStatus>("backup_protect", { password, pin }),
+  // Restauration : sur l'appareil qui détient la base seulement (jamais par le réseau).
+  backupInspect: (path: string, password?: string | null) => local<BackupInfo>("backup_inspect", { path, password: password || null }),
+  backupRestore: (path: string, password: string | null, pin: string | null) =>
+    local<{ shop_name: string | null; safety_copy: string | null }>("backup_restore", { path, password: password || null, pin }),
+  backupList: () => local<BackupFile[]>("backup_list"),
   saveTextFile: (path: string, contents: string) => local<void>("save_text_file", { path, contents }),
   saveBinaryFile: (path: string, base64: string) => local<void>("save_binary_file", { path, base64 }),
   readTextFile: (path: string) => local<string>("read_text_file", { path }),

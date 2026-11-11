@@ -48,7 +48,7 @@ export function countryOptions(): { code: string; label: string }[] {
 /** Toutes les devises connues du navigateur, triées par nom. */
 export function currencyOptions(): { code: string; label: string }[] {
   const names = displayNames("currency");
-  let codes: string[] = [];
+  let codes: string[];
   try {
     codes = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("currency") ?? [];
   } catch {

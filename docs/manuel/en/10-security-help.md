@@ -5,6 +5,18 @@
 - **Automatic copy every day** (Settings → Backup). On a PC, choose a folder on a USB stick, an external drive or a synced folder (Google Drive, OneDrive).
 - **Copy on demand**: “Copy to a USB stick…” (PC) or “Save a copy…” (phone).
 - An alert appears if no backup has succeeded for 48 hours.
+- **Protect with a password** (optional): each copy becomes an encrypted `.gmsave` file, unreadable without this password, even when sent by WhatsApp or lost with a USB stick. Write the password down on paper: without it, nobody (not even Eden Dev) can open these copies.
+
+## Restoring a backup
+
+Settings → Backup → **Restore a backup…** (or “I have a backup” the first time a new device starts):
+
+1. Choose the file (USB stick, Google Drive, WhatsApp, SD card) or a copy kept on the device.
+2. GestiMarket shows what it contains: shop name, products, customers, sales, last activity. A protected copy asks for its password.
+3. Confirm with the administrator's PIN code. The current data is first copied to the backup folder (“avant-restauration”), then replaced.
+4. Everyone signs in again with the backup's PIN codes.
+
+Restoring is also how you **change phones** and **move from the phone to a PC**. On a new device, the old device's licence does not follow: link it to the shop account (Subscription & licence). Meanwhile, the 14-day trial applies if it has not been used yet.
 
 ## Security
 
@@ -36,6 +48,10 @@ In case of a problem, send the station's **log** (Settings → Eden Dev develope
 **The phone server stops when the screen turns off.** Allow GestiMarket to run in the background (banner or Station & network), and keep the phone plugged in.
 
 **“Read-only” is shown.** The subscription has ended: extend it (Subscription & licence or Owner space). The data is never lost.
+
+**I changed phones.** On the new one, at first start: “I have a backup”, then the latest backup file sent off the old phone.
+
+**I forgot the shop account password.** “Forgot your password?”: a code is sent to the account e-mail.
 
 **I forgot my PIN.** An administrator resets it in Staff. Forgotten administrator PIN: sign-in screen, with the shop account.
 

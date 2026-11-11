@@ -29,7 +29,7 @@ GestiMarket is the point-of-sale and management software for shops, mini-markets
 | **PRO** | Shop with several devices | 3 stations, shop server (PC or phone), Internet access, customer display (TV), logo, loyalty programme |
 | **BUSINESS** | Large store | 10 stations, everything in PRO |
 
-A new installation starts with a **14-day trial of the PRO plan**. The subscription is paid from GestiMarket: voucher card, Orange Money, Moov Money or Visa card (see “Subscription and licence”).
+A new installation starts with a **14-day trial of the PRO plan**, even without Internet: the shop account can be created later. The subscription is paid from GestiMarket: voucher card, Orange Money, Moov Money or Visa card (see “Subscription and licence”).
 
 ## Your data stays with you
 

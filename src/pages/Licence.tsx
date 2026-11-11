@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Badge, Modal, PageHeader } from "../components/ui";
 import { AccountForm } from "../components/AccountForm";
+import { ChangePasswordModal } from "../components/AccountPassword";
 import { PaymentsHistory, SubscriptionPay } from "../components/SubscriptionPay";
 import { isRemote, isTauri } from "../lib/transport";
 import { FEATURE_LABELS, isoDateTime, planPrice, price, refreshLicense, setLicense, useLicense } from "../lib/license";
@@ -19,6 +20,7 @@ export default function LicencePage() {
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [busy, setBusy] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   // Change après chaque paiement : la liste « Mes paiements » se recharge.
   const [paymentsKey, setPaymentsKey] = useState(0);
   // Le compte et le paiement se gèrent sur le PC qui détient la base (poste serveur ou poste unique).
@@ -96,7 +98,15 @@ export default function LicencePage() {
         <h3 className="card-title">
           <BadgeCheck size={18} />  {tl("Formule")} {lic.plan_label}
           <Badge tone={lic.read_only ? "danger" : lic.level === "warning" ? "warning" : "success"}>
-            {lic.phase === "expired" ? tl("expirée") : lic.read_only ? tl("lecture seule") : tl("active")}
+            {lic.phase === "expired"
+              ? tl("expirée")
+              : lic.phase === "trial_over"
+                ? tl("essai terminé")
+                : lic.read_only
+                  ? tl("lecture seule")
+                  : lic.phase === "trial"
+                    ? tl("essai sans Internet")
+                    : tl("active")}
           </Badge>
         </h3>
         <div className={`alert ${lic.read_only || lic.level === "danger" ? "alert-danger" : lic.level === "warning" ? "alert-warning" : "alert-success"}`}>
@@ -113,7 +123,7 @@ export default function LicencePage() {
           <div>
             <span className="muted small">{tl("Valable jusqu'au")}</span>
             <strong>{isoDateTime(lic.expires_at)}</strong>
-            {lic.days_left !== null && lic.phase === "active" && <span className="small">{lic.days_left}  {tl("jour(s) restant(s)")}</span>}
+            {lic.days_left !== null && (lic.phase === "active" || lic.phase === "trial") && <span className="small">{lic.days_left}  {tl("jour(s) restant(s)")}</span>}
           </div>
           <div>
             <span className="muted small">{tl("Postes connectés")}</span>
@@ -159,7 +169,11 @@ export default function LicencePage() {
                 <p>
                   {tl("Ce PC est relié à")} <strong>{lic.account.store_name}</strong> ({lic.account.store_code}{tl("), compte")} <strong>{lic.account.email}</strong>.
                 </p>
-                <button className="btn" onClick={() => setAccountOpen(true)}>{tl("Changer de boutique ou de compte")}</button>
+                <div className="row-start">
+                  <button className="btn" onClick={() => setAccountOpen(true)}>{tl("Changer de boutique ou de compte")}</button>
+                  <button className="btn" onClick={() => setPasswordOpen(true)}>{tl("Changer le mot de passe du compte")}</button>
+                </div>
+                {passwordOpen && <ChangePasswordModal email={lic.account.email} onClose={() => setPasswordOpen(false)} />}
               </>
             ) : (
               <>

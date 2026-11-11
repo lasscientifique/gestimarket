@@ -262,7 +262,7 @@ function dictionaryKeys(file) {
   return keys;
 }
 
-const FRENCH = /[À-ÿ]|(de|la|le|les|des|du|un|une|et|pour|avec|sur|dans|est|pas|aucun|aucune)/i;
+const FRENCH = /[À-ÿ]|\b(de|la|le|les|des|du|un|une|et|pour|avec|sur|dans|est|pas|aucun|aucune)\b/i;
 
 function audit(file, text) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);

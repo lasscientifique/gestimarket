@@ -188,6 +188,8 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         "needs_setup" => out(auth::needs_setup(&state.conn())?),
         "initial_setup" => {
             let r = auth::initial_setup(&mut state.conn(), arg(&a, "input")?)?;
+            // Essai gratuit de 14 jours, sans Internet, dès la première configuration.
+            crate::license::ensure_trial(&state.conn());
             let token = state.start_session(origin, r.user.clone(), &ip, &route, None)?;
             out(json!({ "user": r.user, "token": token, "team": r.team }))
         }
@@ -1009,6 +1011,16 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
         // Sauvegarde automatique : dossier utilisé, dernière copie, erreur (bandeau du tableau de bord).
         "backup_status" => run(Admin, &|c, _| out(backup::status(c)?)),
+        // Sauvegardes protégées par un mot de passe (ou plus protégées : mot de passe vide).
+        "backup_protect" => run(Admin, &|c, u| {
+            confirm_pin(state, c, u, &a, 3, "Protection des sauvegardes")?;
+            let password: Option<String> = arg(&a, "password")?;
+            let on = password.as_deref().is_some_and(|p| !p.trim().is_empty());
+            backup::set_password(c, password.as_deref())?;
+            let what = if on { "Sauvegardes protégées par un mot de passe" } else { "Sauvegardes sans mot de passe" };
+            audit::log(c, u, what, "system", None, "")?;
+            out(backup::status(c)?)
+        }),
         "run_auto_backup" => run(Admin, &|c, u| match backup::auto_backup(c, true)? {
             Some(p) => {
                 let p = p.display().to_string();

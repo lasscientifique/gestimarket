@@ -5,6 +5,18 @@
 - **Copie automatique chaque jour** (Paramètres → Sauvegarde). Sur PC, choisissez un dossier sur une clé USB, un disque externe ou un dossier synchronisé (Google Drive, OneDrive).
 - **Copie à la demande** : « Copier sur une clé USB… » (PC) ou « Enregistrer une copie… » (téléphone).
 - Une alerte s'affiche si aucune sauvegarde n'a réussi depuis 48 heures.
+- **Protéger par un mot de passe** (au choix) : chaque copie devient un fichier `.gmsave` chiffré, illisible sans ce mot de passe, même envoyé par WhatsApp ou perdu avec une clé USB. Notez le mot de passe sur papier : sans lui, personne (pas même Eden Dev) ne peut ouvrir ces copies.
+
+## Restaurer une sauvegarde
+
+Paramètres → Sauvegarde → **Restaurer une sauvegarde…** (ou « J'ai une sauvegarde » au premier démarrage d'un appareil neuf) :
+
+1. Choisissez le fichier (clé USB, Google Drive, WhatsApp, carte SD) ou une copie gardée sur l'appareil.
+2. GestiMarket montre ce qu'elle contient : nom de la boutique, produits, clients, ventes, dernière activité. Une copie protégée demande son mot de passe.
+3. Confirmez avec le code PIN de l'administrateur. Les données actuelles sont d'abord copiées dans le dossier des sauvegardes (« avant-restauration »), puis remplacées.
+4. Chacun se reconnecte avec les codes PIN de la sauvegarde.
+
+La restauration sert aussi à **changer de téléphone** et à **passer du téléphone au PC**. Sur un nouvel appareil, la licence de l'ancien ne suit pas : reliez-le au compte de la boutique (Abonnement & licence). En attendant, l'essai de 14 jours s'applique s'il n'a pas déjà servi.
 
 ## Sécurité
 
@@ -36,6 +48,10 @@ En cas de problème, envoyez le **journal** du poste (Paramètres → Développe
 **Le téléphone serveur s'arrête quand l'écran s'éteint.** Autorisez GestiMarket à fonctionner en arrière-plan (bandeau ou Poste & réseau), et laissez le téléphone branché.
 
 **« Lecture seule » s'affiche.** L'abonnement est terminé : prolongez-le (Abonnement & licence ou Espace propriétaire). Les données ne sont jamais perdues.
+
+**J'ai changé de téléphone.** Sur le nouveau, au premier démarrage : « J'ai une sauvegarde », puis le dernier fichier de sauvegarde envoyé hors de l'ancien téléphone.
+
+**J'ai oublié le mot de passe du compte de la boutique.** « Mot de passe oublié ? » : un code est envoyé à l'e-mail du compte.
 
 **J'ai oublié mon code PIN.** Un administrateur le refait dans Personnel. Code PIN de l'administrateur oublié : écran de connexion, avec le compte de la boutique.
 
