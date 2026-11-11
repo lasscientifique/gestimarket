@@ -162,10 +162,28 @@ try {
   );
   await shot("a-01b-choix-du-demarrage.png");
 
+  // « Ma boutique sur ce téléphone » : d'abord les conditions d'utilisation, à accepter pour continuer.
+  try {
+    await page.locator(".start-choice", { hasText: "Ma boutique sur ce téléphone" }).click();
+    const accept = page.getByRole("button", { name: "Accepter et continuer" });
+    await accept.waitFor({ timeout: 20_000 });
+    const before = await accept.isDisabled();
+    await page.locator(".terms-check input").check();
+    const after = await accept.isEnabled();
+    const docs = await page.locator(".terms-doc").count();
+    check("premier démarrage : conditions d'utilisation, licence et données à accepter (bouton bloqué sans la case)", before && after && docs === 3, `${docs} textes`);
+    await shot("a-01c-conditions-d-utilisation.png");
+  } catch (e) {
+    check("premier démarrage : conditions d'utilisation, licence et données à accepter (bouton bloqué sans la case)", false, e.message);
+  }
+
   let team = [];
   if (await rpc("needs_setup")) {
     const r = await rpc("initial_setup", {
-      input: { shop_name: "Boutique Android", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin Android", username: "admin", pin: PIN },
+      input: {
+        shop_name: "Boutique Android", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin Android", username: "admin", pin: PIN,
+        terms_version: (await rpc("terms_status"))?.current,
+      },
     });
     team = r?.team ?? [];
   }

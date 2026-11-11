@@ -709,4 +709,6 @@ export const EN_MESSAGES: Record<string, string> = {
   "{} — par {}": "{} — by {}",
   "Service des licences indisponible.": "Licence service unavailable.",
   "Téléchargement de la licence impossible : réessayez plus tard.": "Could not download the licence: try again later.",
+  "Ces conditions ne sont plus les dernières : rechargez la page, puis acceptez-les de nouveau.": "These terms are no longer the latest: reload the page, then accept them again.",
+  "Conditions d'utilisation et licence acceptées": "Terms of use and licence accepted",
 };

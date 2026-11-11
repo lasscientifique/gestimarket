@@ -4,6 +4,7 @@ import type {
   AccountOptions,
   AccountStore,
   AuditEntry,
+  TermsStatus,
   BackupFile,
   BackupInfo,
   BackupStatus,
@@ -102,6 +103,8 @@ export const api = {
     country?: string;
     currency_code?: string;
     currency_position?: string;
+    /** Version des conditions d'utilisation acceptée à la première étape. */
+    terms_version?: string;
   }) =>
     call<{ user: SessionUser; token: string | null; team: TeamMember[] }>("initial_setup", { input }).then((r) => {
       if (r.token) setToken(r.token);
@@ -377,7 +380,10 @@ export const api = {
   licenseSync: () => call<LicenseStatus>("license_sync"),
   licenseImport: (text: string) => call<LicenseStatus>("license_import", { text }),
   accountOptions: () => call<AccountOptions>("account_options"),
-  accountSignup: (input: StoreInput & { email: string; password: string }) => call<AccountLinkResult>("account_signup", { input }),
+  accountSignup: (input: StoreInput & { email: string; password: string; terms_version?: string }) => call<AccountLinkResult>("account_signup", { input }),
+  // Conditions d'utilisation, licence et données personnelles
+  termsStatus: () => call<TermsStatus>("terms_status"),
+  acceptTerms: (version: string) => call<TermsStatus>("accept_terms", { version }),
   accountLogin: (email: string, password: string) => call<{ email: string; stores: AccountStore[] }>("account_login", { email, password }),
   accountCreateStore: (input: StoreInput) => call<AccountLinkResult>("account_create_store", { input }),
   accountLink: (store_code: string) => call<AccountLinkResult>("account_link", { store_code }),

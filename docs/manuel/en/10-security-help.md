@@ -29,7 +29,8 @@ Restoring is also how you **change phones** and **move from the phone to a PC**.
 
 - Each screen's **Help** button explains the screen step by step, with its **videos**.
 - The small **?** buttons explain each feature; “Watch the video” shows it in action.
-- **Offline help** (Settings → Eden Dev developer): download the videos and this manual once (about 25 MB). They then work without Internet, and the server serves them to the shop's phones.
+- **Manual**: Settings → Help, terms and licence → “Read the manual”, even without Internet.
+- **Offline help** (Settings → Help, terms and licence): download the videos and this manual once (about 25 MB). They then work without Internet, and the server serves them to the shop's phones.
 
 ## Contact Eden Dev
 

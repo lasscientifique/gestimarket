@@ -99,6 +99,10 @@ const INTERNAL: &[&str] = &[
     // Essai gratuit sans Internet (date de début) et clé des sauvegardes protégées (jamais montrée).
     "trial_started_at",
     "backup_key",
+    // Conditions d'utilisation et licence acceptées (voir terms.rs) : lues par « terms_status ».
+    "terms_version",
+    "terms_accepted_at",
+    "terms_accepted_by",
 ];
 
 pub fn get_all(conn: &Connection) -> AppResult<BTreeMap<String, String>> {

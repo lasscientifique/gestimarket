@@ -17,6 +17,7 @@ pub mod sales;
 pub mod settings;
 pub mod stock;
 pub mod templates;
+pub mod terms;
 pub mod users;
 pub mod zreport;
 

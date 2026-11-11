@@ -1510,3 +1510,26 @@ input, select, textarea { border-radius: 10px; }
 .restore-file strong { overflow-wrap: anywhere; }
 .restore-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .restore-info > div { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+
+/* 0.24 : conditions d'utilisation et licence, lecteur du manuel. */
+.terms-accept { display: flex; flex-direction: column; gap: 12px; }
+.terms-docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 6px 0; }
+.terms-doc { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.terms-doc-head { display: flex; align-items: center; gap: 6px; }
+.terms-doc p { margin: 0; }
+.terms-check { align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--surface-2, rgba(15, 118, 110, 0.06)); }
+.terms-check input { margin-top: 3px; flex: none; }
+.terms-text { max-height: 65vh; overflow: auto; line-height: 1.55; }
+.terms-text h1 { font-size: 20px; margin: 0 0 6px; }
+.terms-text h2 { font-size: 16px; margin: 16px 0 6px; }
+.terms-text table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+.terms-text th, .terms-text td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.terms-text.plain { white-space: pre-wrap; font-family: inherit; }
+.terms-gate { z-index: 2000; }
+.manual-viewer { display: flex; flex-direction: column; gap: 10px; }
+.manual-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.manual-page { min-width: 110px; text-align: center; font-variant-numeric: tabular-nums; }
+.manual-external { margin-left: auto; }
+.manual-canvas { max-height: 72vh; overflow: auto; text-align: center; background: #e2e8f0; border-radius: 8px; padding: 4px; }
+.manual-canvas canvas { background: #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2); }
+@media (max-width: 640px) { .manual-external { margin-left: 0; } }

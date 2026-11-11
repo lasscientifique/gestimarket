@@ -10,3 +10,6 @@ src-tauri/gen/
 # Listes de travail des traductions (régénérées par scripts/i18n.mjs keys et scripts/i18n_messages.py)
 scripts/i18n-keys.json
 scripts/i18n-messages.json
+
+# Manuels PDF rangés dans l'application à la fabrication (scripts/fetch-manuals.mjs)
+public/manuel/

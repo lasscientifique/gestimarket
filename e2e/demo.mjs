@@ -51,6 +51,7 @@ const setup = await rpc("initial_setup", {
   input: {
     shop_name: "Supérette Le Bon Prix", shop_phone: "76 00 00 00", shop_address: "Bamako, Hamdallaye ACI 2000",
     currency_symbol: "FCFA", currency_decimals: 0, full_name: "Awa Traoré", username: "admin", pin: PIN,
+    terms_version: (await rpc("terms_status")).current,
   },
 });
 const admin = setup.token;

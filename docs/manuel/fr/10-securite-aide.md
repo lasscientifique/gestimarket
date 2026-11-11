@@ -29,7 +29,8 @@ La restauration sert aussi à **changer de téléphone** et à **passer du tél�
 
 - Le bouton **Aide** de chaque écran explique l'écran, pas à pas, avec ses **vidéos**.
 - Les petits boutons **?** expliquent chaque fonction ; « Voir en vidéo » montre la fonction en action.
-- **Aide hors ligne** (Paramètres → Développeur Eden Dev) : téléchargez une fois les vidéos et ce manuel (environ 25 Mo). Ils marchent ensuite sans Internet, et le serveur les sert aux téléphones de la boutique.
+- **Manuel** : Paramètres → Aide, conditions et licence → « Lire le manuel », même sans Internet.
+- **Aide hors ligne** (Paramètres → Aide, conditions et licence) : téléchargez une fois les vidéos et ce manuel (environ 25 Mo). Ils marchent ensuite sans Internet, et le serveur les sert aux téléphones de la boutique.
 
 ## Contact Eden Dev
 

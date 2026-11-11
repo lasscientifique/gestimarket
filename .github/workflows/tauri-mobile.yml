@@ -203,6 +203,8 @@ jobs:
           workspaces: src-tauri
           key: android-release
       - run: npm ci
+      - name: Manuels rangés dans l'application (dernière édition publiée)
+        run: node scripts/fetch-manuals.mjs
       - name: Projet Android
         run: |
           set -o pipefail

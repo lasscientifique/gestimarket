@@ -9,6 +9,8 @@ import { BusinessTypeGrid, useBusinessProfiles } from "../components/BusinessTyp
 import { HelpTip } from "../components/Help";
 import { AccountForm } from "../components/AccountForm";
 import { RestoreBackupModal } from "../components/RestoreBackup";
+import { TermsAccept } from "../components/Terms";
+import { Scale } from "lucide-react";
 import { PlanProposal, defaultProposal, proposalInput, type ProposalValue } from "../components/plan/PlanProposal";
 import type { AccountLinkResult, Role, TeamMember } from "../types";
 import { getLang, tl, tm } from "../lib/i18n";
@@ -18,7 +20,7 @@ import { ROLE_LABELS } from "../lib/format";
 import { pinProblem, randomPin } from "../lib/pin";
 import { printAccessSheets } from "../lib/staffPrint";
 
-type Step = "account" | "shop" | "team" | "sheets" | "business" | "plan";
+type Step = "terms" | "account" | "shop" | "team" | "sheets" | "business" | "plan";
 
 const digits = (v: string) => v.replace(/\D/g, "").slice(0, 6);
 
@@ -62,8 +64,10 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
-  // Compte boutique d'abord (licence d'essai), sauf dans un navigateur : il se crée sur le PC serveur.
-  const [step, setStep] = useState<Step>(isTauri ? "account" : "shop");
+  // Conditions d'utilisation d'abord, puis le compte boutique (licence d'essai), sauf dans un navigateur :
+  // il se crée sur le PC serveur.
+  const [step, setStep] = useState<Step>("terms");
+  const [termsVersion, setTermsVersion] = useState<string | undefined>();
   const [accountNote, setAccountNote] = useState("");
   const [activities, setActivities] = useState<string[]>([]);
   const [seed, setSeed] = useState(true);
@@ -119,6 +123,7 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
         username: form.username,
         pin: form.pin,
         team: team.map((m) => ({ ...m, username: m.username.trim().toLowerCase() })),
+        terms_version: termsVersion,
       });
       await refreshSettings();
       setUser(r.user);
@@ -200,6 +205,25 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
     </Modal>
   );
 
+  if (step === "terms") {
+    return (
+      <div className="auth-page">
+        <div className="auth-lang"><LanguageSwitch /></div>
+        <div className="auth-card wide">
+          <div className="auth-logo"><Scale size={28} /></div>
+          <h1>{tl("Bienvenue dans GestiMarket")}</h1>
+          <p className="muted">{tl("Avant de commencer, lisez et acceptez les conditions d'utilisation de GestiMarket, au nom de la boutique.")}</p>
+          <TermsAccept
+            onAccept={(v) => {
+              setTermsVersion(v);
+              setStep(isTauri ? "account" : "shop");
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (step === "account") {
     return (
       <div className="auth-page">
@@ -223,7 +247,7 @@ export default function SetupPage({ onDone }: { onDone: () => void }) {
               <button type="button" className="link-btn" onClick={() => setRestoreOpen(true)}>{tl("Restaurer la sauvegarde")}</button>
             </div>
           )}
-          <AccountForm onLinked={accountLinked} />
+          <AccountForm onLinked={accountLinked} termsVersion={termsVersion} />
           <p className="muted small" style={{ marginTop: 14 }}>
             {tl("Pas d'Internet pour l'instant ?")}{" "}
             <button type="button" className="link-btn" onClick={() => setStep("shop")}>{tl("Continuer sans compte")}</button>  {tl(": essai gratuit de 14 jours avec toutes les fonctions de la formule PRO. Créez le compte plus tard, dès que vous avez Internet (menu Abonnement & licence).")}</p>

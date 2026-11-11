@@ -140,6 +140,9 @@ impl StoreInput {
 pub struct SignupInput {
     pub email: String,
     pub password: String,
+    /// Version des conditions d'utilisation et de la licence acceptée avant la création du compte.
+    #[serde(default)]
+    pub terms_version: Option<String>,
     #[serde(flatten)]
     pub store: StoreInput,
 }
@@ -159,7 +162,14 @@ pub fn signup(state: &AppState, input: SignupInput) -> Result<Value, String> {
     input.store.validate()?;
     let v = call(
         request("/auth/v1/signup", None),
-        json!({ "email": email, "password": input.password, "data": { "owner_name": input.store.owner_name.trim(), "shop_name": input.store.name.trim() } }),
+        json!({
+            "email": email, "password": input.password,
+            "data": {
+                "owner_name": input.store.owner_name.trim(), "shop_name": input.store.name.trim(),
+                "terms_version": input.terms_version.as_deref().unwrap_or(crate::services::terms::TERMS_VERSION),
+                "terms_accepted_at": chrono::Utc::now().to_rfc3339(),
+            },
+        }),
     )?;
     let Some(token) = v["access_token"].as_str() else {
         // Confirmation des e-mails activée dans Supabase : la boutique sera créée après la première connexion.

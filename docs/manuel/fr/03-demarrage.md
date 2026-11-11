@@ -13,6 +13,7 @@ Sur un PC neuf, le premier écran propose aussi **« Restaurer la sauvegarde »*
 
 ## Créer la boutique (PC ou « Ma boutique sur ce téléphone »)
 
+0. **Conditions d'utilisation** : lisez les conditions générales d'utilisation, le contrat de licence et la politique de données personnelles, puis acceptez-les au nom de la boutique (voir le chapitre « Conditions d'utilisation, licence et aide »).
 1. **Compte de la boutique chez Eden Dev** : e-mail, mot de passe, nom de la boutique, propriétaire, pays, ville, type de commerce. Internet est nécessaire pour cette étape seulement. Sans Internet, « Continuer sans compte » : **14 jours d'essai gratuit** avec toutes les fonctions de la formule PRO. Créez le compte dès que vous avez Internet (Abonnement & licence) ; après 14 jours sans compte, GestiMarket passe en lecture seule. L'essai n'a lieu qu'une fois par boutique.
 2. **La boutique** : devise, adresse, téléphone.
 3. **L'équipe** : chaque personne a un **identifiant** et un **code PIN** (pas de mot de passe). Des codes sont proposés au hasard : notez-les ou changez-les. Un administrateur, un gestionnaire et une caissière sont créés par défaut.

@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use crate::error::{invalid, AppError, AppResult};
 use crate::services::{
     audit, auth, backup, cash, catalog, devices, locations, loyalty, media, partners, plan, promotions, purchases, reports, returns, sales,
-    settings, stock, templates, users, zreport,
+    settings, stock, templates, terms, users, zreport,
 };
 use crate::state::{Access, AppState, Origin};
 
@@ -188,7 +188,15 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         // ───── Authentification (sans session) ─────
         "needs_setup" => out(auth::needs_setup(&state.conn())?),
         "initial_setup" => {
+            // Conditions d'utilisation et licence acceptées à l'étape précédente (version des textes affichés).
+            let terms_version = a.get("input").and_then(|i| i.get("terms_version")).and_then(Value::as_str).map(String::from);
             let r = auth::initial_setup(&mut state.conn(), arg(&a, "input")?)?;
+            if let Some(v) = terms_version {
+                let conn = state.conn();
+                if terms::accept(&conn, &v, &r.user.full_name).is_ok() {
+                    audit::log(&conn, &r.user, "Conditions d'utilisation et licence acceptées", "settings", None, format!("version {v}"))?;
+                }
+            }
             // Essai gratuit de 14 jours, sans Internet, dès la première configuration.
             crate::license::ensure_trial(&state.conn());
             let token = state.start_session(origin, r.user.clone(), &ip, &route, None)?;
@@ -1012,6 +1020,15 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
         // Sauvegarde automatique : dossier utilisé, dernière copie, erreur (bandeau du tableau de bord).
         "backup_status" => run(Admin, &|c, _| out(backup::status(c)?)),
+        // Conditions d'utilisation, licence et données personnelles : version acceptée (lisible avant la connexion,
+        // pour la première configuration), acceptation par l'administrateur.
+        "terms_status" => out(terms::status(&state.conn())?),
+        "accept_terms" => run(Admin, &|c, u| {
+            let version: String = arg(&a, "version")?;
+            let s = terms::accept(c, &version, &u.full_name)?;
+            audit::log(c, u, "Conditions d'utilisation et licence acceptées", "settings", None, format!("version {version}"))?;
+            out(s)
+        }),
         // Sauvegardes protégées par un mot de passe (ou plus protégées : mot de passe vide).
         "backup_protect" => run(Admin, &|c, u| {
             confirm_pin(state, c, u, &a, 3, "Protection des sauvegardes")?;

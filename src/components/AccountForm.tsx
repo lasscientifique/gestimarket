@@ -70,7 +70,7 @@ function missing(s: StoreInput): string | null {
  * Compte boutique Eden Dev : création (essai gratuit), connexion, choix ou création de la boutique,
  * puis rattachement de ce PC. La licence est téléchargée aussitôt.
  */
-export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: AccountLinkResult) => void; startWith?: "signup" | "login" }) {
+export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { onLinked: (r: AccountLinkResult) => void; startWith?: "signup" | "login"; termsVersion?: string }) {
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [optionsError, setOptionsError] = useState("");
   const [mode, setMode] = useState<"signup" | "login" | "choose" | "new-store">(startWith);
@@ -119,7 +119,7 @@ export function AccountForm({ onLinked, startWith = "signup" }: { onLinked: (r: 
     if (password !== confirmPwd) return setError(tl("Les mots de passe ne correspondent pas."));
     const m = missing(store);
     if (m) return setError(m);
-    run(async () => linked(await api.accountSignup({ ...store, email, password })));
+    run(async () => linked(await api.accountSignup({ ...store, email, password, terms_version: termsVersion })));
   };
 
   const login = (e: FormEvent) => {

@@ -909,6 +909,15 @@ export interface BackupStatus {
   protected: boolean;
 }
 
+/** Conditions d'utilisation, licence et données personnelles : version acceptée par la boutique. */
+export interface TermsStatus {
+  current: string;
+  accepted: string | null;
+  accepted_at: string | null;
+  accepted_by: string | null;
+  up_to_date: boolean;
+}
+
 /** Contenu d'une sauvegarde, lu avant de la restaurer. */
 export interface BackupInfo {
   file: string;

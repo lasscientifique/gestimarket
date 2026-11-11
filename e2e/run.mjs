@@ -178,7 +178,11 @@ try {
   let team = [];
   if (await rpc("needs_setup")) {
     const r = await rpc("initial_setup", {
-      input: { shop_name: "Eden Superrette", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin E2E", username: "admin", pin: PIN },
+      input: {
+        shop_name: "Eden Superrette", shop_phone: null, shop_address: "Bamako", currency_symbol: "FCFA", currency_decimals: 0, full_name: "Admin E2E", username: "admin", pin: PIN,
+        // Conditions d'utilisation, licence et données personnelles acceptées à la première étape.
+        terms_version: (await rpc("terms_status")).current,
+      },
     });
     setupToken = r.token;
     team = r.team;
@@ -192,6 +196,18 @@ try {
   const admin = setupToken ?? (await login());
   const oldPassword = await rpc("login_password", { username: "admin", password: "secret123" }).then(() => "acceptée", (e) => e.message);
   check("plus de mot de passe : connexion par identifiant et code PIN", oldPassword.includes("PIN"), oldPassword);
+  // ── Conditions d'utilisation : acceptées à la configuration, au nom de l'administrateur ; ancienne version refusée.
+  const terms = await rpc("terms_status");
+  check(
+    "conditions d'utilisation acceptées à la configuration (version, date, administrateur)",
+    terms.up_to_date && terms.accepted === terms.current && terms.accepted_by === "Admin E2E" && !!terms.accepted_at,
+    JSON.stringify(terms),
+  );
+  const oldTerms = await rpc("accept_terms", { version: "2000-01" }, admin).then(() => "acceptée", (e) => e.message);
+  check("conditions : une ancienne version est refusée", oldTerms.includes("plus les dernières"), oldTerms);
+  const anonTerms = await rpc("accept_terms", { version: terms.current }).then(() => "acceptée", (e) => e.message);
+  check("conditions : acceptation refusée sans administrateur connecté", anonTerms !== "acceptée", anonTerms);
+
   // ── Essai gratuit sans Internet : commencé dès la première configuration (formule PRO, 3 postes, 14 jours).
   const lic = await rpc("license_status", {}, admin);
   check(
@@ -730,6 +746,32 @@ try {
   await ownerPage.reload();
   await seen(ownerPage, "Espace propriétaire déconnecté", "Mot de passe oublié ?");
   await ownerPage.close();
+
+  // ── Paramètres → Aide, conditions et licence : textes lisibles, manuel PDF lu dans GestiMarket (rangé dans l'application).
+  const helpPage = await server.context().newPage();
+  await helpPage.goto(`${SRV}/#/settings?tab=help`);
+  await seen(helpPage, "Paramètres (aide, conditions)", "Conditions d'utilisation et licence");
+  await seen(helpPage, "Paramètres (aide, conditions)", "acceptée le");
+  try {
+    await helpPage.locator(".terms-doc", { hasText: "Contrat de licence" }).getByRole("button", { name: "Lire" }).click();
+    const licenceText = await helpPage.locator(".modal .terms-text").first().innerText({ timeout: 15_000 });
+    check("conditions : contrat de licence lisible en entier (titres mis en forme)", licenceText.includes("Licence accordée") && (await helpPage.locator(".modal .terms-text h2").count()) >= 8, licenceText.slice(0, 80));
+    await shot(helpPage, "30-parametres-conditions-licence.png");
+    await helpPage.keyboard.press("Escape");
+    await helpPage.getByRole("button", { name: "Lire le manuel" }).click();
+    await helpPage.locator(".manual-page", { hasText: /Page 1 \/ \d+/ }).waitFor({ timeout: 30_000 });
+    const canvasWidth = await helpPage.locator(".manual-canvas canvas").evaluate((c) => c.width);
+    const pageText = await helpPage.locator(".manual-page").innerText();
+    check("manuel PDF lu dans GestiMarket, sans Internet (rangé dans l'application)", canvasWidth > 300 && /Page 1 \/ \d{2}/.test(pageText), `${pageText}, ${canvasWidth} px`);
+    await helpPage.locator(".manual-bar button[aria-label='Page suivante']").click();
+    await helpPage.locator(".manual-page", { hasText: "Page 2 /" }).waitFor({ timeout: 10_000 });
+    await helpPage.waitForTimeout(800);
+    await shot(helpPage, "31-manuel-dans-gestimarket.png");
+  } catch (e) {
+    await shot(helpPage, "31-aide-echec.png").catch(() => undefined);
+    check("Paramètres → Aide, conditions et licence : textes et manuel", false, e.message);
+  }
+  await helpPage.close();
 
   // ── Version mobile : toutes les pages sur un téléphone de 360 px, par Internet (administrateur et caissière).
   const cashierToken = caisse ? (await rpc("login", { username: "caisse1", pin: caisse.pin })).token : null;

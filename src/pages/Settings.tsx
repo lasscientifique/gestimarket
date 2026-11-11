@@ -31,11 +31,13 @@ import { markBackupShared } from "../components/PhoneBanners";
 import { OfflineHelpCard } from "../components/OfflineHelp";
 import { RestoreBackupModal } from "../components/RestoreBackup";
 import { BackupProtectionCard } from "../components/BackupProtection";
-import { ArchiveRestore } from "lucide-react";
+import { ArchiveRestore, BookOpen, PlayCircle } from "lucide-react";
+import { TermsCard } from "../components/Terms";
+import { openManual, openManualExternal } from "../components/Help";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
-type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup" | "developer";
+type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup" | "help" | "developer";
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "shop", label: tl("Commerce"), icon: <Store size={17} /> },
   { id: "business", label: tl("Type de commerce"), icon: <Building2 size={17} /> },
@@ -45,6 +47,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "security", label: tl("Sécurité & PIN"), icon: <Lock size={17} /> },
   { id: "network", label: tl("Réseau & mobile"), icon: <Network size={17} /> },
   { id: "backup", label: tl("Sauvegarde"), icon: <ShieldCheck size={17} /> },
+  { id: "help", label: tl("Aide, conditions et licence"), icon: <BookOpen size={17} /> },
   { id: "developer", label: tl("Développeur Eden Dev"), icon: <Code2 size={17} /> },
 ];
 
@@ -421,6 +424,24 @@ export default function SettingsPage() {
         </>
       )}
 
+      {tab === "help" && (
+        <>
+          <div className="card">
+            <h3 className="card-title"><BookOpen size={18} />  {tl("Manuel d'utilisation")}</h3>
+            <p className="muted">
+              {tl("Le manuel complet, en PDF : installation, téléphone serveur et TV, caisse, produits, clients, sauvegarde, et chaque écran expliqué avec sa capture. Il s'ouvre dans GestiMarket, même sans Internet.")}</p>
+            <div className="row-start">
+              <button className="btn btn-primary" onClick={() => openManual()}><BookOpen size={16} />  {tl("Lire le manuel")}</button>
+              <button className="btn" onClick={() => void openManualExternal()}>{tl("Ouvrir dans un lecteur PDF")}</button>
+            </div>
+            <p className="muted small" style={{ marginTop: 10 }}>
+              <PlayCircle size={14} />  {tl("Chaque écran a aussi son bouton « Aide », avec ses vidéos.")}</p>
+          </div>
+          {isTauri && !isRemote() && <OfflineHelpCard />}
+          <TermsCard />
+        </>
+      )}
+
       {tab === "developer" && <DeveloperTab version={info?.version} />}
     </div>
   );
@@ -474,7 +495,6 @@ function DeveloperTab({ version }: { version?: string }) {
         ))}
       </div>
       {isTauri && <JournalCard openWhatsApp={openLink("whatsapp")} />}
-      {isTauri && !isRemote() && <OfflineHelpCard />}
       {version && <p className="muted small" style={{ marginTop: 12 }}>{tl("GestiMarket version {0}", [version])}</p>}
     </div>
   );

@@ -13,6 +13,7 @@ On a new PC, the first screen also offers **“Restore the backup”**.
 
 ## Creating the shop (PC or “My shop on this phone”)
 
+0. **Terms of use**: read the terms of use, the licence agreement and the personal data policy, then accept them on behalf of the shop (see “Terms of use, licence and help”).
 1. **The shop account at Eden Dev**: e-mail, password, shop name, owner, country, city, type of business. The Internet is needed for this step only. Without Internet, “Continue without an account”: **14-day free trial** with every feature of the PRO plan. Create the account as soon as you have Internet (Subscription & licence); after 14 days without an account, GestiMarket becomes read-only. The trial happens only once per shop.
 2. **The shop**: currency, address, phone.
 3. **The team**: each person has a **username** and a **PIN code** (no password). Random codes are suggested: note them or change them. An administrator, a manager and a cashier are created by default.

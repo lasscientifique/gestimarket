@@ -12,6 +12,10 @@ import { tl } from "./lib/i18n";
 import { getNetwork, isMobileApp } from "./lib/transport";
 import { isTv } from "./lib/android";
 import { startChoice, tvPoste } from "./lib/start";
+import { ManualHost } from "./components/ManualHost";
+import type { TermsStatus } from "./types";
+
+const TermsGate = lazy(() => import("./components/Terms").then((m) => ({ default: m.TermsGate })));
 
 // Pages chargées à la demande : l'écran de connexion s'affiche vite, même en 4G sur un téléphone ;
 // la 3D, les graphiques et le PDF ne sont téléchargés qu'à l'ouverture de leur page.
@@ -55,6 +59,15 @@ const ADMIN: Role[] = ["admin"];
 const CASHIER: Role[] = ["cashier"];
 
 export default function App() {
+  return (
+    <>
+      <Screens />
+      <ManualHost />
+    </>
+  );
+}
+
+function Screens() {
   // L'écran client (2ᵉ écran, TV) s'affiche sans connexion utilisateur.
   const location = useLocation();
   if (location.pathname.startsWith("/display")) {
@@ -92,6 +105,12 @@ function MainApp() {
   const [state, setState] = useState<"loading" | "setup" | "ready">("loading");
   // Application installée : la boutique sera-t-elle sur ce téléphone ? (sinon : choix au premier démarrage)
   const [localChosen, setLocalChosen] = useState(() => !isMobileApp || startChoice() === "local");
+  // Administrateur : conditions d'utilisation de la version actuelle acceptées au nom de la boutique ?
+  const [terms, setTerms] = useState<TermsStatus | null>(null);
+  useEffect(() => {
+    if (user?.role !== "admin" || !user.has_pin) return setTerms(null);
+    api.termsStatus().then(setTerms).catch(() => setTerms(null));
+  }, [user]);
 
   useEffect(() => {
     (async () => {
@@ -122,6 +141,11 @@ function MainApp() {
 
   return (
     <Layout>
+      {terms && !terms.up_to_date && (
+        <Suspense fallback={null}>
+          <TermsGate status={terms} onDone={() => setTerms({ ...terms, up_to_date: true })} />
+        </Suspense>
+      )}
       <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/" element={<Navigate to={user.role === "admin" ? "/dashboard" : user.role === "manager" ? "/products" : "/pos"} replace />} />

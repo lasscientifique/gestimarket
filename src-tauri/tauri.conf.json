@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "GestiMarket",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "identifier": "com.gestimarket.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -32,6 +32,7 @@
     "targets": "all",
     "category": "Business",
     "shortDescription": "Gestion de supermarché et de boutiques",
+    "licenseFile": "licence.txt",
     "longDescription": "GestiMarket : caisse avec écran client, Orange Money / Sarali, catégories et sous-catégories, emplacements (bloc, étage, rangée), multi-postes en réseau, stock, achats, clients et crédit, rapports.",
     "publisher": "GestiMarket",
     "android": {

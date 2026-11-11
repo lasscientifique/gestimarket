@@ -20,8 +20,8 @@ const SCREENS = [
 ];
 
 const TEXT = {
-  fr: { title: "Manuel d'utilisation", screens: "Les écrans, un par un", contents: "Sommaire", by: "Eden Dev", version: "Version", date: "Édition du" },
-  en: { title: "User manual", screens: "The screens, one by one", contents: "Contents", by: "Eden Dev", version: "Version", date: "Edition of" },
+  fr: { title: "Manuel d'utilisation", screens: "Les écrans, un par un", contents: "Sommaire", by: "Eden Dev", version: "Version", date: "Édition du", annex: "Annexe" },
+  en: { title: "User manual", screens: "The screens, one by one", contents: "Contents", by: "Eden Dev", version: "Version", date: "Edition of", annex: "Appendix" },
 };
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -82,8 +82,9 @@ async function screenPages(browser, url, tokens, lang) {
   return SCREENS.map(([k]) => out.find((s) => s.key === k)).filter(Boolean);
 }
 
-function chapters(lang, marked) {
-  const dir = path.join("docs", "manuel", lang);
+/** Chapitres du manuel (docs/manuel) ou annexes (docs/conditions : conditions d'utilisation, licence, données). */
+function chapters(lang, marked, base = "manuel") {
+  const dir = path.join("docs", base, lang);
   return fs
     .readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
@@ -95,13 +96,14 @@ function chapters(lang, marked) {
     });
 }
 
-function html({ lang, version, chapters: chs, screens }) {
+function html({ lang, version, chapters: chs, screens, annexes = [] }) {
   const t = TEXT[lang];
   const today = new Date().toLocaleDateString(lang === "fr" ? "fr-FR" : "en-GB", { day: "numeric", month: "long", year: "numeric" });
   const icon = fs.existsSync("src-tauri/icons/128x128@2x.png") ? fs.readFileSync("src-tauri/icons/128x128@2x.png").toString("base64") : "";
   const toc = [
     ...chs.flatMap((c) => c.titles),
     t.screens,
+    ...annexes.flatMap((c) => c.titles.map((x) => `${t.annex} : ${x}`)),
   ];
   const screenHtml = screens
     .map((s) => {
@@ -151,6 +153,7 @@ function html({ lang, version, chapters: chs, screens }) {
 ${chs.map((c) => c.html).join("\n")}
 <h1 class="screens-title">${esc(t.screens)}</h1>
 ${screenHtml}
+${annexes.map((c) => c.html).join("\n")}
 </body></html>`;
 }
 
@@ -167,7 +170,7 @@ export async function buildManuals({ browser, url, adminToken, cashierToken, out
   const files = [];
   for (const lang of ["fr", "en"]) {
     const screens = await screenPages(browser, url, { admin: adminToken, cashier: cashierToken }, lang);
-    const doc = html({ lang, version, chapters: chapters(lang, marked), screens });
+    const doc = html({ lang, version, chapters: chapters(lang, marked), screens, annexes: chapters(lang, marked, "conditions") });
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await page.setContent(doc, { waitUntil: "load" });

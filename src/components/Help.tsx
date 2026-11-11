@@ -38,8 +38,16 @@ export function VideoModal({ video, onClose }: { video: HelpVideo; onClose: () =
   );
 }
 
-/** Manuel d'utilisation (PDF) : celui du poste s'il est téléchargé, sinon en ligne. */
-export async function openManual() {
+/** Demande d'ouverture du lecteur du manuel (voir ManualHost, monté une fois dans App). */
+export const MANUAL_EVENT = "gm-open-manual";
+
+/** Manuel d'utilisation : lecteur intégré, page par page, même sans Internet (manuel rangé dans l'application). */
+export function openManual() {
+  window.dispatchEvent(new Event(MANUAL_EVENT));
+}
+
+/** Manuel d'utilisation (PDF) dans le lecteur de l'appareil : celui du poste s'il est téléchargé, sinon en ligne. */
+export async function openManualExternal() {
   const file = manualFile();
   if (isTauri) {
     try {
