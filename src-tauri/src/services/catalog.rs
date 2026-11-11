@@ -560,7 +560,7 @@ fn save_packagings(conn: &Connection, product_id: i64, packs: &[Packaging]) -> A
         if name.is_empty() {
             return invalid("Chaque conditionnement doit avoir un nom (ex. Carton de 12).");
         }
-        if !(p.quantity > 0.0) {
+        if p.quantity.is_nan() || p.quantity <= 0.0 {
             return invalid(format!("Conditionnement « {name} » : la quantité contenue doit être supérieure à zéro."));
         }
         if p.sale_price < 0 {

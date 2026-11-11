@@ -581,6 +581,7 @@ struct Line {
 
 /// Enregistre une vente : contrôle des stocks, calcul des totaux, paiements (éventuellement multiples),
 /// crédit client, mouvements de stock et points de fidélité — dans une seule transaction.
+#[cfg(test)]
 pub fn create_sale(conn: &mut Connection, user: &SessionUser, input: SaleInput) -> AppResult<Sale> {
     create_sale_with(conn, user, input, None)
 }

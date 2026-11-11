@@ -302,7 +302,7 @@ pub async fn open_help(app: AppHandle, state: State<'_, AppState>, name: String)
 /// Boutiques GestiMarket trouvées sur le Wi-Fi ou le partage de connexion de cet appareil.
 #[tauri::command]
 pub async fn discover_servers() -> AppResult<Vec<serde_json::Value>> {
-    Ok(tauri::async_runtime::spawn_blocking(network::discover).await.map_err(internal)?)
+    tauri::async_runtime::spawn_blocking(network::discover).await.map_err(internal)
 }
 
 /// Espace propriétaire (compte Eden Dev sur ce téléphone) : boutiques, état de leur PC serveur, paiements.

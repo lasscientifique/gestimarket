@@ -83,7 +83,7 @@ jobs:
         working-directory: src-tauri
         run: |
           set -o pipefail
-          cargo clippy --all-targets --color never -- -D warnings \
+          cargo clippy --all-targets --color never --message-format=short -- -D warnings \
             -A clippy::too_many_arguments -A clippy::type_complexity -A clippy::large_enum_variant -A clippy::result_large_err 2>&1 | tee ../clippy.log
       - uses: taiki-e/install-action@v2
         with:
@@ -93,11 +93,22 @@ jobs:
         run: |
           set -o pipefail
           cargo audit --color never 2>&1 | tee ../cargo-audit.log
+      # Une ligne par remarque (clippy en format court, failles de cargo audit), en paquets de 30 par annotation.
       - name: Remarques (annotations)
         if: failure()
         run: |
-          msg=$(cat clippy.log cargo-audit.log 2>/dev/null | grep -E -A8 '^(error|warning)(\[|:)|^Crate:|^ID:|^Title:' | head -220 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
-          echo "::error title=Contrôle du code::${msg:-voir le journal}"
+          { grep -E ': (error|warning)' clippy.log 2>/dev/null | grep -v -E 'could not compile|aborting due' | sort -u
+            grep -E '^(Crate|Version|Title|ID|Solution):' cargo-audit.log 2>/dev/null; } > remarques.txt || true
+          echo "$(wc -l < remarques.txt) remarque(s)"
+          split -l 30 remarques.txt part- || true
+          n=0
+          for f in part-*; do
+            [ -s "$f" ] || continue
+            n=$((n + 1))
+            [ $n -le 9 ] || break
+            msg=$(sed -e 's/%/%25/g' -e 's/\r//g' "$f" | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Contrôle du code ($n)::$msg"
+          done
 
   # Le code propre à Windows (impression directe par la file d'impression, explorateur) n'est pas compilé
   # par les tests Ubuntu : sa compilation est vérifiée sur Windows à chaque push, avant toute version.

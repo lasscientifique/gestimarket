@@ -207,7 +207,7 @@ impl LiveState {
                 c
             })
             .collect();
-        list.sort_by(|a, b| a.poste.to_lowercase().cmp(&b.poste.to_lowercase()));
+        list.sort_by_key(|a| a.poste.to_lowercase());
         list
     }
 

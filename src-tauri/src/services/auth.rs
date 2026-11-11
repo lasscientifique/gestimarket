@@ -54,7 +54,7 @@ pub fn valid_lang(lang: &Option<String>) -> Option<String> {
 
 /// PIN trop simple : un seul chiffre répété, ou suite (1234, 987654…).
 fn too_simple(pin: &str) -> bool {
-    pin.chars().all(|c| Some(c) == pin.chars().next()) || "0123456789".contains(pin) || "9876543210".contains(pin)
+    pin.chars().all(|c| pin.starts_with(c)) || "0123456789".contains(pin) || "9876543210".contains(pin)
 }
 
 /// PIN valable pour un rôle : 6 chiffres pour un administrateur, 4 à 6 pour les autres.

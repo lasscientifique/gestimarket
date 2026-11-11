@@ -3,6 +3,7 @@
 //! Le même `dispatch` sert :
 //!  - l'application locale (commande Tauri `rpc`, origine `Local`) ;
 //!  - les postes clients du réseau (serveur HTTP, origine `Remote(jeton)`), voir `server.rs`.
+//!
 //! Chaque opération vérifie les droits de l'utilisateur avant d'appeler la logique métier (`services`).
 
 use serde::de::DeserializeOwned;

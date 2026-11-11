@@ -4,6 +4,7 @@
 //!  - `local`  : poste unique, base de données sur ce PC ;
 //!  - `server` : ce PC garde la base et la partage aux autres postes du réseau (port HTTP, 7878 par défaut) ;
 //!  - `client` : ce PC travaille sur la base du poste serveur.
+//!
 //! Le serveur sert aussi l'application aux navigateurs du réseau (tablette, téléphone, TV de l'écran client).
 
 use std::path::PathBuf;
@@ -201,11 +202,6 @@ type App = Arc<AppHandle>;
 
 /// Serveur en marche : port, signal d'arrêt (http) et poignée (https).
 static RUNNING: Mutex<Option<(u16, tokio::sync::watch::Sender<bool>, axum_server::Handle)>> = Mutex::new(None);
-
-/// Le serveur de la boutique tourne-t-il sur cet appareil ?
-pub fn server_running() -> bool {
-    RUNNING.lock().unwrap_or_else(|e| e.into_inner()).is_some()
-}
 
 /// Arrête le serveur (téléphone qui quitte le mode serveur sans redémarrer l'application).
 pub fn stop_server() {

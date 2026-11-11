@@ -28,10 +28,6 @@ pub fn init(dir: PathBuf) {
     }));
 }
 
-pub fn dir() -> Option<PathBuf> {
-    DIR.get().cloned()
-}
-
 fn write(level: &str, msg: &str) {
     eprintln!("[{level}] {msg}");
     let Some(dir) = DIR.get() else { return };

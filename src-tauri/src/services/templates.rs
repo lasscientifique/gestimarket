@@ -22,6 +22,7 @@ pub struct TemplateNode {
 }
 
 /// Catalogue en français.
+#[cfg(test)]
 pub fn catalogue() -> Vec<TemplateNode> {
     catalogue_in("fr")
 }
