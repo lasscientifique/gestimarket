@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - name: Traductions (anglais)
-        run: node scripts/i18n.mjs check && python3 scripts/i18n_messages.py --check && python3 scripts/licence-txt.py --check
+        run: node scripts/i18n.mjs check && python3 scripts/i18n_messages.py --check && python3 scripts/licence-rtf.py --check
       - name: cargo test
         working-directory: src-tauri
         run: |
@@ -131,9 +131,19 @@ jobs:
       - name: cargo check (Windows)
         working-directory: src-tauri
         run: cargo check --all-targets --color never
-      # Installateur NSIS avec la page « Contrat de licence » (src-tauri/licence.txt), vérifié avant chaque version.
+      # Installateurs NSIS et MSI avec la page « Contrat de licence » (src-tauri/licence.rtf, réglé dans
+      # tauri.windows.conf.json), vérifiés avant chaque version. En cas d'échec, la fin du journal est remontée
+      # en annotation (les journaux des tâches ne sont pas lisibles sans connexion).
       - name: Installateur avec la page de licence (compilation de développement)
-        run: npx tauri build --debug --bundles nsis,msi
+        shell: bash
+        run: |
+          oneline() { sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g'; }
+          if ! npx tauri build --debug --bundles nsis,msi > bundle.log 2>&1; then
+            echo "::error title=Installateur Windows::$(grep -v -E '^ *(Compiling|Downloaded|Downloading) ' bundle.log | tail -45 | cut -c1-300 | oneline)"
+            exit 1
+          fi
+          ls -l src-tauri/target/debug/bundle/nsis src-tauri/target/debug/bundle/msi
+          echo "::notice title=Installateurs Windows::$(ls src-tauri/target/debug/bundle/nsis/*.exe src-tauri/target/debug/bundle/msi/*.msi | xargs -n1 basename | tr '\n' ' ')"
 
   # Test d'interface : GestiMarket en mode serveur sous Xvfb, piloté par Playwright
   # (PC et tablette sur le réseau local, téléphone 390 px par un faux tunnel Cloudflare).

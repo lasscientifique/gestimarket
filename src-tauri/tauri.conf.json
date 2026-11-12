@@ -32,7 +32,6 @@
     "targets": "all",
     "category": "Business",
     "shortDescription": "Gestion de supermarché et de boutiques",
-    "licenseFile": "licence.txt",
     "longDescription": "GestiMarket : caisse avec écran client, Orange Money / Sarali, catégories et sous-catégories, emplacements (bloc, étage, rangée), multi-postes en réseau, stock, achats, clients et crédit, rapports.",
     "publisher": "GestiMarket",
     "android": {

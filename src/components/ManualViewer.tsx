@@ -65,27 +65,39 @@ export default function ManualViewer({ onClose }: { onClose: () => void }) {
     };
   }, [lang]);
 
-  // Page à la largeur de la fenêtre (netteté selon l'écran), puis zoom.
+  // Page à la largeur de la fenêtre (netteté selon l'écran), puis zoom. Chaque page est dessinée à part, puis
+  // copiée d'un coup à l'écran une fois finie : une page abandonnée (page suivante cliquée pendant le dessin)
+  // ne peut pas se mêler à la suivante, et la page précédente reste visible jusque-là.
   useEffect(() => {
     if (!doc || !canvas.current || !box.current) return;
     let task: RenderTask | null = null;
     let cancelled = false;
     (async () => {
       const p = await doc.getPage(page);
-      if (cancelled || !canvas.current || !box.current) return;
+      if (cancelled || !box.current) return;
       const base = p.getViewport({ scale: 1 });
       const css = (Math.max(280, box.current.clientWidth - 8) / base.width) * zoom;
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
       const viewport = p.getViewport({ scale: css * ratio });
+      const off = document.createElement("canvas");
+      off.width = Math.floor(viewport.width);
+      off.height = Math.floor(viewport.height);
+      const offCtx = off.getContext("2d");
+      if (!offCtx) return;
+      task = p.render({ canvasContext: offCtx, viewport });
+      const done = await task.promise.then(
+        () => true,
+        () => false,
+      );
       const c = canvas.current;
-      c.width = Math.floor(viewport.width);
-      c.height = Math.floor(viewport.height);
-      c.style.width = `${Math.floor(viewport.width / ratio)}px`;
-      c.style.height = `${Math.floor(viewport.height / ratio)}px`;
-      const ctx = c.getContext("2d");
-      if (!ctx) return;
-      task = p.render({ canvasContext: ctx, viewport });
-      await task.promise.catch(() => undefined);
+      const ctx = c?.getContext("2d");
+      if (!done || cancelled || !c || !ctx) return;
+      c.width = off.width;
+      c.height = off.height;
+      c.style.width = `${Math.floor(off.width / ratio)}px`;
+      c.style.height = `${Math.floor(off.height / ratio)}px`;
+      ctx.drawImage(off, 0, 0);
+      c.dataset.page = String(page);
       box.current?.scrollTo({ top: 0 });
     })();
     return () => {

@@ -754,18 +754,26 @@ try {
   await seen(helpPage, "Paramètres (aide, conditions)", "acceptée le");
   try {
     await helpPage.locator(".terms-doc", { hasText: "Contrat de licence" }).getByRole("button", { name: "Lire" }).click();
-    const licenceText = await helpPage.locator(".modal .terms-text").first().innerText({ timeout: 15_000 });
+    // Texte mis en forme dès que la mise en forme (chargée à la demande) est prête.
+    await helpPage.locator(".modal .terms-text h2").first().waitFor({ timeout: 15_000 });
+    const licenceText = await helpPage.locator(".modal .terms-text").first().innerText();
     check("conditions : contrat de licence lisible en entier (titres mis en forme)", licenceText.includes("Licence accordée") && (await helpPage.locator(".modal .terms-text h2").count()) >= 8, licenceText.slice(0, 80));
     await shot(helpPage, "30-parametres-conditions-licence.png");
     await helpPage.keyboard.press("Escape");
     await helpPage.getByRole("button", { name: "Lire le manuel" }).click();
-    await helpPage.locator(".manual-page", { hasText: /Page 1 \/ \d+/ }).waitFor({ timeout: 30_000 });
+    await helpPage.locator(".manual-canvas canvas[data-page='1']").waitFor({ timeout: 30_000 });
     const canvasWidth = await helpPage.locator(".manual-canvas canvas").evaluate((c) => c.width);
     const pageText = await helpPage.locator(".manual-page").innerText();
     check("manuel PDF lu dans GestiMarket, sans Internet (rangé dans l'application)", canvasWidth > 300 && /Page 1 \/ \d{2}/.test(pageText), `${pageText}, ${canvasWidth} px`);
-    await helpPage.locator(".manual-bar button[aria-label='Page suivante']").click();
-    await helpPage.locator(".manual-page", { hasText: "Page 2 /" }).waitFor({ timeout: 10_000 });
-    await helpPage.waitForTimeout(800);
+    // Deux pages suivantes coup sur coup : la page 2, abandonnée en cours de dessin, ne doit pas se mêler à la 3.
+    const next = helpPage.locator(".manual-bar button[aria-label='Page suivante']");
+    await next.click();
+    await next.click();
+    await helpPage.locator(".manual-canvas canvas[data-page='3']").waitFor({ timeout: 15_000 });
+    await helpPage.waitForTimeout(1500);
+    const shown = await helpPage.locator(".manual-canvas canvas").evaluate((c) => c.dataset.page);
+    const label = await helpPage.locator(".manual-page").innerText();
+    check("manuel : pages tournées vite, seule la dernière demandée est affichée", shown === "3" && label.startsWith("Page 3 /"), `${label}, page dessinée ${shown}`);
     await shot(helpPage, "31-manuel-dans-gestimarket.png");
   } catch (e) {
     await shot(helpPage, "31-aide-echec.png").catch(() => undefined);
