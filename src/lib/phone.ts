@@ -38,11 +38,11 @@ export const validPhone = (e164: string): boolean => /^\+[1-9]\d{7,14}$/.test(e1
 /** Identifiant de connexion : l'e-mail tel quel, sinon le numéro WhatsApp au format international. */
 export const loginId = (raw: string, dial = "223"): string => (raw.includes("@") ? raw.trim() : toE164(raw, dial));
 
-/** Affichage lisible : « +223 76 59 36 76 ». */
+/** Affichage lisible et jamais coupé en fin de ligne : « +223 76 59 36 76 » (espaces insécables). */
 export function showPhone(e164: string): string {
   if (!e164.startsWith("+")) return e164;
   const digits = e164.slice(1);
   const dial = [3, 2, 1].map((n) => digits.slice(0, n)).find((d) => Object.values(DIAL).includes(d)) ?? "";
-  const rest = digits.slice(dial.length).replace(/(\d{2})(?=\d)/g, "$1 ");
-  return dial ? `+${dial} ${rest}` : e164;
+  const rest = digits.slice(dial.length).replace(/(\d{2})(?=\d)/g, "$1 ");
+  return dial ? `+${dial} ${rest}` : e164;
 }
