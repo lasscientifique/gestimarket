@@ -1533,3 +1533,11 @@ input, select, textarea { border-radius: 10px; }
 .manual-canvas { max-height: 72vh; overflow: auto; text-align: center; background: #e2e8f0; border-radius: 8px; padding: 4px; }
 .manual-canvas canvas { background: #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2); }
 @media (max-width: 640px) { .manual-external { margin-left: 0; } }
+
+/* 0.26 : compte par numéro WhatsApp (indicatif + numéro), connexion par code, identifiants du compte. */
+.phone-input { display: flex; gap: 6px; min-width: 0; }
+.phone-input select { flex: 0 0 auto; max-width: 46%; }
+.phone-input input { flex: 1; min-width: 0; }
+.account-channel button { white-space: normal; text-align: center; }
+.wa-code-btn { margin-top: 8px; color: #128c7e; border-color: color-mix(in srgb, #25d366 45%, var(--border)); }
+.account-ids .row-between span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }

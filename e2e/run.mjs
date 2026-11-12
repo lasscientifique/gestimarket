@@ -795,7 +795,8 @@ try {
   check("confirmation de l'adresse : mauvais code refusé", badSignupCode.includes("Code incorrect"), badSignupCode);
   await ownerCall("resend_signup", { email: "nouvelle@exemple.ml" });
   try {
-    await ownerPage.locator(".owner-login input[type='email']").fill("nouvelle@exemple.ml");
+    // Connexion par WhatsApp ouverte (faux Supabase) : le champ accepte l'e-mail ou le numéro.
+    await ownerPage.locator(".owner-login input[autocomplete='username']").fill("nouvelle@exemple.ml");
     await ownerPage.locator(".owner-login input[type='password']").fill("Nouvelle-2026");
     await ownerPage.locator(".owner-login button.btn-primary").click();
     await seen(ownerPage, "Espace propriétaire : adresse à confirmer", "Confirmez l'adresse de votre compte");
@@ -806,6 +807,57 @@ try {
   } catch (e) {
     check("Espace propriétaire : adresse confirmée par code", false, e.message);
   }
+  await ownerCall("logout");
+
+  // ── 0.26 : compte et connexion par numéro WhatsApp (codes envoyés sur WhatsApp par le faux Supabase).
+  const WA = "+22370000001";
+  const waUnconfirmed = await ownerCall("login", { email: "+223 70 00 00 01", password: "Whatsapp-2026" });
+  check("WhatsApp : connexion avant confirmation du numéro, code demandé", waUnconfirmed?.status === "confirm_phone" && waUnconfirmed?.email === WA, JSON.stringify(waUnconfirmed));
+  const waBadCode = await outcome(ownerCall("confirm_signup", { email: WA, code: "000000" }));
+  check("WhatsApp : mauvais code refusé", waBadCode.includes("Code incorrect"), waBadCode);
+  const noAccount = await outcome(ownerCall("otp_send", { email: "+223 79 99 99 99" }));
+  check("WhatsApp : code demandé pour un numéro sans compte, refusé", noAccount.includes("Aucun compte"), noAccount);
+  const badNumber = await outcome(ownerCall("login", { email: "77 123 45", password: "Whatsapp-2026" }));
+  check("WhatsApp : numéro mal tapé refusé", badNumber.includes("Numéro WhatsApp invalide"), badNumber);
+  await ownerPage.reload();
+  try {
+    await ownerPage.locator(".owner-login input[autocomplete='username']").fill("70 00 00 01");
+    await ownerPage.locator(".owner-login .wa-code-btn").click();
+    await seen(ownerPage, "Espace propriétaire : connexion par code WhatsApp", "Connexion par WhatsApp");
+    await ownerPage.locator(".confirm-code input").fill("112233");
+    await shot(ownerPage, "29d-connexion-whatsapp.png");
+    await ownerPage.locator(".confirm-code button.btn-primary").click();
+    await seen(ownerPage, "Espace propriétaire : compte WhatsApp ouvert par code", "Aucune boutique sur ce compte.");
+  } catch (e) {
+    check("Espace propriétaire : connexion par code WhatsApp", false, e.message);
+  }
+  const waIds = await outcome(ownerCall("account").then((r) => { if (r?.phone !== WA || r?.email !== "") throw new Error(JSON.stringify(r)); }));
+  check("WhatsApp : numéro du compte lu (Mon compte)", waIds === "acceptée", waIds);
+  await ownerCall("logout");
+
+  // Compte e-mail : numéro WhatsApp ajouté avec le code reçu, puis connexion et mot de passe oublié par ce numéro.
+  const OWNER_PHONE = "+22376112233";
+  const takenPhone = await outcome(ownerCall("phone_change_start", { email: NEW_EMAIL, password: NEW_PASSWORD, new_phone: WA }));
+  check("numéro WhatsApp du compte : numéro déjà pris refusé", takenPhone.includes("autre compte"), takenPhone);
+  const phoneStarted = await ownerCall("phone_change_start", { email: NEW_EMAIL, password: NEW_PASSWORD, new_phone: "76 11 22 33" });
+  const badPhoneCode = await outcome(ownerCall("phone_change_confirm", { old_login: NEW_EMAIL, new_phone: OWNER_PHONE, code: "000000" }));
+  const phoneDone = await ownerCall("phone_change_confirm", { old_login: NEW_EMAIL, new_phone: OWNER_PHONE, code: "556677" });
+  check(
+    "numéro WhatsApp ajouté au compte avec le code reçu sur WhatsApp",
+    phoneStarted?.done === false && phoneStarted?.phone === OWNER_PHONE && badPhoneCode.includes("Code incorrect") && phoneDone?.done === true,
+    `${JSON.stringify(phoneStarted)} / ${badPhoneCode} / ${JSON.stringify(phoneDone)}`,
+  );
+  const byPhone = await ownerCall("login", { email: "76 11 22 33", password: NEW_PASSWORD });
+  check("connexion avec le numéro WhatsApp et le mot de passe", byPhone?.stores?.[0]?.code === "GM-E2E" && byPhone?.email === OWNER_PHONE, JSON.stringify(byPhone).slice(0, 200));
+  await ownerCall("logout");
+  await ownerCall("recover", { email: OWNER_PHONE });
+  await ownerCall("reset_password", { email: OWNER_PHONE, code: "778899", password: "Whatsapp-mdp-2026", login: true });
+  const afterWaReset = await ownerCall("status");
+  check(
+    "mot de passe oublié par WhatsApp : code reçu sur WhatsApp, nouveau mot de passe, propriétaire connectée",
+    afterWaReset.connected === true && afterWaReset.email === OWNER_PHONE,
+    JSON.stringify(afterWaReset),
+  );
   await ownerCall("logout");
   await ownerPage.close();
 

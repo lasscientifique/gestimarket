@@ -38,11 +38,16 @@ fn error_message(code: u16, v: &Value) -> String {
     let error_code = v["error_code"].as_str().unwrap_or_default();
     let mapped = match error_code {
         "user_already_exists" | "email_exists" => Some("Un compte existe déjà avec cet e-mail : choisissez « J'ai déjà un compte »."),
+        "phone_exists" => Some("Un compte existe déjà avec ce numéro WhatsApp : choisissez « J'ai déjà un compte »."),
         "weak_password" => Some("Mot de passe trop faible : au moins 8 caractères, avec des lettres et des chiffres."),
         "email_address_invalid" | "validation_failed" => Some("Adresse e-mail invalide."),
-        "invalid_credentials" => Some("E-mail ou mot de passe incorrect."),
+        "invalid_credentials" => Some("E-mail, numéro ou mot de passe incorrect."),
         "email_not_confirmed" => Some("Adresse e-mail pas encore confirmée : tapez le code reçu par e-mail."),
-        "over_email_send_rate_limit" | "over_request_rate_limit" => Some("Trop de tentatives : réessayez dans quelques minutes."),
+        "phone_not_confirmed" => Some("Numéro WhatsApp pas encore confirmé : tapez le code reçu sur WhatsApp."),
+        "phone_provider_disabled" => Some("La connexion par WhatsApp n'est pas encore ouverte : utilisez votre e-mail."),
+        "over_email_send_rate_limit" | "over_sms_send_rate_limit" | "over_request_rate_limit" => {
+            Some("Trop de tentatives : réessayez dans quelques minutes.")
+        }
         "signup_disabled" => Some("Les inscriptions sont fermées pour le moment : contactez Eden Dev."),
         "same_password" => Some("Le nouveau mot de passe doit être différent de l'ancien."),
         "otp_expired" | "otp_disabled" => Some("Code incorrect ou expiré : demandez un nouveau code."),
@@ -95,14 +100,102 @@ fn valid_email(email: &str) -> Result<String, String> {
     Ok(email)
 }
 
-/// Code à 6 chiffres reçu par e-mail (inscription, mot de passe oublié, changement d'adresse), vérifié par
-/// Supabase : la réponse contient la session du compte.
-fn verify_code(kind: &str, email: &str, code: &str) -> Result<Value, String> {
+const PHONE_INVALID: &str = "Numéro WhatsApp invalide : tapez-le avec l'indicatif du pays (ex. +223 76 59 36 76).";
+
+/// Numéro WhatsApp au format international (+22376593676) : espaces, points et tirets ignorés, « 00 » vaut « + ».
+/// Sans indicatif, un numéro à 8 chiffres est pris pour un numéro du Mali.
+fn valid_phone(s: &str) -> Result<String, String> {
+    let t: String = s.chars().filter(|c| !c.is_whitespace() && !matches!(c, '-' | '.' | '(' | ')')).collect();
+    let (international, digits) = match (t.strip_prefix('+'), t.strip_prefix("00")) {
+        (Some(d), _) | (None, Some(d)) => (true, d),
+        _ => (false, t.as_str()),
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return Err(PHONE_INVALID.into());
+    }
+    let full = if international || digits.len() >= 11 {
+        digits.to_string()
+    } else if digits.len() == 8 {
+        format!("223{digits}")
+    } else {
+        return Err(PHONE_INVALID.into());
+    };
+    if !(8..=15).contains(&full.len()) || full.starts_with('0') {
+        return Err(PHONE_INVALID.into());
+    }
+    Ok(format!("+{full}"))
+}
+
+/// Identifiant du compte Eden Dev : adresse e-mail, ou numéro WhatsApp au format international.
+#[derive(Debug, Clone, PartialEq)]
+enum Login {
+    Email(String),
+    Phone(String),
+}
+
+impl Login {
+    /// E-mail si l'identifiant contient « @ », sinon numéro WhatsApp.
+    fn parse(s: &str) -> Result<Login, String> {
+        if s.contains('@') {
+            valid_email(s).map(Login::Email)
+        } else {
+            valid_phone(s).map(Login::Phone)
+        }
+    }
+
+    fn value(&self) -> &str {
+        match self {
+            Login::Email(v) | Login::Phone(v) => v,
+        }
+    }
+
+    fn is_phone(&self) -> bool {
+        matches!(self, Login::Phone(_))
+    }
+
+    /// Corps d'une requête Supabase Auth avec l'identifiant (« email » ou « phone »).
+    fn body(&self, mut body: Value) -> Value {
+        let (key, value) = match self {
+            Login::Email(v) => ("email", v),
+            Login::Phone(v) => ("phone", v),
+        };
+        body[key] = json!(value);
+        body
+    }
+
+    /// Type du code à vérifier : celui des e-mails (`email_kind`), ou « sms » pour un code reçu sur WhatsApp.
+    fn code_kind<'a>(&self, email_kind: &'a str) -> &'a str {
+        if self.is_phone() {
+            "sms"
+        } else {
+            email_kind
+        }
+    }
+}
+
+/// Code à 6 chiffres reçu par e-mail ou sur WhatsApp (inscription, connexion, mot de passe oublié, changement
+/// d'adresse ou de numéro), vérifié par Supabase : la réponse contient la session du compte.
+fn verify_code(kind: &str, login: &Login, code: &str) -> Result<Value, String> {
     let code: String = code.chars().filter(char::is_ascii_digit).collect();
     if code.len() < 6 {
-        return Err("Tapez le code reçu par e-mail (6 chiffres).".into());
+        return Err("Tapez le code reçu (6 chiffres).".into());
     }
-    call(request("/auth/v1/verify", None), json!({ "type": kind, "email": email.trim().to_lowercase(), "token": code }))
+    call(request("/auth/v1/verify", None), login.body(json!({ "type": kind, "token": code })))
+}
+
+/// À confirmer avec le code reçu : « confirm_email » (code par e-mail) ou « confirm_phone » (code sur WhatsApp).
+fn confirm_status(login: &Login) -> Value {
+    let status = if login.is_phone() { "confirm_phone" } else { "confirm_email" };
+    json!({ "status": status, "email": login.value() })
+}
+
+/// Utilisateur Supabase de la session (e-mail, numéro).
+fn get_user(token: &str) -> Result<Value, String> {
+    match request_method("GET", "/auth/v1/user", Some(token)).call() {
+        Ok(resp) => resp.into_json().map_err(|e| e.to_string()),
+        Err(ureq::Error::Status(code, resp)) => Err(error_message(code, &resp.into_json().unwrap_or(Value::Null))),
+        Err(_) => Err(NO_INTERNET.to_string()),
+    }
 }
 
 fn rpc_call(name: &str, token: &str, body: Value) -> Result<Value, String> {
@@ -123,13 +216,15 @@ fn session() -> Result<(String, String), String> {
     }
 }
 
-fn password_login_full(email: &str, password: &str) -> Result<String, (String, String)> {
-    let v = call_full(request("/auth/v1/token?grant_type=password", None), json!({ "email": email.trim(), "password": password }))?;
+/// Connexion par mot de passe, avec l'e-mail ou le numéro WhatsApp du compte.
+fn password_login_full(login: &str, password: &str) -> Result<String, (String, String)> {
+    let login = Login::parse(login).map_err(|m| (String::new(), m))?;
+    let v = call_full(request("/auth/v1/token?grant_type=password", None), login.body(json!({ "password": password })))?;
     v["access_token"].as_str().map(String::from).ok_or_else(|| (String::new(), "Réponse de connexion invalide.".to_string()))
 }
 
-fn password_login(email: &str, password: &str) -> Result<String, String> {
-    password_login_full(email, password).map_err(|(_, m)| m)
+fn password_login(login: &str, password: &str) -> Result<String, String> {
+    password_login_full(login, password).map_err(|(_, m)| m)
 }
 
 #[derive(Debug, Deserialize)]
@@ -170,7 +265,12 @@ impl StoreInput {
 
 #[derive(Debug, Deserialize)]
 pub struct SignupInput {
+    /// Compte créé avec un e-mail…
+    #[serde(default)]
     pub email: String,
+    /// … ou avec un numéro WhatsApp (le téléphone de la boutique est `store.phone`).
+    #[serde(default)]
+    pub whatsapp: String,
     pub password: String,
     /// Version des conditions d'utilisation et de la licence acceptée avant la création du compte.
     #[serde(default)]
@@ -184,47 +284,70 @@ pub fn options() -> Result<Value, String> {
     call(request("/rest/v1/rpc/gm_public_options", None), json!({}))
 }
 
-/// Création du compte, de la boutique (essai gratuit) et rattachement de ce PC.
+/// Création du compte (e-mail ou numéro WhatsApp), de la boutique (essai gratuit) et rattachement de ce PC.
 pub fn signup(state: &AppState, input: SignupInput) -> Result<Value, String> {
-    let email = valid_email(&input.email)?;
-    password_ok(&input.password)?;
-    input.store.validate()?;
-    let v = call(
-        request("/auth/v1/signup", None),
-        json!({
-            "email": email, "password": input.password,
-            "data": {
-                "owner_name": input.store.owner_name.trim(), "shop_name": input.store.name.trim(),
-                "terms_version": input.terms_version.as_deref().unwrap_or(crate::services::terms::TERMS_VERSION),
-                "terms_accepted_at": chrono::Utc::now().to_rfc3339(),
-            },
-        }),
-    )?;
-    let Some(token) = v["access_token"].as_str() else {
-        // Confirmation des e-mails activée dans Supabase : un code part à l'adresse ; la boutique sera créée
-        // quand il sera tapé (signup_confirm).
-        return Ok(json!({ "status": "confirm_email", "email": email }));
+    let login = if input.whatsapp.trim().is_empty() {
+        Login::Email(valid_email(&input.email)?)
+    } else {
+        Login::Phone(valid_phone(&input.whatsapp)?)
     };
-    remember(&email, token);
-    let store = rpc_call("gm_register_store", token, json!({ "p": input.store.to_json() }))?;
-    link(state, store["code"].as_str().unwrap_or_default())
-}
-
-/// Inscription confirmée avec le code reçu par e-mail : la boutique est créée, puis ce PC y est rattaché.
-pub fn signup_confirm(state: &AppState, email: &str, code: &str, store: StoreInput) -> Result<Value, String> {
+    password_ok(&input.password)?;
+    let mut store = input.store;
     store.validate()?;
-    let email = valid_email(email)?;
-    let v = verify_code("signup", &email, code)?;
-    let token = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
-    remember(&email, token);
+    // Compte WhatsApp : le téléphone de la boutique, s'il manque, est ce numéro.
+    if let Login::Phone(p) = &login {
+        if store.phone.as_deref().unwrap_or("").trim().is_empty() {
+            store.phone = Some(p.clone());
+        }
+    }
+    let data = json!({
+        "owner_name": store.owner_name.trim(), "shop_name": store.name.trim(),
+        "terms_version": input.terms_version.as_deref().unwrap_or(crate::services::terms::TERMS_VERSION),
+        "terms_accepted_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let v = call(request("/auth/v1/signup", None), login.body(json!({ "password": input.password, "data": data })))?;
+    let Some(token) = v["access_token"].as_str() else {
+        // Confirmation activée dans Supabase : un code part (e-mail ou WhatsApp) ; la boutique sera créée
+        // quand il sera tapé (signup_confirm).
+        return Ok(confirm_status(&login));
+    };
+    remember(login.value(), token);
     let created = rpc_call("gm_register_store", token, json!({ "p": store.to_json() }))?;
     link(state, created["code"].as_str().unwrap_or_default())
 }
 
-/// Nouveau code d'inscription (le premier n'est pas arrivé, ou a expiré).
-pub fn signup_resend(email: &str) -> Result<Value, String> {
-    let email = valid_email(email)?;
-    call(request("/auth/v1/resend", None), json!({ "type": "signup", "email": email }))?;
+/// Inscription confirmée avec le code reçu (e-mail ou WhatsApp) : la boutique est créée, puis ce PC y est rattaché.
+pub fn signup_confirm(state: &AppState, login: &str, code: &str, store: StoreInput) -> Result<Value, String> {
+    store.validate()?;
+    let login = Login::parse(login)?;
+    let v = verify_code(login.code_kind("signup"), &login, code)?;
+    let token = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
+    remember(login.value(), token);
+    let created = rpc_call("gm_register_store", token, json!({ "p": store.to_json() }))?;
+    link(state, created["code"].as_str().unwrap_or_default())
+}
+
+/// Nouveau code d'inscription (le premier n'est pas arrivé, ou a expiré), par e-mail ou sur WhatsApp.
+pub fn signup_resend(login: &str) -> Result<Value, String> {
+    let login = Login::parse(login)?;
+    call(request("/auth/v1/resend", None), login.body(json!({ "type": login.code_kind("signup") })))?;
+    Ok(json!({ "sent": true }))
+}
+
+/// Connexion par un code reçu sur WhatsApp, sans mot de passe : Supabase envoie le code au numéro du compte
+/// (aucun compte n'est créé ainsi). Le code se vérifie ensuite comme celui de l'inscription.
+pub fn otp_send(login: &str) -> Result<Value, String> {
+    let login = Login::parse(login)?;
+    if !login.is_phone() {
+        return Err("Le code sur WhatsApp demande le numéro du compte : tapez-le à la place de l'e-mail.".into());
+    }
+    call_full(request("/auth/v1/otp", None), login.body(json!({ "create_user": false }))).map_err(|(code, m)| {
+        if code == "otp_disabled" || code == "user_not_found" {
+            "Aucun compte avec ce numéro WhatsApp : créez d'abord le compte.".to_string()
+        } else {
+            m
+        }
+    })?;
     Ok(json!({ "sent": true }))
 }
 
@@ -251,11 +374,19 @@ pub fn password_ok(password: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// « Mot de passe oublié » : Supabase envoie un code à l'adresse du compte (rien n'indique si l'adresse
-/// existe : même réponse dans tous les cas).
-pub fn password_recover(email: &str) -> Result<Value, String> {
-    let email = valid_email(email)?;
-    call(request("/auth/v1/recover", None), json!({ "email": email }))?;
+/// « Mot de passe oublié » : Supabase envoie un code à l'adresse du compte, ou sur WhatsApp au numéro du compte
+/// (rien n'indique si le compte existe : même réponse dans tous les cas).
+pub fn password_recover(login: &str) -> Result<Value, String> {
+    match Login::parse(login)? {
+        Login::Email(email) => {
+            call(request("/auth/v1/recover", None), json!({ "email": email }))?;
+        }
+        phone => match call_full(request("/auth/v1/otp", None), phone.body(json!({ "create_user": false }))) {
+            Ok(_) => {}
+            Err((code, _)) if code == "otp_disabled" || code == "user_not_found" => {}
+            Err((_, m)) => return Err(m),
+        },
+    }
     Ok(json!({ "sent": true }))
 }
 
@@ -263,68 +394,69 @@ fn set_password(access: &str, password: &str) -> Result<(), String> {
     call(request_method("PUT", "/auth/v1/user", Some(access)), json!({ "password": password })).map(|_| ())
 }
 
-/// Code reçu par e-mail et nouveau mot de passe. `login` : la propriétaire reste connectée sur cet appareil
-/// (Espace propriétaire).
-pub fn password_reset(dir: &std::path::Path, email: &str, code: &str, password: &str, login: bool) -> Result<Value, String> {
+/// Code reçu (e-mail ou WhatsApp) et nouveau mot de passe. `stay` : la propriétaire reste connectée sur cet
+/// appareil (Espace propriétaire).
+pub fn password_reset(dir: &std::path::Path, login: &str, code: &str, password: &str, stay: bool) -> Result<Value, String> {
     password_ok(password)?;
-    let email = email.trim().to_lowercase();
-    let v = verify_code("recovery", &email, code)?;
+    let login = Login::parse(login)?;
+    let v = verify_code(login.code_kind("recovery"), &login, code)?;
     let access = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
     set_password(access, password)?;
-    if login {
-        owner_login(dir, &email, password)?;
+    if stay {
+        owner_login(dir, login.value(), password)?;
     }
     Ok(json!({ "ok": true }))
 }
 
 /// Changer le mot de passe : l'actuel est vérifié d'abord. L'Espace propriétaire de cet appareil reste connecté.
-pub fn password_change(dir: &std::path::Path, email: &str, current: &str, password: &str) -> Result<Value, String> {
+pub fn password_change(dir: &std::path::Path, login: &str, current: &str, password: &str) -> Result<Value, String> {
     password_ok(password)?;
     if current == password {
         return Err("Le nouveau mot de passe doit être différent de l'actuel.".into());
     }
-    let email = email.trim().to_lowercase();
-    let access = password_login(&email, current)?;
+    let login = Login::parse(login)?;
+    let access = password_login(login.value(), current)?;
     set_password(&access, password)?;
     // Supabase peut fermer les autres sessions du compte : on reconnecte celle de cet appareil.
-    if owner_saved(dir).is_some_and(|(e, _)| e == email) {
-        let _ = owner_login(dir, &email, password);
+    if owner_saved(dir).is_some_and(|(e, _)| e == login.value()) {
+        let _ = owner_login(dir, login.value(), password);
     }
     Ok(json!({ "ok": true }))
 }
 
-/// Connexion : retourne les boutiques du compte (à rattacher, ou à créer). Adresse pas encore confirmée :
-/// `status` « confirm_email » (le code reçu à l'inscription se tape alors, voir login_confirm).
-pub fn login(email: &str, password: &str) -> Result<Value, String> {
-    let email = email.trim().to_lowercase();
-    let token = match password_login_full(&email, password) {
+/// Connexion (e-mail ou numéro WhatsApp) : retourne les boutiques du compte (à rattacher, ou à créer). Compte
+/// pas encore confirmé : `status` « confirm_email » ou « confirm_phone » (le code reçu se tape alors, voir
+/// login_confirm).
+pub fn login(login: &str, password: &str) -> Result<Value, String> {
+    let login = Login::parse(login)?;
+    let token = match password_login_full(login.value(), password) {
         Ok(t) => t,
-        Err((code, _)) if code == "email_not_confirmed" => return Ok(json!({ "status": "confirm_email", "email": email })),
+        Err((code, _)) if code == "email_not_confirmed" || code == "phone_not_confirmed" => return Ok(confirm_status(&login)),
         Err((_, m)) => return Err(m),
     };
-    remember(&email, &token);
+    remember(login.value(), &token);
     let stores = rpc_call("gm_my_stores", &token, json!({}))?;
-    Ok(json!({ "status": "ok", "email": email, "stores": stores }))
+    Ok(json!({ "status": "ok", "email": login.value(), "stores": stores }))
 }
 
-/// Adresse confirmée à la connexion avec le code reçu à l'inscription : boutiques du compte.
-pub fn login_confirm(email: &str, code: &str) -> Result<Value, String> {
-    let email = valid_email(email)?;
-    let v = verify_code("signup", &email, code)?;
+/// Code reçu (confirmation de l'inscription, ou connexion par code WhatsApp) : boutiques du compte.
+pub fn login_confirm(login: &str, code: &str) -> Result<Value, String> {
+    let login = Login::parse(login)?;
+    let v = verify_code(login.code_kind("signup"), &login, code)?;
     let token = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
-    remember(&email, token);
+    remember(login.value(), token);
     let stores = rpc_call("gm_my_stores", token, json!({}))?;
-    Ok(json!({ "status": "ok", "email": email, "stores": stores }))
+    Ok(json!({ "status": "ok", "email": login.value(), "stores": stores }))
 }
 
-/// Vérifie que l'e-mail et le mot de passe sont ceux du compte de la boutique reliée à ce PC
-/// (autoriser un téléphone, refaire le PIN administrateur oublié). Le jeton n'est pas gardé.
-pub fn verify_owner(email: &str, password: &str) -> Result<(), String> {
+/// Vérifie que l'identifiant (e-mail ou numéro WhatsApp) et le mot de passe sont ceux du compte de la boutique
+/// reliée à ce PC (autoriser un téléphone, refaire le PIN administrateur oublié). Le jeton n'est pas gardé.
+pub fn verify_owner(login: &str, password: &str) -> Result<(), String> {
     let store_code = license::account().store_code;
     if store_code.is_empty() {
         return Err("Ce PC n'est relié à aucun compte boutique (menu Abonnement & licence).".into());
     }
-    let token = password_login(&email.trim().to_lowercase(), password)?;
+    let token = password_login(login, password)?;
     let stores = rpc_call("gm_my_stores", &token, json!({}))?;
     let owns = stores.as_array().is_some_and(|list| list.iter().any(|s| s["code"].as_str() == Some(store_code.as_str())));
     if !owns {
@@ -340,7 +472,7 @@ pub fn request_tunnel(email: &str, password: &str, port: u16) -> Result<(String,
     if store_code.is_empty() {
         return Err("Ce PC n'est relié à aucun compte boutique (menu Abonnement & licence).".into());
     }
-    let token = password_login(&email.trim().to_lowercase(), password)?;
+    let token = password_login(email, password)?;
     let v = call(request("/functions/v1/gm-tunnel", Some(&token)), json!({ "store_code": store_code, "port": port }))?;
     match (v["status"].as_str(), v["url"].as_str(), v["token"].as_str()) {
         (Some("ok"), Some(url), Some(t)) if url.starts_with("https://") && !t.is_empty() => Ok((url.to_string(), t.to_string())),
@@ -537,13 +669,13 @@ fn owner_token(dir: &std::path::Path) -> Result<String, String> {
     Ok(access)
 }
 
-/// Connexion de la propriétaire, puis ses boutiques. Adresse pas encore confirmée : `status`
-/// « confirm_email » (le code reçu à l'inscription se tape alors, voir owner_confirm).
-pub fn owner_login(dir: &std::path::Path, email: &str, password: &str) -> Result<Value, String> {
-    let email = email.trim().to_lowercase();
-    match call_full(request("/auth/v1/token?grant_type=password", None), json!({ "email": email, "password": password })) {
-        Ok(v) => owner_start(dir, &email, &v),
-        Err((code, _)) if code == "email_not_confirmed" => Ok(json!({ "status": "confirm_email", "email": email })),
+/// Connexion de la propriétaire (e-mail ou numéro WhatsApp), puis ses boutiques. Compte pas encore confirmé :
+/// `status` « confirm_email » ou « confirm_phone » (le code reçu se tape alors, voir owner_confirm).
+pub fn owner_login(dir: &std::path::Path, login: &str, password: &str) -> Result<Value, String> {
+    let login = Login::parse(login)?;
+    match call_full(request("/auth/v1/token?grant_type=password", None), login.body(json!({ "password": password }))) {
+        Ok(v) => owner_start(dir, login.value(), &v),
+        Err((code, _)) if code == "email_not_confirmed" || code == "phone_not_confirmed" => Ok(confirm_status(&login)),
         Err((_, m)) => Err(m),
     }
 }
@@ -557,11 +689,12 @@ fn owner_start(dir: &std::path::Path, email: &str, v: &Value) -> Result<Value, S
     owner_stores(dir)
 }
 
-/// Espace propriétaire : adresse confirmée avec le code reçu à l'inscription, et la propriétaire connectée.
-pub fn owner_confirm(dir: &std::path::Path, email: &str, code: &str) -> Result<Value, String> {
-    let email = valid_email(email)?;
-    let v = verify_code("signup", &email, code)?;
-    owner_start(dir, &email, &v)
+/// Espace propriétaire : code reçu (confirmation de l'inscription, ou connexion par code WhatsApp), et la
+/// propriétaire connectée.
+pub fn owner_confirm(dir: &std::path::Path, login: &str, code: &str) -> Result<Value, String> {
+    let login = Login::parse(login)?;
+    let v = verify_code(login.code_kind("signup"), &login, code)?;
+    owner_start(dir, login.value(), &v)
 }
 
 /// « Se déconnecter » : la session et la liste gardée sont effacées de l'appareil.
@@ -650,13 +783,14 @@ pub fn owner_declare(dir: &std::path::Path, store_code: &str, plan: &str, months
 // de Supabase), l'adresse change tout de suite. Les boutiques du compte suivent (déclencheur gm_account_email).
 
 /// Demande de changement : `done` si l'adresse a déjà changé, sinon un code est parti à la nouvelle adresse.
-pub fn email_change_start(dir: &std::path::Path, email: &str, password: &str, new_email: &str) -> Result<Value, String> {
-    let old = email.trim().to_lowercase();
+/// `login` : l'identifiant avec lequel la propriétaire se connecte (un compte WhatsApp peut ainsi ajouter un e-mail).
+pub fn email_change_start(dir: &std::path::Path, login: &str, password: &str, new_email: &str) -> Result<Value, String> {
+    let old = Login::parse(login)?;
     let new = valid_email(new_email)?;
-    if new == old {
+    if new == old.value() {
         return Err("La nouvelle adresse est la même que l'actuelle.".into());
     }
-    let access = password_login(&old, password)?;
+    let access = password_login(old.value(), password)?;
     let v = call_full(request_method("PUT", "/auth/v1/user", Some(&access)), json!({ "email": new })).map_err(|(code, m)| {
         if code == "email_exists" || code == "user_already_exists" {
             "Cette adresse e-mail est déjà celle d'un autre compte.".to_string()
@@ -664,28 +798,79 @@ pub fn email_change_start(dir: &std::path::Path, email: &str, password: &str, ne
             m
         }
     })?;
-    if v["email"].as_str().is_some_and(|e| e.eq_ignore_ascii_case(&new)) {
-        email_changed(dir, &old, &new, None);
-        return Ok(json!({ "done": true, "email": new, "old_email": old }));
+    let done = v["email"].as_str().is_some_and(|e| e.eq_ignore_ascii_case(&new));
+    if done {
+        login_changed(dir, old.value(), &new, None);
     }
-    Ok(json!({ "done": false, "email": new, "old_email": old }))
+    Ok(json!({ "done": done, "email": new, "old_email": old.value(), "old_login": old.value(), "new_login": new }))
 }
 
 /// Code reçu à la nouvelle adresse (`which` « new »), ou à l'ancienne (« old ») quand Supabase en demande deux.
 pub fn email_change_confirm(dir: &std::path::Path, old: &str, new: &str, code: &str, which: &str) -> Result<Value, String> {
-    let old = old.trim().to_lowercase();
+    let old = Login::parse(old)?;
     let new = valid_email(new)?;
-    let v = verify_code("email_change", if which == "old" { &old } else { &new }, code)?;
-    if v["access_token"].is_string() {
-        email_changed(dir, &old, &new, v["refresh_token"].as_str());
-        return Ok(json!({ "done": true, "email": new, "old_email": old }));
+    let target = if which == "old" { old.clone() } else { Login::Email(new.clone()) };
+    let v = verify_code("email_change", &target, code)?;
+    let done = v["access_token"].is_string();
+    if done {
+        login_changed(dir, old.value(), &new, v["refresh_token"].as_str());
     }
-    // « Secure email change » : le code envoyé à l'autre adresse est aussi demandé.
-    Ok(json!({ "done": false, "other": true, "email": new, "old_email": old }))
+    // Pas encore fait : « Secure email change », le code envoyé à l'autre adresse est aussi demandé.
+    Ok(json!({ "done": done, "other": !done, "email": new, "old_email": old.value(), "old_login": old.value(), "new_login": new }))
 }
 
-/// Nouvelle adresse : la connexion gardée de l'Espace propriétaire et celle du compte sur ce PC la suivent.
-fn email_changed(dir: &std::path::Path, old: &str, new: &str, refresh: Option<&str>) {
+// ───────────────────────────── Numéro WhatsApp du compte ─────────────────────────────
+// Ajouter ou changer le numéro : le mot de passe est vérifié, puis un code part sur WhatsApp au nouveau numéro
+// (fonction gm-whatsapp). Le compte s'ouvre ensuite aussi avec ce numéro.
+
+/// Demande d'ajout ou de changement : `done` si Supabase l'a fait tout de suite (numéros sans confirmation).
+pub fn phone_change_start(dir: &std::path::Path, login: &str, password: &str, new_phone: &str) -> Result<Value, String> {
+    let old = Login::parse(login)?;
+    let new = valid_phone(new_phone)?;
+    if new == old.value() {
+        return Err("Ce numéro est déjà celui du compte.".into());
+    }
+    let access = password_login(old.value(), password)?;
+    let v = call_full(request_method("PUT", "/auth/v1/user", Some(&access)), json!({ "phone": new })).map_err(|(code, m)| {
+        if code == "phone_exists" || code == "user_already_exists" {
+            "Ce numéro WhatsApp est déjà celui d'un autre compte.".to_string()
+        } else {
+            m
+        }
+    })?;
+    let done = v["phone"].as_str().is_some_and(|p| p.trim_start_matches('+') == new.trim_start_matches('+'));
+    if done {
+        login_changed(dir, old.value(), &new, None);
+    }
+    Ok(json!({ "done": done, "phone": new, "old_login": old.value(), "new_login": new }))
+}
+
+/// Code reçu sur WhatsApp au nouveau numéro.
+pub fn phone_change_confirm(dir: &std::path::Path, old: &str, new_phone: &str, code: &str) -> Result<Value, String> {
+    let old = Login::parse(old)?;
+    let new = valid_phone(new_phone)?;
+    let v = verify_code("phone_change", &Login::Phone(new.clone()), code)?;
+    if !v["access_token"].is_string() {
+        return Err(CODE_REFUSED.into());
+    }
+    login_changed(dir, old.value(), &new, v["refresh_token"].as_str());
+    Ok(json!({ "done": true, "phone": new, "old_login": old.value(), "new_login": new }))
+}
+
+/// E-mail et numéro WhatsApp du compte (Mon compte).
+pub fn account_info(dir: &std::path::Path, login: &str, password: &str) -> Result<Value, String> {
+    let token = account_token(dir, login, password)?;
+    let u = get_user(&token)?;
+    let phone = u["phone"].as_str().map(|p| p.trim_start_matches('+')).filter(|p| !p.is_empty()).map(|p| format!("+{p}"));
+    Ok(json!({ "email": u["email"].as_str().unwrap_or_default(), "phone": phone.unwrap_or_default() }))
+}
+
+/// Nouvel identifiant : la connexion gardée de l'Espace propriétaire et celle du compte sur ce PC suivent, quand
+/// elles utilisaient l'ancien (un e-mail remplace un e-mail, un numéro remplace un numéro).
+fn login_changed(dir: &std::path::Path, old: &str, new: &str, refresh: Option<&str>) {
+    if old.contains('@') != new.contains('@') {
+        return;
+    }
     if let Some((saved, saved_refresh)) = owner_saved(dir) {
         if saved == old {
             owner_save(dir, new, refresh.unwrap_or(&saved_refresh));
@@ -698,13 +883,17 @@ fn email_changed(dir: &std::path::Path, old: &str, new: &str, refresh: Option<&s
     }
 }
 
-/// Après une commande « owner » réussie : la nouvelle adresse du compte est reportée sur la boutique de ce PC
-/// (Abonnement & licence).
+/// Après une commande « owner » réussie : le nouvel identifiant du compte (e-mail ou numéro) est reporté sur la
+/// boutique de ce PC (Abonnement & licence), si c'est l'ancien qui y était enregistré.
 pub fn after_owner_action(conn: &rusqlite::Connection, action: &str, v: &Value) {
-    if !matches!(action, "email_change_start" | "email_change_confirm") || v["done"].as_bool() != Some(true) {
+    let changes = matches!(action, "email_change_start" | "email_change_confirm" | "phone_change_start" | "phone_change_confirm");
+    if !changes || v["done"].as_bool() != Some(true) {
         return;
     }
-    let (Some(old), Some(new)) = (v["old_email"].as_str(), v["email"].as_str()) else { return };
+    let (Some(old), Some(new)) = (v["old_login"].as_str(), v["new_login"].as_str()) else { return };
+    if old.contains('@') != new.contains('@') {
+        return;
+    }
     let account = license::account();
     if account.email.eq_ignore_ascii_case(old) {
         license::set_account(conn, new, &account.store_code, &account.store_name);
@@ -716,11 +905,11 @@ pub fn after_owner_action(conn: &rusqlite::Connection, action: &str, v: &Value) 
 // Le nom de la boutique, le pays et le type restent ceux de l'inscription.
 
 /// Jeton du compte : avec le mot de passe (PC), ou la connexion gardée de l'Espace propriétaire (téléphone).
-fn account_token(dir: &std::path::Path, email: &str, password: &str) -> Result<String, String> {
+fn account_token(dir: &std::path::Path, login: &str, password: &str) -> Result<String, String> {
     if password.is_empty() {
         owner_token(dir)
     } else {
-        password_login(&email.trim().to_lowercase(), password)
+        password_login(login, password)
     }
 }
 
@@ -785,6 +974,10 @@ pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Va
         "change_password" => password_change(dir, &text("email"), &text("current"), &text("password")),
         "confirm_signup" => owner_confirm(dir, &text("email"), &text("code")),
         "resend_signup" => signup_resend(&text("email")),
+        "otp_send" => otp_send(&text("email")),
+        "account" => account_info(dir, &text("email"), &text("password")),
+        "phone_change_start" => phone_change_start(dir, &text("email"), &text("password"), &text("new_phone")),
+        "phone_change_confirm" => phone_change_confirm(dir, &text("old_login"), &text("new_phone"), &text("code")),
         "email_change_start" => email_change_start(dir, &text("email"), &text("password"), &text("new_email")),
         "email_change_confirm" => email_change_confirm(dir, &text("old_email"), &text("new_email"), &text("code"), &text("which")),
         "store_info" => store_info(dir, &text("store_code"), &text("email"), &text("password")),
@@ -855,7 +1048,41 @@ mod tests {
             assert!(valid_email(bad).is_err(), "{bad}");
         }
         // Code trop court : refusé avant tout appel à Supabase.
-        assert_eq!(verify_code("signup", "awa@exemple.ml", "12 34").unwrap_err(), "Tapez le code reçu par e-mail (6 chiffres).");
+        let awa = Login::Email("awa@exemple.ml".into());
+        assert_eq!(verify_code("signup", &awa, "12 34").unwrap_err(), "Tapez le code reçu (6 chiffres).");
+    }
+
+    #[test]
+    fn numeros_whatsapp() {
+        for (typed, e164) in [
+            ("+223 76 59 36 76", "+22376593676"),
+            ("76 59 36 76", "+22376593676"),
+            ("76-59-36-76", "+22376593676"),
+            ("0022376593676", "+22376593676"),
+            ("22376593676", "+22376593676"),
+            ("+33 6 12 34 56 78", "+33612345678"),
+            ("+221 77 123 45 67", "+221771234567"),
+        ] {
+            assert_eq!(valid_phone(typed).unwrap(), e164, "{typed}");
+        }
+        // Trop court, lettres, numéro local d'un autre pays sans indicatif, indicatif commençant par 0.
+        for bad in ["", "123", "+223 76 AB 36 76", "77 123 45 67", "+0 123 456 789", "+1234567890123456"] {
+            assert!(valid_phone(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn identifiant_email_ou_numero() {
+        let email = Login::parse(" Awa@Exemple.ML").unwrap();
+        assert_eq!(email, Login::Email("awa@exemple.ml".into()));
+        assert_eq!(email.body(json!({ "password": "x" })), json!({ "email": "awa@exemple.ml", "password": "x" }));
+        assert_eq!(email.code_kind("signup"), "signup");
+        let phone = Login::parse("76 59 36 76").unwrap();
+        assert_eq!(phone, Login::Phone("+22376593676".into()));
+        assert_eq!(phone.body(json!({ "type": "sms" })), json!({ "phone": "+22376593676", "type": "sms" }));
+        assert_eq!(phone.code_kind("recovery"), "sms");
+        assert_eq!(confirm_status(&phone)["status"], "confirm_phone");
+        assert_eq!(confirm_status(&email)["status"], "confirm_email");
     }
 
     #[test]

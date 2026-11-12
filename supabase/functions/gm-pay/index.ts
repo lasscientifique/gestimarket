@@ -102,7 +102,8 @@ async function start(req: Request): Promise<Response> {
     override_backoffice_post_url: `${SUPABASE_URL}/functions/v1/gm-pay`,
     bill_to_forename: owner[0] ?? "Client",
     bill_to_surname: owner.slice(1).join(" ") || owner[0] || "GestiMarket",
-    bill_to_email: clean(s.store?.email, 100),
+    // Compte créé avec un numéro WhatsApp (sans e-mail) : Cybersource exige une adresse, celle d'Eden Dev.
+    bill_to_email: clean(s.store?.email, 100) || "no-reply@gestimarket.shop",
     bill_to_address_line1: clean(s.store?.address, 60) || "-",
     bill_to_address_city: clean(s.store?.city, 50) || "-",
     bill_to_address_country: /^[A-Z]{2}$/.test(country) && country !== "XX" ? country : "ML",

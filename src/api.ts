@@ -380,7 +380,9 @@ export const api = {
   licenseSync: () => call<LicenseStatus>("license_sync"),
   licenseImport: (text: string) => call<LicenseStatus>("license_import", { text }),
   accountOptions: () => call<AccountOptions>("account_options"),
-  accountSignup: (input: StoreInput & { email: string; password: string; terms_version?: string }) => call<AccountLinkResult>("account_signup", { input }),
+  /** Compte avec un e-mail, ou avec un numéro WhatsApp (`whatsapp`, au format international). */
+  accountSignup: (input: StoreInput & { email: string; whatsapp?: string; password: string; terms_version?: string }) =>
+    call<AccountLinkResult>("account_signup", { input }),
   // Conditions d'utilisation, licence et données personnelles
   termsStatus: () => call<TermsStatus>("terms_status"),
   acceptTerms: (version: string) => call<TermsStatus>("accept_terms", { version }),
@@ -389,6 +391,8 @@ export const api = {
   accountConfirmSignup: (email: string, code: string, input: StoreInput) => call<AccountLinkResult>("account_confirm_signup", { email, code, input }),
   accountConfirmLogin: (email: string, code: string) => call<AccountLoginResult>("account_confirm_login", { email, code }),
   accountResendCode: (email: string) => call<{ sent: boolean }>("account_resend_code", { email }),
+  /** Connexion par un code reçu sur WhatsApp (à taper ensuite avec accountConfirmLogin). */
+  accountOtpSend: (phone: string) => call<{ sent: boolean }>("account_otp_send", { email: phone }),
   accountCreateStore: (input: StoreInput) => call<AccountLinkResult>("account_create_store", { input }),
   accountLink: (store_code: string) => call<AccountLinkResult>("account_link", { store_code }),
   accountPayments: () => call<SubscriptionPayment[]>("account_payments"),

@@ -3,6 +3,7 @@ import { KeyRound, MailCheck } from "lucide-react";
 import { errorMessage, useApp } from "../context/AppContext";
 import { owner } from "../lib/owner";
 import { tl } from "../lib/i18n";
+import { loginId, showPhone } from "../lib/phone";
 import { Field, Modal } from "./ui";
 
 /** Même règle que le moteur (account.rs) : 8 caractères au moins, lettres et chiffres. */
@@ -29,7 +30,7 @@ function NewPassword({ value, confirm, onValue, onConfirm }: { value: string; co
  * « Mot de passe oublié » du compte Eden Dev : un code est envoyé par e-mail, puis on choisit un nouveau mot
  * de passe. `login` : l'Espace propriétaire reste ensuite connecté sur cet appareil. Internet nécessaire.
  */
-export function ForgotPasswordModal({ email: initial = "", login = false, onClose, onDone }: { email?: string; login?: boolean; onClose: () => void; onDone?: () => void }) {
+export function ForgotPasswordModal({ email: initial = "", login: stay = false, onClose, onDone }: { email?: string; login?: boolean; onClose: () => void; onDone?: () => void }) {
   const { toast } = useApp();
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState(initial);
@@ -51,10 +52,14 @@ export function ForgotPasswordModal({ email: initial = "", login = false, onClos
     }
   };
 
+  // E-mail, ou numéro WhatsApp tapé avec ou sans indicatif : le code part sur WhatsApp.
+  const login = loginId(email);
+  const byWhatsapp = !login.includes("@");
+
   const send = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      await owner.recover(email);
+      await owner.recover(login);
       setStep("code");
     });
   };
@@ -65,7 +70,7 @@ export function ForgotPasswordModal({ email: initial = "", login = false, onClos
     if (problem) return setError(problem);
     if (password !== confirm) return setError(tl("Les mots de passe ne correspondent pas."));
     void run(async () => {
-      await owner.resetPassword(email, code, password, login);
+      await owner.resetPassword(login, code, password, stay);
       toast.success(tl("Nouveau mot de passe enregistré."));
       onDone?.();
       onClose();
@@ -76,17 +81,22 @@ export function ForgotPasswordModal({ email: initial = "", login = false, onClos
     <Modal title={<><KeyRound size={18} />  {tl("Mot de passe oublié")}</>} onClose={onClose} width={480}>
       {step === "email" ? (
         <form onSubmit={send} className="stack">
-          <p className="muted">{tl("Tapez l'e-mail du compte de la boutique : Eden Dev y envoie un code pour choisir un nouveau mot de passe. Internet est nécessaire.")}</p>
-          <Field label={tl("E-mail")}>
-            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+          <p className="muted">{tl("Tapez l'e-mail ou le numéro WhatsApp du compte de la boutique : Eden Dev y envoie un code pour choisir un nouveau mot de passe. Internet est nécessaire.")}</p>
+          <Field label={tl("E-mail ou numéro WhatsApp")}>
+            <input autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
           </Field>
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || !email}>{busy ? tl("Envoi…") : tl("Recevoir le code")}</button>
         </form>
       ) : (
         <form onSubmit={reset} className="stack">
-          <div className="alert alert-info"><MailCheck size={16} />  {tl("Si un compte existe à l'adresse {0}, un code vient d'y être envoyé (regardez aussi les courriers indésirables).", [email])}</div>
-          <Field label={tl("Code reçu par e-mail")}>
+          <div className="alert alert-info">
+            <MailCheck size={16} />{" "}
+            {byWhatsapp
+              ? tl("Si un compte existe avec le numéro {0}, un code vient d'être envoyé sur WhatsApp.", [showPhone(login)])
+              : tl("Si un compte existe à l'adresse {0}, un code vient d'y être envoyé (regardez aussi les courriers indésirables).", [login])}
+          </div>
+          <Field label={byWhatsapp ? tl("Code reçu sur WhatsApp") : tl("Code reçu par e-mail")}>
             <input className="mono" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))} required autoFocus />
           </Field>
           <NewPassword value={password} confirm={confirm} onValue={setPassword} onConfirm={setConfirm} />
@@ -118,7 +128,7 @@ export function ChangePasswordModal({ email: initial = "", onClose }: { email?: 
     setBusy(true);
     setError("");
     try {
-      await owner.changePassword(email, current, password);
+      await owner.changePassword(loginId(email), current, password);
       toast.success(tl("Mot de passe du compte changé."));
       onClose();
     } catch (err) {
@@ -132,8 +142,8 @@ export function ChangePasswordModal({ email: initial = "", onClose }: { email?: 
   return (
     <Modal title={<><KeyRound size={18} />  {tl("Changer le mot de passe du compte")}</>} onClose={onClose} width={480}>
       <form onSubmit={submit} className="stack">
-        <Field label={tl("E-mail")}>
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required readOnly={!!initial} />
+        <Field label={tl("E-mail ou numéro WhatsApp")}>
+          <input autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required readOnly={!!initial} />
         </Field>
         <Field label={tl("Mot de passe actuel")}>
           <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required autoFocus />

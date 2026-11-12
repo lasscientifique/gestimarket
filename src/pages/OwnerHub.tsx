@@ -7,7 +7,8 @@ import {
 import { useApp } from "../context/AppContext";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { ChangePasswordModal, ForgotPasswordModal } from "../components/AccountPassword";
-import { ChangeEmailModal, ConfirmEmailCode, StoreInfoModal } from "../components/AccountProfile";
+import { ChangeEmailModal, ChangePhoneModal, ConfirmCode, StoreInfoModal } from "../components/AccountProfile";
+import { loginId, looksLikePhone, showPhone } from "../lib/phone";
 import { BrandLogo } from "../components/Brand";
 import { Badge, Field, Modal } from "../components/ui";
 import { isConfirm, owner, pingShop, sameVersion, type OwnerPayment, type OwnerStore, type OwnerStores } from "../lib/owner";
@@ -44,6 +45,21 @@ export default function OwnerHubPage() {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  // E-mail et numéro WhatsApp du compte (Mon compte), lus à l'ouverture.
+  const [ids, setIds] = useState<{ email: string; phone: string } | null>(null);
+  // Connexion par WhatsApp ouverte par Eden Dev (gm_config.whatsapp_enabled).
+  const [wa, setWa] = useState(false);
+
+  useEffect(() => {
+    if (isTauri) owner.options().then((o) => setWa(!!o.whatsapp)).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    setIds(null);
+    owner.account().then(setIds).catch(() => setIds({ email: data?.email.includes("@") ? data.email : "", phone: "" }));
+  }, [accountOpen, data?.email]);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -93,7 +109,7 @@ export default function OwnerHubPage() {
         <BrandLogo size={30} />
         <div className="owner-title">
           <strong>{tl("Espace propriétaire")}</strong>
-          {data?.email && <span>{data.email}</span>}
+          {data?.email && <span>{data.email.includes("@") ? data.email : showPhone(data.email)}</span>}
         </div>
         <LanguageSwitch />
       </header>
@@ -109,9 +125,20 @@ export default function OwnerHubPage() {
       )}
       {accountOpen && (
         <Modal title={<><UserCog size={18} />  {tl("Mon compte")}</>} onClose={() => setAccountOpen(false)} width={440}>
-          <div className="stack">
-            <p className="muted">{tl("Compte Eden Dev de vos boutiques :")} <strong>{data?.email}</strong></p>
-            <button className="btn btn-block" onClick={() => { setAccountOpen(false); setEmailOpen(true); }}><AtSign size={16} />  {tl("Changer l'e-mail du compte")}</button>
+          <div className="stack account-ids">
+            <p className="muted">{tl("Compte Eden Dev de vos boutiques :")}</p>
+            <div className="row-between">
+              <span><AtSign size={15} />  {ids === null ? "…" : ids.email || tl("aucun e-mail")}</span>
+              <button className="btn btn-sm" onClick={() => { setAccountOpen(false); setEmailOpen(true); }}>
+                {ids?.email ? tl("Changer") : tl("Ajouter")}</button>
+            </div>
+            {(wa || !!ids?.phone) && (
+              <div className="row-between">
+                <span><MessageCircle size={15} />  {ids === null ? "…" : ids.phone ? showPhone(ids.phone) : tl("aucun numéro WhatsApp")}</span>
+                <button className="btn btn-sm" onClick={() => { setAccountOpen(false); setPhoneOpen(true); }}>
+                  {ids?.phone ? tl("Changer") : tl("Ajouter")}</button>
+              </div>
+            )}
             <button className="btn btn-block" onClick={() => { setAccountOpen(false); setPasswordOpen(true); }}><KeyRound size={16} />  {tl("Changer le mot de passe")}</button>
             <p className="muted small">{tl("Téléphone, ville et adresse d'une boutique : bouton « Informations » dans « Mes boutiques ».")}</p>
           </div>
@@ -119,10 +146,11 @@ export default function OwnerHubPage() {
       )}
       {passwordOpen && <ChangePasswordModal email={data?.email} onClose={() => setPasswordOpen(false)} />}
       {emailOpen && data && <ChangeEmailModal email={data.email} onClose={() => setEmailOpen(false)} onDone={() => void load()} />}
+      {phoneOpen && data && <ChangePhoneModal login={data.email} onClose={() => setPhoneOpen(false)} onDone={() => void load()} />}
 
       <main className="owner-body">
         {connected === null && <div className="muted owner-loading">{tl("Chargement…")}</div>}
-        {connected === false && tab !== "contact" && <OwnerLogin onDone={(d) => { setData(d); setConnected(true); }} onContact={() => setTab("contact")} />}
+        {connected === false && tab !== "contact" && <OwnerLogin wa={wa} onDone={(d) => { setData(d); setConnected(true); }} onContact={() => setTab("contact")} />}
         {connected && tab === "shops" && (
           <ShopsTab data={data} busy={busy} reload={load} onSubscription={(code) => { setSelected(code); setTab("subscriptions"); }} />
         )}
@@ -136,35 +164,48 @@ export default function OwnerHubPage() {
   );
 }
 
-function OwnerLogin({ onDone, onContact }: { onDone: (d: OwnerStores) => void; onContact: () => void }) {
+function OwnerLogin({ wa, onDone, onContact }: { wa: boolean; onDone: (d: OwnerStores) => void; onContact: () => void }) {
   const { toast } = useApp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
-  // Adresse pas encore confirmée : le code reçu à l'inscription est demandé.
-  const [confirming, setConfirming] = useState<string | null>(null);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  // Code à taper : compte pas encore confirmé, ou connexion par code WhatsApp (`signIn`).
+  const [confirming, setConfirming] = useState<{ login: string; signIn: boolean } | null>(null);
+  // E-mail, ou numéro WhatsApp tapé avec ou sans indicatif (celui du Mali par défaut).
+  const login = loginId(email);
+  const attempt = async (f: () => Promise<void>) => {
     setBusy(true);
     try {
-      const r = await owner.login(email, password);
-      if (isConfirm(r)) setConfirming(r.email);
-      else onDone(r);
+      await f();
     } catch (err) {
       toast.error(err);
     } finally {
       setBusy(false);
     }
   };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void attempt(async () => {
+      const r = await owner.login(login, password);
+      if (isConfirm(r)) setConfirming({ login: r.email, signIn: false });
+      else onDone(r);
+    });
+  };
+  const byCode = () =>
+    attempt(async () => {
+      await owner.otpSend(login);
+      setConfirming({ login, signIn: true });
+    });
   if (confirming) {
     return (
       <div className="card owner-login">
-        <h2>{tl("Confirmez l'adresse de votre compte")}</h2>
-        <ConfirmEmailCode
-          email={confirming}
-          confirm={async (code) => onDone(await owner.confirmSignup(confirming, code))}
-          resend={() => owner.resendSignup(confirming)}
+        <h2>{confirming.signIn ? tl("Connexion par WhatsApp") : confirming.login.includes("@") ? tl("Confirmez l'adresse de votre compte") : tl("Confirmez le numéro de votre compte")}</h2>
+        <ConfirmCode
+          email={confirming.login}
+          signIn={confirming.signIn}
+          confirm={async (code) => onDone(await owner.confirmSignup(confirming.login, code))}
+          resend={() => (confirming.signIn ? owner.otpSend(confirming.login) : owner.resendSignup(confirming.login))}
           onBack={() => setConfirming(null)}
         />
       </div>
@@ -173,14 +214,22 @@ function OwnerLogin({ onDone, onContact }: { onDone: (d: OwnerStores) => void; o
   return (
     <form className="card owner-login" onSubmit={submit}>
       <h2>{tl("Connectez-vous avec le compte de votre boutique")}</h2>
-      <p className="muted">{tl("Le compte Eden Dev créé à l'installation de GestiMarket (e-mail et mot de passe). Internet est nécessaire pour cette étape.")}</p>
-      <Field label={tl("E-mail")}>
-        <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      <p className="muted">
+        {wa
+          ? tl("Le compte Eden Dev créé à l'installation de GestiMarket (e-mail ou numéro WhatsApp, et mot de passe). Internet est nécessaire pour cette étape.")
+          : tl("Le compte Eden Dev créé à l'installation de GestiMarket (e-mail et mot de passe). Internet est nécessaire pour cette étape.")}
+      </p>
+      <Field label={wa ? tl("E-mail ou numéro WhatsApp") : tl("E-mail")}>
+        <input type={wa ? "text" : "email"} autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
       </Field>
       <Field label={tl("Mot de passe")}>
         <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       </Field>
       <button className="btn btn-primary btn-block" disabled={busy}><LogIn size={16} />  {busy ? tl("Connexion…") : tl("Se connecter")}</button>
+      {wa && looksLikePhone(email) && (
+        <button type="button" className="btn btn-block wa-code-btn" disabled={busy} onClick={() => void byCode()}>
+          <MessageCircle size={16} />  {tl("Recevoir un code sur WhatsApp")}</button>
+      )}
       <button type="button" className="link-btn small" onClick={() => setForgot(true)}>{tl("Mot de passe oublié ?")}</button>
       {forgot && (
         <ForgotPasswordModal

@@ -1,14 +1,37 @@
 import { useState, type FormEvent } from "react";
-import { AtSign, MailCheck, Store } from "lucide-react";
+import { AtSign, MailCheck, MessageCircle, Store } from "lucide-react";
 import { errorMessage, useApp } from "../context/AppContext";
-import { owner, type EmailChange, type StoreInfo } from "../lib/owner";
+import { owner, type EmailChange, type PhoneChange, type StoreInfo } from "../lib/owner";
+import { DIAL_CODES, dialFor, showPhone, toE164, validPhone } from "../lib/phone";
+import { countryName } from "../lib/countries";
 import { tl } from "../lib/i18n";
 import { Field, Modal } from "./ui";
 
-/** Champ du code à 6 chiffres reçu par e-mail. */
-function CodeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** Numéro WhatsApp : indicatif du pays (celui de la boutique par défaut) et numéro, rendu au format international. */
+export function PhoneInput({ country, onChange, autoFocus }: { country?: string | null; onChange: (e164: string) => void; autoFocus?: boolean }) {
+  const [dial, setDial] = useState(() => dialFor(country));
+  const [local, setLocal] = useState("");
+  const update = (d: string, l: string) => {
+    setDial(d);
+    setLocal(l);
+    onChange(toE164(l, d));
+  };
   return (
-    <Field label={tl("Code reçu par e-mail")}>
+    <div className="phone-input">
+      <select value={dial} onChange={(e) => update(e.target.value, local)} aria-label={tl("Indicatif du pays")}>
+        {DIAL_CODES.map((c) => (
+          <option key={c.dial} value={c.dial}>+{c.dial} {countryName(c.code, c.code)}</option>
+        ))}
+      </select>
+      <input inputMode="tel" autoComplete="tel-national" value={local} onChange={(e) => update(dial, e.target.value)} placeholder="76 59 36 76" required autoFocus={autoFocus} />
+    </div>
+  );
+}
+
+/** Champ du code à 6 chiffres reçu par e-mail ou sur WhatsApp. */
+function CodeInput({ value, onChange, whatsapp = false }: { value: string; onChange: (v: string) => void; whatsapp?: boolean }) {
+  return (
+    <Field label={whatsapp ? tl("Code reçu sur WhatsApp") : tl("Code reçu par e-mail")}>
       <input
         className="mono"
         inputMode="numeric"
@@ -41,10 +64,19 @@ function useRun() {
 }
 
 /**
- * Adresse du compte à confirmer (réglage « Confirm email » de Supabase) : le code reçu à l'inscription,
- * et « Renvoyer le code » s'il n'est pas arrivé ou a expiré. Internet nécessaire.
+ * Code reçu pour confirmer le compte (réglages « Confirm email » / « Confirm phone » de Supabase) ou pour se
+ * connecter par WhatsApp, avec « Renvoyer le code » s'il n'est pas arrivé ou a expiré. Internet nécessaire.
+ * `email` : l'adresse ou le numéro WhatsApp (format international) qui a reçu le code.
  */
-export function ConfirmEmailCode({ email, confirm, resend, onBack }: { email: string; confirm: (code: string) => Promise<void>; resend: () => Promise<unknown>; onBack?: () => void }) {
+export function ConfirmCode({ email, confirm, resend, onBack, signIn = false }: {
+  email: string;
+  confirm: (code: string) => Promise<void>;
+  resend: () => Promise<unknown>;
+  onBack?: () => void;
+  /** Connexion par code (et non confirmation de l'inscription). */
+  signIn?: boolean;
+}) {
+  const whatsapp = !email.includes("@");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const { busy, error, run } = useRun();
@@ -55,12 +87,17 @@ export function ConfirmEmailCode({ email, confirm, resend, onBack }: { email: st
   return (
     <form onSubmit={submit} className="stack confirm-code">
       <div className="alert alert-info">
-        <MailCheck size={16} />  {tl("Confirmez l'adresse du compte : un code a été envoyé à {0} (regardez aussi les courriers indésirables).", [email])}
+        {whatsapp ? <MessageCircle size={16} /> : <MailCheck size={16} />}{" "}
+        {whatsapp
+          ? tl("Un code vient d'être envoyé sur WhatsApp au {0}.", [showPhone(email)])
+          : tl("Confirmez l'adresse du compte : un code a été envoyé à {0} (regardez aussi les courriers indésirables).", [email])}
       </div>
-      <CodeInput value={code} onChange={setCode} />
+      <CodeInput value={code} onChange={setCode} whatsapp={whatsapp} />
       {sent && <div className="alert alert-success">{tl("Nouveau code envoyé.")}</div>}
       {error && <div className="alert alert-danger">{error}</div>}
-      <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? tl("Vérification…") : tl("Confirmer l'adresse")}</button>
+      <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>
+        {busy ? tl("Vérification…") : signIn ? tl("Se connecter") : whatsapp ? tl("Confirmer le numéro") : tl("Confirmer l'adresse")}
+      </button>
       <div className="row-between">
         <button type="button" className="link-btn small" disabled={busy} onClick={() => void run(async () => { setSent(false); await resend(); setSent(true); })}>
           {tl("Renvoyer le code")}</button>
@@ -107,8 +144,8 @@ export function ChangeEmailModal({ email, onClose, onDone }: { email: string; on
       {step === "form" ? (
         <form onSubmit={start} className="stack">
           <p className="muted">{tl("La nouvelle adresse sert à se connecter et à recevoir les codes (mot de passe oublié). Internet est nécessaire.")}</p>
-          <Field label={tl("Adresse actuelle")}>
-            <input type="email" value={email} readOnly />
+          <Field label={tl("Compte")}>
+            <input value={email.includes("@") ? email : showPhone(email)} readOnly />
           </Field>
           <Field label={tl("Mot de passe du compte")}>
             <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
@@ -130,6 +167,74 @@ export function ChangeEmailModal({ email, onClose, onDone }: { email: string; on
           <CodeInput value={code} onChange={setCode} />
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? tl("Vérification…") : tl("Changer l'adresse")}</button>
+          <button type="button" className="link-btn small" onClick={() => { setStep("form"); setCode(""); }}>{tl("Renvoyer un code")}</button>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * Ajouter ou changer le numéro WhatsApp du compte : mot de passe et nouveau numéro, puis le code reçu sur
+ * WhatsApp à ce numéro. Le compte s'ouvre ensuite aussi avec ce numéro. Internet nécessaire.
+ * `login` : l'e-mail ou le numéro avec lequel la propriétaire se connecte.
+ */
+export function ChangePhoneModal({ login, country, onClose, onDone }: { login: string; country?: string | null; onClose: () => void; onDone?: (phone: string) => void }) {
+  const { toast } = useApp();
+  const [step, setStep] = useState<"form" | "code">("form");
+  const [password, setPassword] = useState("");
+  const [next, setNext] = useState("");
+  const [code, setCode] = useState("");
+  const { busy, error, run } = useRun();
+
+  const after = (r: PhoneChange) => {
+    if (r.done) {
+      toast.success(tl("Numéro WhatsApp du compte enregistré : {0}.", [showPhone(r.phone)]));
+      onDone?.(r.phone);
+      onClose();
+      return;
+    }
+    setCode("");
+    setStep("code");
+  };
+
+  const start = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      if (!validPhone(next)) throw new Error(tl("Numéro WhatsApp invalide : tapez-le avec l'indicatif du pays (ex. +223 76 59 36 76)."));
+      after(await owner.phoneChangeStart(login, password, next));
+    });
+  };
+  const confirm = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => after(await owner.phoneChangeConfirm(login, next, code)));
+  };
+
+  return (
+    <Modal title={<><MessageCircle size={18} />  {tl("Numéro WhatsApp du compte")}</>} onClose={onClose} width={480}>
+      {step === "form" ? (
+        <form onSubmit={start} className="stack">
+          <p className="muted">{tl("Avec ce numéro, le compte s'ouvre aussi par un code reçu sur WhatsApp, sans mot de passe. Internet est nécessaire.")}</p>
+          <Field label={tl("Compte")}>
+            <input value={login.includes("@") ? login : showPhone(login)} readOnly />
+          </Field>
+          <Field label={tl("Mot de passe du compte")}>
+            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
+          </Field>
+          <Field label={tl("Numéro WhatsApp")}>
+            <PhoneInput country={country} onChange={setNext} />
+          </Field>
+          {error && <div className="alert alert-danger">{error}</div>}
+          <button className="btn btn-primary btn-block" disabled={busy || !password || !next}>{busy ? tl("Envoi…") : tl("Recevoir le code sur WhatsApp")}</button>
+        </form>
+      ) : (
+        <form onSubmit={confirm} className="stack">
+          <div className="alert alert-info">
+            <MessageCircle size={16} />  {tl("Un code vient d'être envoyé sur WhatsApp au {0}.", [showPhone(next)])}
+          </div>
+          <CodeInput value={code} onChange={setCode} whatsapp />
+          {error && <div className="alert alert-danger">{error}</div>}
+          <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? tl("Vérification…") : tl("Confirmer le numéro")}</button>
           <button type="button" className="link-btn small" onClick={() => { setStep("form"); setCode(""); }}>{tl("Renvoyer un code")}</button>
         </form>
       )}

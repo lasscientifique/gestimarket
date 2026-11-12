@@ -12,11 +12,14 @@ Avec le compte Eden Dev de la boutique (e-mail et mot de passe), sur n'importe q
 
 La connexion reste ouverte sur le téléphone ; « Se déconnecter » l'efface.
 
-## Compte de la boutique : adresse, e-mail, mot de passe
+## Compte de la boutique : WhatsApp, e-mail, mot de passe
 
-- **Confirmer l'adresse** : à la création du compte, un **code à 6 chiffres** est envoyé à l'e-mail choisi. Tapez-le pour terminer : la boutique est créée à ce moment-là. Pas reçu ? Regardez les courriers indésirables, puis « Renvoyer le code ». Si la fenêtre a été fermée, le code est demandé à la connexion suivante.
+- **Avec un numéro WhatsApp** (quand Eden Dev l'a ouvert) : à la création du compte, choisissez « Avec mon numéro WhatsApp ». L'indicatif vient du pays de la boutique (+223 pour le Mali) ; tapez le numéro tel quel (76 59 36 76). Un **code à 6 chiffres arrive sur WhatsApp** : tapez-le pour terminer. Le compte a aussi un mot de passe.
+- **Se connecter par WhatsApp** : tapez le numéro du compte, puis « **Recevoir un code sur WhatsApp** » : le code remplace le mot de passe. Partout où le compte est demandé (PC, Espace propriétaire, autoriser un téléphone, PIN administrateur oublié), l'e-mail ou le numéro WhatsApp conviennent.
+- **Ajouter un numéro WhatsApp** à un compte créé avec un e-mail : Espace propriétaire → « Mon compte » → WhatsApp « Ajouter », ou Abonnement & licence → « Numéro WhatsApp du compte ». Le mot de passe est demandé, puis le code reçu sur WhatsApp. Le compte s'ouvre ensuite avec l'e-mail ou avec le numéro.
+- **Confirmer l'adresse** : à la création d'un compte avec un e-mail, un **code à 6 chiffres** est envoyé à l'adresse. Tapez-le pour terminer : la boutique est créée à ce moment-là. Pas reçu ? Regardez les courriers indésirables, puis « Renvoyer le code ». Si la fenêtre a été fermée, le code est demandé à la connexion suivante.
 - **Changer l'e-mail** : Espace propriétaire → « Mon compte » → « Changer l'e-mail du compte », ou Abonnement & licence → « Changer l'e-mail du compte ». Tapez le mot de passe et la nouvelle adresse, puis le **code** reçu à la nouvelle adresse. C'est aussi la solution si l'adresse a été mal tapée à l'inscription.
-- **Mot de passe oublié** : « Mot de passe oublié ? » (Espace propriétaire, Abonnement & licence, ou « Code PIN administrateur oublié »). Tapez l'e-mail du compte : un **code** y est envoyé. Tapez ce code et le nouveau mot de passe.
+- **Mot de passe oublié** : « Mot de passe oublié ? » (Espace propriétaire, Abonnement & licence, ou « Code PIN administrateur oublié »). Tapez l'e-mail ou le numéro WhatsApp du compte : un **code** est envoyé par e-mail ou sur WhatsApp. Tapez ce code et le nouveau mot de passe.
 - **Changer le mot de passe** : Espace propriétaire → « Mon compte » → « Changer le mot de passe », ou Abonnement & licence → « Changer le mot de passe du compte ». Le mot de passe actuel est demandé.
 - Un bon mot de passe a **8 caractères au moins, avec des lettres et des chiffres**. 12345678, « azerty123 » ou le nom de la boutique sont refusés : ce compte ouvre la boutique à distance et paie l'abonnement.
 - Sur le PC, **Abonnement & licence → « Informations de la boutique »** modifie aussi le téléphone et l'adresse (le mot de passe du compte est demandé).

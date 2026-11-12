@@ -63,10 +63,18 @@ export interface FoundShop {
   device?: "phone" | "pc" | string;
 }
 
-/** Adresse du compte pas encore confirmée : le code reçu à l'inscription est demandé. */
+/** Compte pas encore confirmé : le code reçu à l'inscription est demandé (par e-mail ou sur WhatsApp). */
 export interface OwnerConfirm {
-  status: "confirm_email";
+  status: "confirm_email" | "confirm_phone";
+  /** Adresse e-mail ou numéro WhatsApp du compte. */
   email: string;
+}
+
+/** Changement de numéro WhatsApp : `done` quand c'est fait ; sinon le code reçu au nouveau numéro est attendu. */
+export interface PhoneChange {
+  done: boolean;
+  phone: string;
+  old_login: string;
 }
 
 /** Changement d'adresse : `done` quand c'est fait ; sinon un code est attendu (`other` : celui de l'ancienne adresse). */
@@ -87,14 +95,26 @@ export interface StoreInfo {
 
 const ownerCall = <T,>(action: string, args: Record<string, unknown> = {}) => local<T>("owner", { action, args });
 
-export const isConfirm = (r: unknown): r is OwnerConfirm => (r as OwnerConfirm | null)?.status === "confirm_email";
+export const isConfirm = (r: unknown): r is OwnerConfirm => {
+  const status = (r as OwnerConfirm | null)?.status;
+  return status === "confirm_email" || status === "confirm_phone";
+};
 
 export const owner = {
   status: () => ownerCall<{ connected: boolean; email?: string }>("status"),
   login: (email: string, password: string) => ownerCall<OwnerStores | OwnerConfirm>("login", { email, password }),
-  /** Adresse confirmée avec le code reçu à l'inscription : la propriétaire est connectée. */
+  /** Code reçu (confirmation de l'inscription, ou connexion par code WhatsApp) : la propriétaire est connectée. */
   confirmSignup: (email: string, code: string) => ownerCall<OwnerStores>("confirm_signup", { email, code }),
   resendSignup: (email: string) => ownerCall<{ sent: boolean }>("resend_signup", { email }),
+  /** Connexion par un code reçu sur WhatsApp au numéro du compte. */
+  otpSend: (phone: string) => ownerCall<{ sent: boolean }>("otp_send", { email: phone }),
+  /** E-mail et numéro WhatsApp du compte (connexion gardée, ou mot de passe sur le PC). */
+  account: (email = "", password = "") => ownerCall<{ email: string; phone: string }>("account", { email, password }),
+  /** Ajouter ou changer le numéro WhatsApp du compte : mot de passe, puis code reçu au nouveau numéro. */
+  phoneChangeStart: (login: string, password: string, new_phone: string) =>
+    ownerCall<PhoneChange>("phone_change_start", { email: login, password, new_phone }),
+  phoneChangeConfirm: (old_login: string, new_phone: string, code: string) =>
+    ownerCall<PhoneChange>("phone_change_confirm", { old_login, new_phone, code }),
   /** Changer l'e-mail du compte : mot de passe actuel, puis code reçu à la nouvelle adresse. */
   emailChangeStart: (email: string, password: string, new_email: string) => ownerCall<EmailChange>("email_change_start", { email, password, new_email }),
   emailChangeConfirm: (old_email: string, new_email: string, code: string, which: "new" | "old") =>

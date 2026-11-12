@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { LogIn, Plus, RefreshCw, Store, UserPlus } from "lucide-react";
+import { LogIn, Mail, MessageCircle, Plus, RefreshCw, Store, UserPlus } from "lucide-react";
 import { api } from "../api";
 import { errorMessage } from "../context/AppContext";
 import { Badge } from "./ui";
@@ -8,7 +8,8 @@ import type { AccountLinkResult, AccountOptions, AccountStore, StoreInput } from
 import { tl } from "../lib/i18n";
 import { countryName } from "../lib/countries";
 import { ForgotPasswordModal, passwordProblem } from "./AccountPassword";
-import { ConfirmEmailCode } from "./AccountProfile";
+import { ConfirmCode, PhoneInput } from "./AccountProfile";
+import { loginId, looksLikePhone, validPhone } from "../lib/phone";
 
 const EMPTY_STORE: StoreInput = { name: "", owner_name: "", phone: "", country: "ML", city: "", address: "", shop_type: "" };
 
@@ -75,8 +76,12 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [optionsError, setOptionsError] = useState("");
   const [mode, setMode] = useState<"signup" | "login" | "confirm" | "choose" | "new-store">(startWith);
-  // Adresse à confirmer avec le code reçu : juste après l'inscription, ou à une connexion suivante.
-  const [confirming, setConfirming] = useState<{ after: "signup" | "login"; email: string } | null>(null);
+  // Code à taper : confirmation juste après l'inscription ou à une connexion suivante, ou connexion par code
+  // WhatsApp (`signIn`). `email` : l'adresse ou le numéro qui a reçu le code.
+  const [confirming, setConfirming] = useState<{ after: "signup" | "login"; email: string; signIn?: boolean } | null>(null);
+  // Inscription : compte avec un numéro WhatsApp (si Eden Dev l'a ouvert) ou avec un e-mail.
+  const [channel, setChannel] = useState<"whatsapp" | "email" | null>(null);
+  const [whatsapp, setWhatsapp] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [forgot, setForgot] = useState(false);
@@ -106,9 +111,14 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
     }
   };
 
+  const wa = !!options?.whatsapp;
+  const useWhatsapp = (channel ?? (wa ? "whatsapp" : "email")) === "whatsapp" && wa;
+  // Connexion : e-mail, ou numéro WhatsApp tapé avec ou sans indicatif (celui du Mali par défaut).
+  const loginValue = loginId(email);
+
   const linked = (r: AccountLinkResult) => {
-    if (r.status === "confirm_email") {
-      setConfirming({ after: "signup", email: r.email || email });
+    if (r.status === "confirm_email" || r.status === "confirm_phone") {
+      setConfirming({ after: "signup", email: r.email || (useWhatsapp ? whatsapp : email) });
       setMode("confirm");
       return;
     }
@@ -134,14 +144,20 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
     if (password !== confirmPwd) return setError(tl("Les mots de passe ne correspondent pas."));
     const m = missing(store);
     if (m) return setError(m);
-    run(async () => linked(await api.accountSignup({ ...store, email, password, terms_version: termsVersion })));
+    if (useWhatsapp && !validPhone(whatsapp)) return setError(tl("Numéro WhatsApp invalide : tapez-le avec l'indicatif du pays (ex. +223 76 59 36 76)."));
+    // Compte WhatsApp : le téléphone de la boutique, s'il est vide, est ce numéro.
+    const input = useWhatsapp
+      ? { ...store, phone: store.phone.trim() || whatsapp, email: "", whatsapp }
+      : { ...store, email, whatsapp: "" };
+    if (useWhatsapp) setStore(input);
+    run(async () => linked(await api.accountSignup({ ...input, password, terms_version: termsVersion })));
   };
 
   const login = (e: FormEvent) => {
     e.preventDefault();
     run(async () => {
-      const r = await api.accountLogin(email, password);
-      if (r.status === "confirm_email") {
+      const r = await api.accountLogin(loginValue, password);
+      if (r.status === "confirm_email" || r.status === "confirm_phone") {
         setConfirming({ after: "login", email: r.email });
         setMode("confirm");
         return;
@@ -149,6 +165,14 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
       gotStores(r.stores ?? []);
     });
   };
+
+  // Connexion sans mot de passe : un code arrive sur WhatsApp au numéro du compte.
+  const loginByCode = () =>
+    run(async () => {
+      await api.accountOtpSend(loginValue);
+      setConfirming({ after: "login", email: loginValue, signIn: true });
+      setMode("confirm");
+    });
 
   const createStore = (e: FormEvent) => {
     e.preventDefault();
@@ -186,11 +210,27 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
             <p className="muted small">{options.trial_days}  {tl("jours d'essai gratuit de la formule PRO, sans engagement.")}</p>
           )}
           <h4 className="section-title">{tl("Compte")}</h4>
+          {wa && (
+            <div className="segmented small account-channel">
+              <button type="button" className={useWhatsapp ? "active" : ""} onClick={() => setChannel("whatsapp")}>
+                <MessageCircle size={15} />  {tl("Avec mon numéro WhatsApp")}</button>
+              <button type="button" className={useWhatsapp ? "" : "active"} onClick={() => setChannel("email")}>
+                <Mail size={15} />  {tl("Avec mon e-mail")}</button>
+            </div>
+          )}
           <div className="form-grid">
-            <label className="field span-2">
-              <span className="field-label">{tl("E-mail (identifiant) *")}</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-            </label>
+            {useWhatsapp ? (
+              <label className="field span-2">
+                <span className="field-label">{tl("Numéro WhatsApp (identifiant) *")}</span>
+                <PhoneInput country={store.country} onChange={setWhatsapp} />
+                <span className="field-hint">{tl("Un code arrive sur WhatsApp pour confirmer le numéro.")}</span>
+              </label>
+            ) : (
+              <label className="field span-2">
+                <span className="field-label">{tl("E-mail (identifiant) *")}</span>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+              </label>
+            )}
             <label className="field">
               <span className="field-label">{tl("Mot de passe * (8 caractères min.)")}</span>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
@@ -213,8 +253,8 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
         <form onSubmit={login}>
           <div className="form-grid">
             <label className="field span-2">
-              <span className="field-label">{tl("E-mail")}</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
+              <span className="field-label">{wa ? tl("E-mail ou numéro WhatsApp") : tl("E-mail")}</span>
+              <input type={wa ? "text" : "email"} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus />
             </label>
             <label className="field span-2">
               <span className="field-label">{tl("Mot de passe")}</span>
@@ -225,6 +265,10 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
           <button className="btn btn-primary btn-lg btn-block" disabled={busy || !email || !password}>
             {busy ? tl("Connexion…") : tl("Se connecter")}
           </button>
+          {wa && looksLikePhone(email) && (
+            <button type="button" className="btn btn-block wa-code-btn" disabled={busy} onClick={loginByCode}>
+              <MessageCircle size={16} />  {tl("Recevoir un code sur WhatsApp")}</button>
+          )}
           <p className="muted small">
             <button type="button" className="link-btn" onClick={() => setForgot(true)}>{tl("Mot de passe oublié ?")}</button>
           </p>
@@ -233,10 +277,11 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
       )}
 
       {mode === "confirm" && confirming && (
-        <ConfirmEmailCode
+        <ConfirmCode
           email={confirming.email}
+          signIn={confirming.signIn}
           confirm={confirmCode}
-          resend={() => api.accountResendCode(confirming.email)}
+          resend={() => (confirming.signIn ? api.accountOtpSend(confirming.email) : api.accountResendCode(confirming.email))}
           onBack={() => setMode(confirming.after)}
         />
       )}

@@ -1126,6 +1126,8 @@ export interface AccountOptions {
   plans: PlanInfo[];
   payment_instructions: string;
   trial_days: number;
+  /** Compte créé et ouvert avec un numéro WhatsApp (activé par Eden Dev : gm_config.whatsapp_enabled). */
+  whatsapp?: boolean;
   /** Moyens de paiement de l'abonnement (réglés par Eden Dev dans gm_config). */
   payment?: {
     om_merchant_code: string;
@@ -1200,16 +1202,16 @@ export interface AccountStore {
 }
 
 export interface AccountLinkResult {
-  status: "linked" | "confirm_email";
-  /** « confirm_email » : adresse à laquelle le code a été envoyé. */
+  status: "linked" | "confirm_email" | "confirm_phone";
+  /** « confirm_email » / « confirm_phone » : adresse ou numéro WhatsApp auquel le code a été envoyé. */
   email?: string;
   store?: AccountStore;
   sync_error?: string | null;
 }
 
-/** Connexion au compte : boutiques, ou adresse pas encore confirmée (code reçu à l'inscription à taper). */
+/** Connexion au compte (e-mail ou numéro WhatsApp) : boutiques, ou compte pas encore confirmé (code à taper). */
 export interface AccountLoginResult {
-  status: "ok" | "confirm_email";
+  status: "ok" | "confirm_email" | "confirm_phone";
   email: string;
   stores?: AccountStore[];
 }

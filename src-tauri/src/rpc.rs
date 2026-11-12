@@ -948,6 +948,11 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             account_access(state, origin)?;
             out(crate::account::signup_resend(&arg::<String>(&a, "email")?).map_err(AppError::Validation)?)
         }
+        // Connexion par un code reçu sur WhatsApp (le code se vérifie ensuite avec account_confirm_login).
+        "account_otp_send" => {
+            account_access(state, origin)?;
+            out(crate::account::otp_send(&arg::<String>(&a, "email")?).map_err(AppError::Validation)?)
+        }
         "account_create_store" => {
             account_access(state, origin)?;
             out(crate::account::create_store(state, arg(&a, "input")?).map_err(AppError::Validation)?)

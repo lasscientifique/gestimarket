@@ -14,6 +14,7 @@ import type { LoginInfo, LoginUser } from "../types";
 import { deviceLabel, setDeviceToken } from "../lib/device";
 import { tl } from "../lib/i18n";
 import { ForgotPasswordModal } from "../components/AccountPassword";
+import { loginId } from "../lib/phone";
 
 const initials = (n: string) =>
   n
@@ -332,7 +333,7 @@ function AuthorizePhone({ info, onLinked, onAccount }: { info: LoginInfo; onLink
     try {
       if (tab === "code") onLinked(await api.authorizeDeviceCode(f.username, f.pin, f.code, f.label));
       else {
-        await api.authorizeDeviceAccount(f.email, f.password, f.label);
+        await api.authorizeDeviceAccount(loginId(f.email), f.password, f.label);
         onAccount();
       }
     } catch (err) {
@@ -363,9 +364,9 @@ function AuthorizePhone({ info, onLinked, onAccount }: { info: LoginInfo; onLink
         </>
       ) : (
         <>
-          <p className="muted small">{tl("Administrateur : e-mail et mot de passe du compte de la boutique chez Eden Dev.")}</p>
+          <p className="muted small">{tl("Administrateur : e-mail (ou numéro WhatsApp) et mot de passe du compte de la boutique chez Eden Dev.")}</p>
           {!info.account && <div className="alert alert-warning small">{tl("Le poste serveur n'est relié à aucun compte boutique.")}</div>}
-          <Field label={tl("E-mail")}><input type="email" value={f.email} onChange={set("email")} autoComplete="email" /></Field>
+          <Field label={tl("E-mail ou numéro WhatsApp")}><input value={f.email} onChange={set("email")} autoComplete="username" /></Field>
           <Field label={tl("Mot de passe du compte boutique")}><input type="password" value={f.password} onChange={set("password")} /></Field>
         </>
       )}
@@ -394,7 +395,7 @@ function ForgotAdminPin({ onClose, onDone }: { onClose: () => void; onDone: (ful
     setBusy(true);
     setError("");
     try {
-      const r = await api.resetAdminPin(f.email, f.password, f.pin, f.username || undefined);
+      const r = await api.resetAdminPin(loginId(f.email), f.password, f.pin, f.username || undefined);
       onDone(r.full_name);
     } catch (e) {
       setError(errorMessage(e));
@@ -415,9 +416,9 @@ function ForgotAdminPin({ onClose, onDone }: { onClose: () => void; onDone: (ful
         </>
       }
     >
-      <p className="muted small" style={{ marginTop: 0 }}>{tl("Prouvez que vous êtes la propriétaire avec le compte boutique (e-mail et mot de passe Eden Dev, Internet nécessaire), puis choisissez un nouveau code PIN de 6 chiffres.")}</p>
+      <p className="muted small" style={{ marginTop: 0 }}>{tl("Prouvez que vous êtes la propriétaire avec le compte boutique (e-mail ou numéro WhatsApp, et mot de passe Eden Dev, Internet nécessaire), puis choisissez un nouveau code PIN de 6 chiffres.")}</p>
       <div className="form-grid one">
-        <Field label={tl("E-mail du compte boutique")}><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoFocus /></Field>
+        <Field label={tl("E-mail ou numéro WhatsApp du compte boutique")}><input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} autoFocus /></Field>
         <Field label={tl("Mot de passe du compte boutique")}><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
         {isTauri && (
           <button type="button" className="link-btn small" onClick={() => setForgot(true)}>{tl("Mot de passe du compte oublié ?")}</button>

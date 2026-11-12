@@ -26,9 +26,26 @@ if (mode === "tunnel") {
   let last = null;
   // Compte Eden Dev de la propriétaire (voir e2e/run.mjs) ; code « reçu par e-mail » après « mot de passe oublié »,
   // et code envoyé à la nouvelle adresse quand elle change d'e-mail (« Confirm email » activé).
-  const owner = { email: "proprietaire@exemple.ml", password: "Proprietaire-2026", code: null, newEmail: null, changeCode: null };
+  // 0.26 : numéro WhatsApp ajouté au compte (code 556677), puis « mot de passe oublié » par WhatsApp (code 778899).
+  const owner = {
+    email: "proprietaire@exemple.ml", password: "Proprietaire-2026", code: null, newEmail: null, changeCode: null,
+    phone: "", otp: null, newPhone: null, phoneCode: null,
+  };
   // Compte inscrit dont l'adresse n'est pas encore confirmée (code reçu à l'inscription).
   const pending = { email: "nouvelle@exemple.ml", password: "Nouvelle-2026", code: "135790", confirmed: false };
+  // Compte créé avec un numéro WhatsApp, pas encore confirmé (code reçu sur WhatsApp : 112233).
+  const wa = { phone: "22370000001", password: "Whatsapp-2026", code: "112233", confirmed: false };
+  const digits = (v) => String(v ?? "").replace(/\D/g, "");
+  // Formulaire d'inscription et options (connexion par WhatsApp ouverte).
+  const OPTIONS = {
+    shop_types: [{ code: "superette", label: "Supérette" }],
+    countries: [{ code: "ML", label: "Mali", currency: "XOF" }],
+    plans: [{ code: "pro", label: "PRO", price_month: 18000, max_postes: 3, features: ["write", "server", "internet"], description: "3 postes", prices: { XOF: 18000 } }],
+    payment_instructions: "",
+    trial_days: 14,
+    payment: { om_merchant_code: "", om_merchant_name: "", om_qr_payload: "", card_enabled: false, card_currency: "XOF", card_currencies: ["XOF"] },
+    whatsapp: true,
+  };
   const later = new Date(Date.now() + 20 * 86400e3).toISOString();
   // Boutique du compte : informations modifiables par la propriétaire (gm_update_store).
   const store = {
@@ -62,6 +79,13 @@ if (mode === "tunnel") {
             if (!pending.confirmed) return send(400, { error_code: "email_not_confirmed", msg: "Email not confirmed" });
             return send(200, { access_token: "acces-nouvelle", refresh_token: "rafraichissement-nouvelle" });
           }
+          if (a.phone && digits(a.phone) === wa.phone && a.password === wa.password) {
+            if (!wa.confirmed) return send(400, { error_code: "phone_not_confirmed", msg: "Phone not confirmed" });
+            return send(200, { access_token: "acces-whatsapp", refresh_token: "rafraichissement-whatsapp" });
+          }
+          if (a.phone && owner.phone && digits(a.phone) === owner.phone && a.password === owner.password) {
+            return send(200, { access_token: "acces-e2e", refresh_token: "rafraichissement-e2e" });
+          }
           return send(400, { error_code: "invalid_credentials", msg: "Invalid login credentials" });
         }
         if (url.pathname === "/auth/v1/recover") {
@@ -70,7 +94,20 @@ if (mode === "tunnel") {
         }
         if (url.pathname === "/auth/v1/resend") {
           if (a.type === "signup" && a.email === pending.email) pending.code = "135790";
+          if (a.type === "sms" && digits(a.phone) === wa.phone) wa.code = "112233";
           return send(200, {});
+        }
+        // Code sur WhatsApp (connexion sans mot de passe, mot de passe oublié) : jamais de création de compte.
+        if (url.pathname === "/auth/v1/otp") {
+          if (digits(a.phone) === wa.phone) wa.code = "112233";
+          else if (owner.phone && digits(a.phone) === owner.phone) owner.otp = "778899";
+          else return send(422, { error_code: "otp_disabled", msg: "Signups not allowed for otp" });
+          return send(200, {});
+        }
+        if (url.pathname === "/auth/v1/user" && req.method === "GET") {
+          if (auth === "Bearer acces-whatsapp") return send(200, { id: "whatsapp-e2e", email: "", phone: wa.phone });
+          if (!bearer) return send(401, { error_code: "bad_jwt", msg: "invalid JWT" });
+          return send(200, { id: "proprietaire-e2e", email: owner.email, phone: owner.phone });
         }
         if (url.pathname === "/auth/v1/verify") {
           if (a.type === "recovery" && a.email === owner.email && owner.code && a.token === owner.code) {
@@ -87,10 +124,30 @@ if (mode === "tunnel") {
             owner.newEmail = owner.changeCode = null;
             return send(200, { access_token: "acces-e2e", refresh_token: "rafraichissement-changement" });
           }
+          if (a.type === "sms" && digits(a.phone) === wa.phone && wa.code && a.token === wa.code) {
+            wa.confirmed = true;
+            wa.code = null;
+            return send(200, { access_token: "acces-whatsapp", refresh_token: "rafraichissement-whatsapp" });
+          }
+          if (a.type === "sms" && owner.phone && digits(a.phone) === owner.phone && owner.otp && a.token === owner.otp) {
+            owner.otp = null;
+            return send(200, { access_token: "acces-recuperation", refresh_token: "rafraichissement-recuperation" });
+          }
+          if (a.type === "phone_change" && owner.newPhone && digits(a.phone) === owner.newPhone && a.token === owner.phoneCode) {
+            owner.phone = owner.newPhone;
+            owner.newPhone = owner.phoneCode = null;
+            return send(200, { access_token: "acces-e2e", refresh_token: "rafraichissement-numero" });
+          }
           return send(403, { error_code: "otp_expired", msg: "Token has expired or is invalid" });
         }
         if (url.pathname === "/auth/v1/user" && req.method === "PUT") {
           if (!bearer) return send(401, { error_code: "bad_jwt", msg: "invalid JWT" });
+          if (a.phone) {
+            if (digits(a.phone) === wa.phone) return send(422, { error_code: "phone_exists", msg: "A user with this phone number has already been registered" });
+            owner.newPhone = digits(a.phone);
+            owner.phoneCode = "556677";
+            return send(200, { id: "proprietaire-e2e", email: owner.email, phone: owner.phone, phone_change: owner.newPhone });
+          }
           if (a.email) {
             if (a.email === pending.email) return send(422, { error_code: "email_exists", msg: "A user with this email address has already been registered" });
             owner.newEmail = a.email;
@@ -103,8 +160,9 @@ if (mode === "tunnel") {
         }
         if (url.pathname === "/rest/v1/rpc/gm_my_stores") {
           if (!bearer) return send(401, { message: "JWT expired" });
-          return send(200, auth === "Bearer acces-nouvelle" ? [] : [store]);
+          return send(200, auth === "Bearer acces-nouvelle" || auth === "Bearer acces-whatsapp" ? [] : [store]);
         }
+        if (url.pathname === "/rest/v1/rpc/gm_public_options") return send(200, OPTIONS);
         if (url.pathname === "/rest/v1/rpc/gm_update_store") {
           if (!bearer) return send(401, { message: "JWT expired" });
           if (a.p_store_code !== store.code) return send(400, { message: "Boutique introuvable sur ce compte." });

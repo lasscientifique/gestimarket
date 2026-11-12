@@ -22,6 +22,7 @@ import { Stars } from "../components/CustomerAccount";
 import type { BackupStatus, CloudStatus, Settings, TunnelStatus } from "../types";
 import { PrinterSettings } from "../components/PrinterSettings";
 import { LANGS, tl, tm } from "../lib/i18n";
+import { loginId } from "../lib/phone";
 import { invoke } from "@tauri-apps/api/core";
 import { isMobileApp, isTauri } from "../lib/transport";
 import { appCacheDir, join } from "@tauri-apps/api/path";
@@ -840,7 +841,7 @@ function InternetAddressSettings() {
     e.preventDefault();
     setBusy(true);
     try {
-      const s = await api.tunnelSetup(email, password);
+      const s = await api.tunnelSetup(loginId(email), password);
       setSt(s);
       setAsking(false);
       setPassword("");
@@ -886,8 +887,8 @@ function InternetAddressSettings() {
         <p className="muted small">{tl("À régler sur le PC serveur de la boutique.")}</p>
       ) : asking ? (
         <form onSubmit={setup} className="form-grid" style={{ marginTop: 10 }}>
-          <Field label={tl("E-mail du compte boutique")}>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+          <Field label={tl("E-mail ou numéro WhatsApp du compte boutique")}>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required autoFocus />
           </Field>
           <Field label={tl("Mot de passe du compte boutique")}>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />

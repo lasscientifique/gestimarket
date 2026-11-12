@@ -568,7 +568,7 @@ const ALWAYS: &[&str] = &[
     "tunnel_status", "tunnel_setup", "tunnel_remove",
     "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup", "backup_status", "backup_protect", "terms_status", "accept_terms",
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
-    "account_confirm_signup", "account_confirm_login", "account_resend_code",
+    "account_confirm_signup", "account_confirm_login", "account_resend_code", "account_otp_send",
     "account_create_store", "account_link", "account_payments", "account_redeem_voucher", "account_declare_orange_money",
     "account_card_start", "list_sessions", "kick_session", "update_status", "report_error", "display_postes", "help_offline_files",
 ];
