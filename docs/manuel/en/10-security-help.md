@@ -54,6 +54,8 @@ In case of a problem, send the station's **log** (Settings → Eden Dev develope
 
 **I forgot the shop account password.** “Forgot your password?”: a code is sent to the account e-mail.
 
+**The confirmation code does not arrive.** Check the spam folder, then “Send the code again”. Was the address mistyped? Create the account again with the right address, or ask Eden Dev. Once signed in, “Change the account e-mail” fixes the address.
+
 **I forgot my PIN.** An administrator resets it in Staff. Forgotten administrator PIN: sign-in screen, with the shop account.
 
 **The stock is wrong.** Stock & inventory → adjust the product (reason: inventory). The log shows each movement and its author.

@@ -8,6 +8,7 @@ import type { AccountLinkResult, AccountOptions, AccountStore, StoreInput } from
 import { tl } from "../lib/i18n";
 import { countryName } from "../lib/countries";
 import { ForgotPasswordModal, passwordProblem } from "./AccountPassword";
+import { ConfirmEmailCode } from "./AccountProfile";
 
 const EMPTY_STORE: StoreInput = { name: "", owner_name: "", phone: "", country: "ML", city: "", address: "", shop_type: "" };
 
@@ -73,7 +74,9 @@ function missing(s: StoreInput): string | null {
 export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { onLinked: (r: AccountLinkResult) => void; startWith?: "signup" | "login"; termsVersion?: string }) {
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [optionsError, setOptionsError] = useState("");
-  const [mode, setMode] = useState<"signup" | "login" | "choose" | "new-store">(startWith);
+  const [mode, setMode] = useState<"signup" | "login" | "confirm" | "choose" | "new-store">(startWith);
+  // Adresse à confirmer avec le code reçu : juste après l'inscription, ou à une connexion suivante.
+  const [confirming, setConfirming] = useState<{ after: "signup" | "login"; email: string } | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [forgot, setForgot] = useState(false);
@@ -105,11 +108,23 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
 
   const linked = (r: AccountLinkResult) => {
     if (r.status === "confirm_email") {
-      setMode("login");
-      setInfo(tl("Compte créé. Ouvrez le lien de confirmation reçu par e-mail, puis connectez-vous ici."));
+      setConfirming({ after: "signup", email: r.email || email });
+      setMode("confirm");
       return;
     }
     onLinked(r);
+  };
+
+  const gotStores = (list: AccountStore[]) => {
+    setStores(list);
+    setMode(list.length ? "choose" : "new-store");
+    if (!list.length) setInfo(tl("Aucune boutique sur ce compte : créez-la."));
+  };
+
+  const confirmCode = async (code: string) => {
+    if (!confirming) return;
+    if (confirming.after === "signup") linked(await api.accountConfirmSignup(confirming.email, code, store));
+    else gotStores((await api.accountConfirmLogin(confirming.email, code)).stores ?? []);
   };
 
   const signup = (e: FormEvent) => {
@@ -126,9 +141,12 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
     e.preventDefault();
     run(async () => {
       const r = await api.accountLogin(email, password);
-      setStores(r.stores);
-      setMode(r.stores.length ? "choose" : "new-store");
-      if (!r.stores.length) setInfo(tl("Aucune boutique sur ce compte : créez-la."));
+      if (r.status === "confirm_email") {
+        setConfirming({ after: "login", email: r.email });
+        setMode("confirm");
+        return;
+      }
+      gotStores(r.stores ?? []);
     });
   };
 
@@ -212,6 +230,15 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
           </p>
           {forgot && <ForgotPasswordModal email={email} onClose={() => setForgot(false)} />}
         </form>
+      )}
+
+      {mode === "confirm" && confirming && (
+        <ConfirmEmailCode
+          email={confirming.email}
+          confirm={confirmCode}
+          resend={() => api.accountResendCode(confirming.email)}
+          onBack={() => setMode(confirming.after)}
+        />
       )}
 
       {mode === "choose" && (

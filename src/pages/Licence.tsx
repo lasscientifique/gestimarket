@@ -5,6 +5,7 @@ import { useApp } from "../context/AppContext";
 import { Badge, Modal, PageHeader } from "../components/ui";
 import { AccountForm } from "../components/AccountForm";
 import { ChangePasswordModal } from "../components/AccountPassword";
+import { ChangeEmailModal, StoreInfoModal } from "../components/AccountProfile";
 import { PaymentsHistory, SubscriptionPay } from "../components/SubscriptionPay";
 import { isRemote, isTauri } from "../lib/transport";
 import { FEATURE_LABELS, isoDateTime, planPrice, price, refreshLicense, setLicense, useLicense } from "../lib/license";
@@ -21,6 +22,8 @@ export default function LicencePage() {
   const [busy, setBusy] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [storeOpen, setStoreOpen] = useState(false);
   // Change après chaque paiement : la liste « Mes paiements » se recharge.
   const [paymentsKey, setPaymentsKey] = useState(0);
   // Le compte et le paiement se gèrent sur le PC qui détient la base (poste serveur ou poste unique).
@@ -170,10 +173,16 @@ export default function LicencePage() {
                   {tl("Ce PC est relié à")} <strong>{lic.account.store_name}</strong> ({lic.account.store_code}{tl("), compte")} <strong>{lic.account.email}</strong>.
                 </p>
                 <div className="row-start">
-                  <button className="btn" onClick={() => setAccountOpen(true)}>{tl("Changer de boutique ou de compte")}</button>
+                  <button className="btn" onClick={() => setStoreOpen(true)}>{tl("Informations de la boutique")}</button>
+                  <button className="btn" onClick={() => setEmailOpen(true)}>{tl("Changer l'e-mail du compte")}</button>
                   <button className="btn" onClick={() => setPasswordOpen(true)}>{tl("Changer le mot de passe du compte")}</button>
+                  <button className="btn" onClick={() => setAccountOpen(true)}>{tl("Changer de boutique ou de compte")}</button>
                 </div>
                 {passwordOpen && <ChangePasswordModal email={lic.account.email} onClose={() => setPasswordOpen(false)} />}
+                {emailOpen && <ChangeEmailModal email={lic.account.email} onClose={() => setEmailOpen(false)} onDone={() => refreshLicense()} />}
+                {storeOpen && (
+                  <StoreInfoModal code={lic.account.store_code} name={lic.account.store_name} email={lic.account.email} onClose={() => setStoreOpen(false)} />
+                )}
               </>
             ) : (
               <>

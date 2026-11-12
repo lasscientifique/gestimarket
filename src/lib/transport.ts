@@ -148,6 +148,7 @@ function toError(e: unknown): Error {
 const SLOW_COMMANDS = new Set([
   "import_products", "import_categories", "seed_catalogue", "backup_database", "run_auto_backup", "plan_generate_layout",
   "license_sync", "account_signup", "account_login", "account_create_store", "account_link", "account_card_start",
+  "account_confirm_signup", "account_confirm_login", "account_resend_code",
 ]);
 
 // Erreurs venues du moteur ou du réseau (stock insuffisant, serveur injoignable…) : attendues, déjà

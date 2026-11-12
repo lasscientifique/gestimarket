@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  ArrowLeft, BadgeCheck, CircleOff, Gift, KeyRound, LogIn, LogOut, Mail, MessageCircle, Phone, Power, RefreshCw, Smartphone, Store, WifiOff,
+  ArrowLeft, AtSign, BadgeCheck, CircleOff, Gift, KeyRound, LogIn, LogOut, Mail, MessageCircle, Pencil, Phone, Power, RefreshCw, Smartphone, Store,
+  UserCog, WifiOff,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { ChangePasswordModal, ForgotPasswordModal } from "../components/AccountPassword";
+import { ChangeEmailModal, ConfirmEmailCode, StoreInfoModal } from "../components/AccountProfile";
 import { BrandLogo } from "../components/Brand";
 import { Badge, Field, Modal } from "../components/ui";
-import { owner, pingShop, sameVersion, type OwnerPayment, type OwnerStore, type OwnerStores } from "../lib/owner";
+import { isConfirm, owner, pingShop, sameVersion, type OwnerPayment, type OwnerStore, type OwnerStores } from "../lib/owner";
 import { isTauri, remoteShop, setRemoteShop } from "../lib/transport";
 import { dateOnly, dateTime } from "../lib/format";
 import { tl, tm } from "../lib/i18n";
@@ -40,6 +42,8 @@ export default function OwnerHubPage() {
   const [tab, setTab] = useState<Tab>(() => (window.location.hash.includes("tab=contact") ? "contact" : "shops"));
   const [selected, setSelected] = useState<string | null>(null);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -99,11 +103,22 @@ export default function OwnerHubPage() {
           <button className={tab === "shops" ? "active" : ""} onClick={() => setTab("shops")}><Store size={16} />  {tl("Mes boutiques")}</button>
           <button className={tab === "subscriptions" ? "active" : ""} onClick={() => setTab("subscriptions")}><BadgeCheck size={16} />  {tl("Abonnements")}</button>
           <button className={tab === "contact" ? "active" : ""} onClick={() => setTab("contact")}><MessageCircle size={16} />  {tl("Contact")}</button>
-          <button onClick={() => setPasswordOpen(true)}><KeyRound size={16} />  {tl("Mot de passe")}</button>
+          <button onClick={() => setAccountOpen(true)}><UserCog size={16} />  {tl("Mon compte")}</button>
           <button onClick={logout}><LogOut size={16} />  {tl("Se déconnecter")}</button>
         </nav>
       )}
+      {accountOpen && (
+        <Modal title={<><UserCog size={18} />  {tl("Mon compte")}</>} onClose={() => setAccountOpen(false)} width={440}>
+          <div className="stack">
+            <p className="muted">{tl("Compte Eden Dev de vos boutiques :")} <strong>{data?.email}</strong></p>
+            <button className="btn btn-block" onClick={() => { setAccountOpen(false); setEmailOpen(true); }}><AtSign size={16} />  {tl("Changer l'e-mail du compte")}</button>
+            <button className="btn btn-block" onClick={() => { setAccountOpen(false); setPasswordOpen(true); }}><KeyRound size={16} />  {tl("Changer le mot de passe")}</button>
+            <p className="muted small">{tl("Téléphone, ville et adresse d'une boutique : bouton « Informations » dans « Mes boutiques ».")}</p>
+          </div>
+        </Modal>
+      )}
       {passwordOpen && <ChangePasswordModal email={data?.email} onClose={() => setPasswordOpen(false)} />}
+      {emailOpen && data && <ChangeEmailModal email={data.email} onClose={() => setEmailOpen(false)} onDone={() => void load()} />}
 
       <main className="owner-body">
         {connected === null && <div className="muted owner-loading">{tl("Chargement…")}</div>}
@@ -127,17 +142,34 @@ function OwnerLogin({ onDone, onContact }: { onDone: (d: OwnerStores) => void; o
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
+  // Adresse pas encore confirmée : le code reçu à l'inscription est demandé.
+  const [confirming, setConfirming] = useState<string | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     try {
-      onDone(await owner.login(email, password));
+      const r = await owner.login(email, password);
+      if (isConfirm(r)) setConfirming(r.email);
+      else onDone(r);
     } catch (err) {
       toast.error(err);
     } finally {
       setBusy(false);
     }
   };
+  if (confirming) {
+    return (
+      <div className="card owner-login">
+        <h2>{tl("Confirmez l'adresse de votre compte")}</h2>
+        <ConfirmEmailCode
+          email={confirming}
+          confirm={async (code) => onDone(await owner.confirmSignup(confirming, code))}
+          resend={() => owner.resendSignup(confirming)}
+          onBack={() => setConfirming(null)}
+        />
+      </div>
+    );
+  }
   return (
     <form className="card owner-login" onSubmit={submit}>
       <h2>{tl("Connectez-vous avec le compte de votre boutique")}</h2>
@@ -170,6 +202,7 @@ function ShopsTab({ data, busy, reload, onSubscription }: { data: OwnerStores | 
   const [off, setOff] = useState<OwnerStore | null>(null);
   const [other, setOther] = useState<{ store: OwnerStore; url: string; version: string } | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
+  const [editing, setEditing] = useState<OwnerStore | null>(null);
 
   const open = async (s: OwnerStore) => {
     const url = s.server.public_url || s.server.url;
@@ -222,11 +255,15 @@ function ShopsTab({ data, busy, reload, onSubscription }: { data: OwnerStores | 
                   {opening === s.code ? tl("Ouverture…") : tl("Ouvrir")}
                 </button>
                 <button className="btn" onClick={() => onSubscription(s.code)}><BadgeCheck size={16} />  {tl("Abonnement")}</button>
+                <button className="btn" disabled={data?.offline} onClick={() => setEditing(s)}><Pencil size={16} />  {tl("Informations")}</button>
               </div>
             </div>
           );
         })}
       </div>
+      {editing && data && (
+        <StoreInfoModal code={editing.code} name={editing.name} email={data.email} initial={editing} onClose={() => setEditing(null)} onSaved={reload} />
+      )}
       {off && (
         <Modal
           title={<><CircleOff size={18} />  {tl("Serveur éteint")}</>}

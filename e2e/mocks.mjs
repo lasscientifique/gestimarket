@@ -24,9 +24,17 @@ if (mode === "tunnel") {
     .listen(8080, "127.0.0.1", () => console.log("tunnel prêt sur :8080"));
 } else if (mode === "supabase") {
   let last = null;
-  // Compte Eden Dev de la propriétaire (voir e2e/run.mjs) ; code « reçu par e-mail » après « mot de passe oublié ».
-  const owner = { email: "proprietaire@exemple.ml", password: "Proprietaire-2026", code: null };
+  // Compte Eden Dev de la propriétaire (voir e2e/run.mjs) ; code « reçu par e-mail » après « mot de passe oublié »,
+  // et code envoyé à la nouvelle adresse quand elle change d'e-mail (« Confirm email » activé).
+  const owner = { email: "proprietaire@exemple.ml", password: "Proprietaire-2026", code: null, newEmail: null, changeCode: null };
+  // Compte inscrit dont l'adresse n'est pas encore confirmée (code reçu à l'inscription).
+  const pending = { email: "nouvelle@exemple.ml", password: "Nouvelle-2026", code: "135790", confirmed: false };
   const later = new Date(Date.now() + 20 * 86400e3).toISOString();
+  // Boutique du compte : informations modifiables par la propriétaire (gm_update_store).
+  const store = {
+    code: "GM-E2E", name: "Boutique du compte E2E", owner_name: "Propriétaire E2E", phone: "", city: "Bamako", address: "ACI 2000",
+    status: "active", plan: "pro", plan_label: "PRO", ends_at: later, trial: false,
+  };
   http
     .createServer((req, res) => {
       let body = "";
@@ -45,14 +53,23 @@ if (mode === "tunnel") {
           res.statusCode = status;
           res.end(JSON.stringify(v));
         };
-        const bearer = (req.headers.authorization || "").startsWith("Bearer acces-");
+        const auth = req.headers.authorization || "";
+        const bearer = auth.startsWith("Bearer acces-");
         if (url.pathname === "/auth/v1/token") {
           if (url.searchParams.get("grant_type") === "refresh_token") return send(200, { access_token: "acces-e2e", refresh_token: "rafraichissement-e2e" });
           if (a.email === owner.email && a.password === owner.password) return send(200, { access_token: "acces-e2e", refresh_token: "rafraichissement-e2e" });
+          if (a.email === pending.email && a.password === pending.password) {
+            if (!pending.confirmed) return send(400, { error_code: "email_not_confirmed", msg: "Email not confirmed" });
+            return send(200, { access_token: "acces-nouvelle", refresh_token: "rafraichissement-nouvelle" });
+          }
           return send(400, { error_code: "invalid_credentials", msg: "Invalid login credentials" });
         }
         if (url.pathname === "/auth/v1/recover") {
           if (a.email === owner.email) owner.code = "246810";
+          return send(200, {});
+        }
+        if (url.pathname === "/auth/v1/resend") {
+          if (a.type === "signup" && a.email === pending.email) pending.code = "135790";
           return send(200, {});
         }
         if (url.pathname === "/auth/v1/verify") {
@@ -60,17 +77,42 @@ if (mode === "tunnel") {
             owner.code = null;
             return send(200, { access_token: "acces-recuperation", refresh_token: "rafraichissement-recuperation" });
           }
+          if (a.type === "signup" && a.email === pending.email && pending.code && a.token === pending.code) {
+            pending.confirmed = true;
+            pending.code = null;
+            return send(200, { access_token: "acces-nouvelle", refresh_token: "rafraichissement-nouvelle" });
+          }
+          if (a.type === "email_change" && owner.newEmail && a.email === owner.newEmail && a.token === owner.changeCode) {
+            owner.email = owner.newEmail;
+            owner.newEmail = owner.changeCode = null;
+            return send(200, { access_token: "acces-e2e", refresh_token: "rafraichissement-changement" });
+          }
           return send(403, { error_code: "otp_expired", msg: "Token has expired or is invalid" });
         }
         if (url.pathname === "/auth/v1/user" && req.method === "PUT") {
           if (!bearer) return send(401, { error_code: "bad_jwt", msg: "invalid JWT" });
+          if (a.email) {
+            if (a.email === pending.email) return send(422, { error_code: "email_exists", msg: "A user with this email address has already been registered" });
+            owner.newEmail = a.email;
+            owner.changeCode = "975310";
+            return send(200, { id: "proprietaire-e2e", email: owner.email, new_email: a.email });
+          }
           if (a.password === owner.password) return send(422, { error_code: "same_password", msg: "New password should be different" });
           owner.password = a.password;
           return send(200, { id: "proprietaire-e2e", email: owner.email });
         }
         if (url.pathname === "/rest/v1/rpc/gm_my_stores") {
           if (!bearer) return send(401, { message: "JWT expired" });
-          return send(200, [{ code: "GM-E2E", name: "Boutique du compte E2E", city: "Bamako", status: "active", plan: "pro", plan_label: "PRO", ends_at: later, trial: false }]);
+          return send(200, auth === "Bearer acces-nouvelle" ? [] : [store]);
+        }
+        if (url.pathname === "/rest/v1/rpc/gm_update_store") {
+          if (!bearer) return send(401, { message: "JWT expired" });
+          if (a.p_store_code !== store.code) return send(400, { message: "Boutique introuvable sur ce compte." });
+          for (const k of ["owner_name", "city", "address"]) {
+            if (!String(a.p?.[k] ?? "").trim()) return send(400, { message: `Champ obligatoire manquant : ${k}` });
+          }
+          Object.assign(store, { owner_name: a.p.owner_name, phone: a.p.phone ?? "", city: a.p.city, address: a.p.address });
+          return send(200, store);
         }
         if (url.pathname === "/rest/v1/rpc/gm_my_server") {
           return send(200, { found: true, active: true, url: "http://127.0.0.1:7878", public_url: "http://127.0.0.1:8080", version: "0.23.0", last_seen: new Date().toISOString(), seconds_ago: 5 });

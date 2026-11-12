@@ -311,7 +311,11 @@ pub async fn discover_servers() -> AppResult<Vec<serde_json::Value>> {
 pub async fn owner(state: State<'_, AppState>, action: String, args: Option<serde_json::Value>) -> AppResult<serde_json::Value> {
     let dir = state.db_path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
     let a = args.unwrap_or(serde_json::Value::Null);
+    let name = action.clone();
     let result = tauri::async_runtime::spawn_blocking(move || crate::account::owner_action(&dir, &action, &a)).await.map_err(internal)?;
+    if let Ok(v) = &result {
+        crate::account::after_owner_action(&state.conn(), &name, v);
+    }
     result.map_err(AppError::Validation)
 }
 

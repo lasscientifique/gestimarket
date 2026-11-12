@@ -1,8 +1,8 @@
 import { local, rpc, setToken } from "./lib/transport";
 import type {
   AccountLinkResult,
+  AccountLoginResult,
   AccountOptions,
-  AccountStore,
   AuditEntry,
   TermsStatus,
   BackupFile,
@@ -384,7 +384,11 @@ export const api = {
   // Conditions d'utilisation, licence et données personnelles
   termsStatus: () => call<TermsStatus>("terms_status"),
   acceptTerms: (version: string) => call<TermsStatus>("accept_terms", { version }),
-  accountLogin: (email: string, password: string) => call<{ email: string; stores: AccountStore[] }>("account_login", { email, password }),
+  accountLogin: (email: string, password: string) => call<AccountLoginResult>("account_login", { email, password }),
+  /** Adresse confirmée avec le code reçu par e-mail : à l'inscription (boutique créée, PC rattaché) ou à la connexion. */
+  accountConfirmSignup: (email: string, code: string, input: StoreInput) => call<AccountLinkResult>("account_confirm_signup", { email, code, input }),
+  accountConfirmLogin: (email: string, code: string) => call<AccountLoginResult>("account_confirm_login", { email, code }),
+  accountResendCode: (email: string) => call<{ sent: boolean }>("account_resend_code", { email }),
   accountCreateStore: (input: StoreInput) => call<AccountLinkResult>("account_create_store", { input }),
   accountLink: (store_code: string) => call<AccountLinkResult>("account_link", { store_code }),
   accountPayments: () => call<SubscriptionPayment[]>("account_payments"),

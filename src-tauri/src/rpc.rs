@@ -932,6 +932,22 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             let password: String = arg(&a, "password")?;
             out(crate::account::login(&email, &password).map_err(AppError::Validation)?)
         }
+        // Adresse e-mail confirmée avec le code reçu (réglage « Confirm email » de Supabase) : à l'inscription
+        // (la boutique est alors créée et ce PC rattaché), ou à la connexion suivante.
+        "account_confirm_signup" => {
+            account_access(state, origin)?;
+            let (email, code): (String, String) = (arg(&a, "email")?, arg(&a, "code")?);
+            out(crate::account::signup_confirm(state, &email, &code, arg(&a, "input")?).map_err(AppError::Validation)?)
+        }
+        "account_confirm_login" => {
+            account_access(state, origin)?;
+            let (email, code): (String, String) = (arg(&a, "email")?, arg(&a, "code")?);
+            out(crate::account::login_confirm(&email, &code).map_err(AppError::Validation)?)
+        }
+        "account_resend_code" => {
+            account_access(state, origin)?;
+            out(crate::account::signup_resend(&arg::<String>(&a, "email")?).map_err(AppError::Validation)?)
+        }
         "account_create_store" => {
             account_access(state, origin)?;
             out(crate::account::create_store(state, arg(&a, "input")?).map_err(AppError::Validation)?)

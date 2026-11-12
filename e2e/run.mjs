@@ -738,13 +738,75 @@ try {
   await ownerCall("reset_password", { email: OWNER_EMAIL, code: "246810", password: "Retrouve-mdp-2026", login: true });
   const afterReset = await ownerCall("status");
   check("mot de passe oublié : nouveau mot de passe avec le code reçu, propriétaire connectée", afterReset.connected === true, JSON.stringify(afterReset));
+
+  // ── 0.25 : informations de la boutique (téléphone…), e-mail du compte, adresse confirmée par code.
+  const NEW_PASSWORD = "Retrouve-mdp-2026";
+  const emptyName = await outcome(ownerCall("update_store", { store_code: "GM-E2E", owner_name: " ", phone: "", city: "Bamako", address: "ACI 2000" }));
+  check("informations de la boutique : nom de la propriétaire obligatoire", emptyName.includes("Renseignez"), emptyName);
+  const updated = await ownerCall("update_store", { store_code: "GM-E2E", owner_name: "Awa Traoré", phone: "+223 70 11 22 33", city: "Bamako", address: "ACI 2000, rue 12" });
+  const listed = await ownerCall("stores");
+  check(
+    "informations de la boutique modifiées depuis le téléphone (téléphone, adresse)",
+    updated?.phone === "+223 70 11 22 33" && listed?.stores?.[0]?.address === "ACI 2000, rue 12",
+    JSON.stringify(updated).slice(0, 200),
+  );
+  const badInfoPwd = await outcome(ownerCall("store_info", { store_code: "GM-E2E", email: OWNER_EMAIL, password: "pas-le-bon-1" }));
+  const infoPc = await ownerCall("store_info", { store_code: "GM-E2E", email: OWNER_EMAIL, password: NEW_PASSWORD });
+  check("informations de la boutique lues sur le PC avec le mot de passe du compte", badInfoPwd.includes("incorrect") && infoPc?.owner_name === "Awa Traoré", `${badInfoPwd} / ${infoPc?.owner_name}`);
+
+  const NEW_EMAIL = "awa.traore@exemple.ml";
+  const takenEmail = await outcome(ownerCall("email_change_start", { email: OWNER_EMAIL, password: NEW_PASSWORD, new_email: "nouvelle@exemple.ml" }));
+  check("e-mail du compte : adresse déjà prise refusée", takenEmail.includes("autre compte"), takenEmail);
+  const badPwdEmail = await outcome(ownerCall("email_change_start", { email: OWNER_EMAIL, password: "pas-le-bon-1", new_email: NEW_EMAIL }));
+  check("e-mail du compte : mot de passe actuel vérifié", badPwdEmail.includes("incorrect"), badPwdEmail);
+  const started = await ownerCall("email_change_start", { email: OWNER_EMAIL, password: NEW_PASSWORD, new_email: NEW_EMAIL });
+  const badChangeCode = await outcome(ownerCall("email_change_confirm", { old_email: OWNER_EMAIL, new_email: NEW_EMAIL, code: "000000", which: "new" }));
+  const changed = await ownerCall("email_change_confirm", { old_email: OWNER_EMAIL, new_email: NEW_EMAIL, code: "975310", which: "new" });
+  const afterChange = await ownerCall("status");
+  check(
+    "e-mail du compte changé avec le code reçu à la nouvelle adresse (appareil toujours connecté)",
+    started?.done === false && badChangeCode.includes("Code incorrect") && changed?.done === true && afterChange.email === NEW_EMAIL,
+    `${JSON.stringify(started)} / ${badChangeCode} / ${JSON.stringify(afterChange)}`,
+  );
+
   const ownerPage = await server.context().newPage();
   await ownerPage.goto(`${SRV}/#/proprietaire`);
   await seen(ownerPage, "Espace propriétaire (écran)", "Boutique du compte E2E");
   await shot(ownerPage, "29-espace-proprietaire.png");
+  try {
+    await ownerPage.locator(".owner-shop").first().getByRole("button", { name: "Informations" }).click();
+    const phone = ownerPage.locator(".modal input[inputmode='tel']");
+    await phone.waitFor({ timeout: 15_000 });
+    check("Espace propriétaire : informations de la boutique préremplies", (await phone.inputValue()) === "+223 70 11 22 33", await phone.inputValue());
+    await shot(ownerPage, "29b-informations-boutique.png");
+    await ownerPage.keyboard.press("Escape");
+  } catch (e) {
+    check("Espace propriétaire : informations de la boutique préremplies", false, e.message);
+  }
   await ownerCall("logout");
   await ownerPage.reload();
   await seen(ownerPage, "Espace propriétaire déconnecté", "Mot de passe oublié ?");
+
+  // Compte dont l'adresse n'est pas encore confirmée (« Confirm email » de Supabase) : le code reçu à
+  // l'inscription est demandé à la connexion, puis le compte s'ouvre.
+  const unconfirmed = await ownerCall("login", { email: "nouvelle@exemple.ml", password: "Nouvelle-2026" });
+  check("connexion avant confirmation de l'adresse : code demandé", unconfirmed?.status === "confirm_email", JSON.stringify(unconfirmed));
+  const badSignupCode = await outcome(ownerCall("confirm_signup", { email: "nouvelle@exemple.ml", code: "000000" }));
+  check("confirmation de l'adresse : mauvais code refusé", badSignupCode.includes("Code incorrect"), badSignupCode);
+  await ownerCall("resend_signup", { email: "nouvelle@exemple.ml" });
+  try {
+    await ownerPage.locator(".owner-login input[type='email']").fill("nouvelle@exemple.ml");
+    await ownerPage.locator(".owner-login input[type='password']").fill("Nouvelle-2026");
+    await ownerPage.locator(".owner-login button.btn-primary").click();
+    await seen(ownerPage, "Espace propriétaire : adresse à confirmer", "Confirmez l'adresse de votre compte");
+    await ownerPage.locator(".confirm-code input").fill("135790");
+    await shot(ownerPage, "29c-confirmation-adresse.png");
+    await ownerPage.locator(".confirm-code button.btn-primary").click();
+    await seen(ownerPage, "Espace propriétaire : adresse confirmée par code, compte ouvert", "Aucune boutique sur ce compte.");
+  } catch (e) {
+    check("Espace propriétaire : adresse confirmée par code", false, e.message);
+  }
+  await ownerCall("logout");
   await ownerPage.close();
 
   // ── Paramètres → Aide, conditions et licence : textes lisibles, manuel PDF lu dans GestiMarket (rangé dans l'application).

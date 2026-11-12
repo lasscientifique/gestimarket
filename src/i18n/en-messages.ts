@@ -102,7 +102,6 @@ export const EN_MESSAGES: Record<string, string> = {
   "Configuration complète : toutes les catégories de grande distribution, marques, références, conditionnements, péremption.": "Full setup: all mass-retail categories, brands, references, packagings, expiry.",
   "Configuration légère : alimentation, boissons, hygiène, entretien, produits divers.": "Light setup: food, drinks, hygiene, cleaning, miscellaneous products.",
   "Configuration réseau du poste": "Station network setup",
-  "Confirmez d'abord votre adresse e-mail (lien reçu par e-mail), puis reconnectez-vous.": "First confirm your e-mail address (link received by e-mail), then log in again.",
   "Congélateur armoire": "Upright freezer",
   "Congélateur coffre": "Chest freezer",
   "Connectez-vous d'abord à votre compte boutique.": "First log in to your shop account.",
@@ -711,4 +710,7 @@ export const EN_MESSAGES: Record<string, string> = {
   "Téléchargement de la licence impossible : réessayez plus tard.": "Could not download the licence: try again later.",
   "Ces conditions ne sont plus les dernières : rechargez la page, puis acceptez-les de nouveau.": "These terms are no longer the latest: reload the page, then accept them again.",
   "Conditions d'utilisation et licence acceptées": "Terms of use and licence accepted",
+  "Adresse e-mail pas encore confirmée : tapez le code reçu par e-mail.": "E-mail address not confirmed yet: type the code received by e-mail.",
+  "Cette adresse e-mail est déjà celle d'un autre compte.": "This e-mail address already belongs to another account.",
+  "La nouvelle adresse est la même que l'actuelle.": "The new address is the same as the current one.",
 };

@@ -1201,8 +1201,17 @@ export interface AccountStore {
 
 export interface AccountLinkResult {
   status: "linked" | "confirm_email";
+  /** « confirm_email » : adresse à laquelle le code a été envoyé. */
+  email?: string;
   store?: AccountStore;
   sync_error?: string | null;
+}
+
+/** Connexion au compte : boutiques, ou adresse pas encore confirmée (code reçu à l'inscription à taper). */
+export interface AccountLoginResult {
+  status: "ok" | "confirm_email";
+  email: string;
+  stores?: AccountStore[];
 }
 
 export interface SessionInfo {

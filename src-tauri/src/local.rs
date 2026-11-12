@@ -46,7 +46,11 @@ pub fn call(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppResult
         "owner" => {
             let dir = state.db_path.parent().map(Path::to_path_buf).unwrap_or_default();
             let action = text(&a, "action").unwrap_or_default();
-            crate::account::owner_action(&dir, &action, a.get("args").unwrap_or(&Value::Null)).map_err(AppError::Validation)
+            let result = crate::account::owner_action(&dir, &action, a.get("args").unwrap_or(&Value::Null));
+            if let Ok(v) = &result {
+                crate::account::after_owner_action(&state.conn(), &action, v);
+            }
+            result.map_err(AppError::Validation)
         }
         _ => invalid(format!("Opération inconnue : {cmd}")),
     }

@@ -41,7 +41,7 @@ fn error_message(code: u16, v: &Value) -> String {
         "weak_password" => Some("Mot de passe trop faible : au moins 8 caractères, avec des lettres et des chiffres."),
         "email_address_invalid" | "validation_failed" => Some("Adresse e-mail invalide."),
         "invalid_credentials" => Some("E-mail ou mot de passe incorrect."),
-        "email_not_confirmed" => Some("Confirmez d'abord votre adresse e-mail (lien reçu par e-mail), puis reconnectez-vous."),
+        "email_not_confirmed" => Some("Adresse e-mail pas encore confirmée : tapez le code reçu par e-mail."),
         "over_email_send_rate_limit" | "over_request_rate_limit" => Some("Trop de tentatives : réessayez dans quelques minutes."),
         "signup_disabled" => Some("Les inscriptions sont fermées pour le moment : contactez Eden Dev."),
         "same_password" => Some("Le nouveau mot de passe doit être différent de l'ancien."),
@@ -63,18 +63,46 @@ fn error_message(code: u16, v: &Value) -> String {
     format!("Erreur du service Eden Dev ({code}).")
 }
 
-fn call(req: ureq::Request, body: Value) -> Result<Value, String> {
+const NO_INTERNET: &str = "Connexion à Internet impossible : vérifiez la connexion de ce PC, puis réessayez.";
+const CODE_REFUSED: &str = "Code incorrect ou expiré : demandez un nouveau code.";
+
+/// Appel à Supabase : la réponse, ou le code d'erreur de Supabase (« email_not_confirmed »…) et le message
+/// en français.
+fn call_full(req: ureq::Request, body: Value) -> Result<Value, (String, String)> {
     match req.send_json(body) {
         Ok(resp) => {
-            let text = resp.into_string().map_err(|e| e.to_string())?;
+            let text = resp.into_string().map_err(|e| (String::new(), e.to_string()))?;
             Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
         }
         Err(ureq::Error::Status(code, resp)) => {
             let v: Value = resp.into_json().unwrap_or(Value::Null);
-            Err(error_message(code, &v))
+            Err((v["error_code"].as_str().unwrap_or_default().to_string(), error_message(code, &v)))
         }
-        Err(_) => Err("Connexion à Internet impossible : vérifiez la connexion de ce PC, puis réessayez.".into()),
+        Err(_) => Err((String::new(), NO_INTERNET.to_string())),
     }
+}
+
+fn call(req: ureq::Request, body: Value) -> Result<Value, String> {
+    call_full(req, body).map_err(|(_, m)| m)
+}
+
+/// Adresse e-mail en minuscules, refusée si elle n'en a pas la forme.
+fn valid_email(email: &str) -> Result<String, String> {
+    let email = email.trim().to_lowercase();
+    if !email.contains('@') || !email.contains('.') || email.contains(char::is_whitespace) {
+        return Err("Adresse e-mail invalide.".into());
+    }
+    Ok(email)
+}
+
+/// Code à 6 chiffres reçu par e-mail (inscription, mot de passe oublié, changement d'adresse), vérifié par
+/// Supabase : la réponse contient la session du compte.
+fn verify_code(kind: &str, email: &str, code: &str) -> Result<Value, String> {
+    let code: String = code.chars().filter(char::is_ascii_digit).collect();
+    if code.len() < 6 {
+        return Err("Tapez le code reçu par e-mail (6 chiffres).".into());
+    }
+    call(request("/auth/v1/verify", None), json!({ "type": kind, "email": email.trim().to_lowercase(), "token": code }))
 }
 
 fn rpc_call(name: &str, token: &str, body: Value) -> Result<Value, String> {
@@ -95,9 +123,13 @@ fn session() -> Result<(String, String), String> {
     }
 }
 
+fn password_login_full(email: &str, password: &str) -> Result<String, (String, String)> {
+    let v = call_full(request("/auth/v1/token?grant_type=password", None), json!({ "email": email.trim(), "password": password }))?;
+    v["access_token"].as_str().map(String::from).ok_or_else(|| (String::new(), "Réponse de connexion invalide.".to_string()))
+}
+
 fn password_login(email: &str, password: &str) -> Result<String, String> {
-    let v = call(request("/auth/v1/token?grant_type=password", None), json!({ "email": email.trim(), "password": password }))?;
-    v["access_token"].as_str().map(String::from).ok_or_else(|| "Réponse de connexion invalide.".to_string())
+    password_login_full(email, password).map_err(|(_, m)| m)
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,10 +186,7 @@ pub fn options() -> Result<Value, String> {
 
 /// Création du compte, de la boutique (essai gratuit) et rattachement de ce PC.
 pub fn signup(state: &AppState, input: SignupInput) -> Result<Value, String> {
-    let email = input.email.trim().to_lowercase();
-    if !email.contains('@') || !email.contains('.') {
-        return Err("Adresse e-mail invalide.".into());
-    }
+    let email = valid_email(&input.email)?;
     password_ok(&input.password)?;
     input.store.validate()?;
     let v = call(
@@ -172,12 +201,31 @@ pub fn signup(state: &AppState, input: SignupInput) -> Result<Value, String> {
         }),
     )?;
     let Some(token) = v["access_token"].as_str() else {
-        // Confirmation des e-mails activée dans Supabase : la boutique sera créée après la première connexion.
-        return Ok(json!({ "status": "confirm_email" }));
+        // Confirmation des e-mails activée dans Supabase : un code part à l'adresse ; la boutique sera créée
+        // quand il sera tapé (signup_confirm).
+        return Ok(json!({ "status": "confirm_email", "email": email }));
     };
     remember(&email, token);
     let store = rpc_call("gm_register_store", token, json!({ "p": input.store.to_json() }))?;
     link(state, store["code"].as_str().unwrap_or_default())
+}
+
+/// Inscription confirmée avec le code reçu par e-mail : la boutique est créée, puis ce PC y est rattaché.
+pub fn signup_confirm(state: &AppState, email: &str, code: &str, store: StoreInput) -> Result<Value, String> {
+    store.validate()?;
+    let email = valid_email(email)?;
+    let v = verify_code("signup", &email, code)?;
+    let token = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
+    remember(&email, token);
+    let created = rpc_call("gm_register_store", token, json!({ "p": store.to_json() }))?;
+    link(state, created["code"].as_str().unwrap_or_default())
+}
+
+/// Nouveau code d'inscription (le premier n'est pas arrivé, ou a expiré).
+pub fn signup_resend(email: &str) -> Result<Value, String> {
+    let email = valid_email(email)?;
+    call(request("/auth/v1/resend", None), json!({ "type": "signup", "email": email }))?;
+    Ok(json!({ "sent": true }))
 }
 
 /// Nouveau mot de passe du compte Eden Dev : 8 caractères au moins, des lettres et des chiffres, et pas un
@@ -206,10 +254,7 @@ pub fn password_ok(password: &str) -> Result<(), String> {
 /// « Mot de passe oublié » : Supabase envoie un code à l'adresse du compte (rien n'indique si l'adresse
 /// existe : même réponse dans tous les cas).
 pub fn password_recover(email: &str) -> Result<Value, String> {
-    let email = email.trim().to_lowercase();
-    if !email.contains('@') || !email.contains('.') {
-        return Err("Adresse e-mail invalide.".into());
-    }
+    let email = valid_email(email)?;
     call(request("/auth/v1/recover", None), json!({ "email": email }))?;
     Ok(json!({ "sent": true }))
 }
@@ -222,13 +267,9 @@ fn set_password(access: &str, password: &str) -> Result<(), String> {
 /// (Espace propriétaire).
 pub fn password_reset(dir: &std::path::Path, email: &str, code: &str, password: &str, login: bool) -> Result<Value, String> {
     password_ok(password)?;
-    let code: String = code.chars().filter(char::is_ascii_digit).collect();
-    if code.len() < 6 {
-        return Err("Tapez le code reçu par e-mail (6 chiffres).".into());
-    }
     let email = email.trim().to_lowercase();
-    let v = call(request("/auth/v1/verify", None), json!({ "type": "recovery", "email": email, "token": code }))?;
-    let access = v["access_token"].as_str().ok_or("Code incorrect ou expiré : demandez un nouveau code.")?;
+    let v = verify_code("recovery", &email, code)?;
+    let access = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
     set_password(access, password)?;
     if login {
         owner_login(dir, &email, password)?;
@@ -252,12 +293,27 @@ pub fn password_change(dir: &std::path::Path, email: &str, current: &str, passwo
     Ok(json!({ "ok": true }))
 }
 
-/// Connexion : retourne les boutiques du compte (à rattacher, ou à créer).
+/// Connexion : retourne les boutiques du compte (à rattacher, ou à créer). Adresse pas encore confirmée :
+/// `status` « confirm_email » (le code reçu à l'inscription se tape alors, voir login_confirm).
 pub fn login(email: &str, password: &str) -> Result<Value, String> {
     let email = email.trim().to_lowercase();
-    let token = password_login(&email, password)?;
+    let token = match password_login_full(&email, password) {
+        Ok(t) => t,
+        Err((code, _)) if code == "email_not_confirmed" => return Ok(json!({ "status": "confirm_email", "email": email })),
+        Err((_, m)) => return Err(m),
+    };
     remember(&email, &token);
     let stores = rpc_call("gm_my_stores", &token, json!({}))?;
+    Ok(json!({ "status": "ok", "email": email, "stores": stores }))
+}
+
+/// Adresse confirmée à la connexion avec le code reçu à l'inscription : boutiques du compte.
+pub fn login_confirm(email: &str, code: &str) -> Result<Value, String> {
+    let email = valid_email(email)?;
+    let v = verify_code("signup", &email, code)?;
+    let token = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
+    remember(&email, token);
+    let stores = rpc_call("gm_my_stores", token, json!({}))?;
     Ok(json!({ "status": "ok", "email": email, "stores": stores }))
 }
 
@@ -436,7 +492,6 @@ pub fn card_start(plan: &str, months: i64) -> Result<Value, String> {
 
 const OWNER_FILE: &str = "proprietaire.json";
 const OWNER_CACHE: &str = "proprietaire-boutiques.json";
-const NO_INTERNET: &str = "Connexion à Internet impossible : vérifiez la connexion de ce PC, puis réessayez.";
 
 static OWNER: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
@@ -482,13 +537,31 @@ fn owner_token(dir: &std::path::Path) -> Result<String, String> {
     Ok(access)
 }
 
-/// Connexion de la propriétaire, puis ses boutiques.
+/// Connexion de la propriétaire, puis ses boutiques. Adresse pas encore confirmée : `status`
+/// « confirm_email » (le code reçu à l'inscription se tape alors, voir owner_confirm).
 pub fn owner_login(dir: &std::path::Path, email: &str, password: &str) -> Result<Value, String> {
     let email = email.trim().to_lowercase();
-    let (access, refresh) = owner_tokens(json!({ "email": email, "password": password }), "password")?;
-    owner_save(dir, &email, &refresh);
-    *OWNER.lock().unwrap_or_else(|e| e.into_inner()) = Some((access, Instant::now()));
+    match call_full(request("/auth/v1/token?grant_type=password", None), json!({ "email": email, "password": password })) {
+        Ok(v) => owner_start(dir, &email, &v),
+        Err((code, _)) if code == "email_not_confirmed" => Ok(json!({ "status": "confirm_email", "email": email })),
+        Err((_, m)) => Err(m),
+    }
+}
+
+/// Session reçue de Supabase (connexion, code confirmé) : gardée sur l'appareil, puis les boutiques.
+fn owner_start(dir: &std::path::Path, email: &str, v: &Value) -> Result<Value, String> {
+    let access = v["access_token"].as_str().ok_or(CODE_REFUSED)?;
+    let refresh = v["refresh_token"].as_str().ok_or("Réponse de connexion invalide.")?;
+    owner_save(dir, email, refresh);
+    *OWNER.lock().unwrap_or_else(|e| e.into_inner()) = Some((access.to_string(), Instant::now()));
     owner_stores(dir)
+}
+
+/// Espace propriétaire : adresse confirmée avec le code reçu à l'inscription, et la propriétaire connectée.
+pub fn owner_confirm(dir: &std::path::Path, email: &str, code: &str) -> Result<Value, String> {
+    let email = valid_email(email)?;
+    let v = verify_code("signup", &email, code)?;
+    owner_start(dir, &email, &v)
 }
 
 /// « Se déconnecter » : la session et la liste gardée sont effacées de l'appareil.
@@ -571,8 +644,114 @@ pub fn owner_declare(dir: &std::path::Path, store_code: &str, plan: &str, months
     )
 }
 
+// ───────────────────────────── Adresse e-mail du compte ─────────────────────────────
+// Le mot de passe actuel est vérifié, puis Supabase envoie un code à la nouvelle adresse (et un autre à
+// l'ancienne si « Secure email change » est activé). Sans confirmation des e-mails (réglage « Confirm email »
+// de Supabase), l'adresse change tout de suite. Les boutiques du compte suivent (déclencheur gm_account_email).
 
-/// Espace propriétaire et mot de passe du compte : commande « owner » de cet appareil (jamais servie au réseau).
+/// Demande de changement : `done` si l'adresse a déjà changé, sinon un code est parti à la nouvelle adresse.
+pub fn email_change_start(dir: &std::path::Path, email: &str, password: &str, new_email: &str) -> Result<Value, String> {
+    let old = email.trim().to_lowercase();
+    let new = valid_email(new_email)?;
+    if new == old {
+        return Err("La nouvelle adresse est la même que l'actuelle.".into());
+    }
+    let access = password_login(&old, password)?;
+    let v = call_full(request_method("PUT", "/auth/v1/user", Some(&access)), json!({ "email": new })).map_err(|(code, m)| {
+        if code == "email_exists" || code == "user_already_exists" {
+            "Cette adresse e-mail est déjà celle d'un autre compte.".to_string()
+        } else {
+            m
+        }
+    })?;
+    if v["email"].as_str().is_some_and(|e| e.eq_ignore_ascii_case(&new)) {
+        email_changed(dir, &old, &new, None);
+        return Ok(json!({ "done": true, "email": new, "old_email": old }));
+    }
+    Ok(json!({ "done": false, "email": new, "old_email": old }))
+}
+
+/// Code reçu à la nouvelle adresse (`which` « new »), ou à l'ancienne (« old ») quand Supabase en demande deux.
+pub fn email_change_confirm(dir: &std::path::Path, old: &str, new: &str, code: &str, which: &str) -> Result<Value, String> {
+    let old = old.trim().to_lowercase();
+    let new = valid_email(new)?;
+    let v = verify_code("email_change", if which == "old" { &old } else { &new }, code)?;
+    if v["access_token"].is_string() {
+        email_changed(dir, &old, &new, v["refresh_token"].as_str());
+        return Ok(json!({ "done": true, "email": new, "old_email": old }));
+    }
+    // « Secure email change » : le code envoyé à l'autre adresse est aussi demandé.
+    Ok(json!({ "done": false, "other": true, "email": new, "old_email": old }))
+}
+
+/// Nouvelle adresse : la connexion gardée de l'Espace propriétaire et celle du compte sur ce PC la suivent.
+fn email_changed(dir: &std::path::Path, old: &str, new: &str, refresh: Option<&str>) {
+    if let Some((saved, saved_refresh)) = owner_saved(dir) {
+        if saved == old {
+            owner_save(dir, new, refresh.unwrap_or(&saved_refresh));
+        }
+    }
+    if let Some((email, _, _)) = SESSION.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        if email == old {
+            *email = new.to_string();
+        }
+    }
+}
+
+/// Après une commande « owner » réussie : la nouvelle adresse du compte est reportée sur la boutique de ce PC
+/// (Abonnement & licence).
+pub fn after_owner_action(conn: &rusqlite::Connection, action: &str, v: &Value) {
+    if !matches!(action, "email_change_start" | "email_change_confirm") || v["done"].as_bool() != Some(true) {
+        return;
+    }
+    let (Some(old), Some(new)) = (v["old_email"].as_str(), v["email"].as_str()) else { return };
+    let account = license::account();
+    if account.email.eq_ignore_ascii_case(old) {
+        license::set_account(conn, new, &account.store_code, &account.store_name);
+    }
+}
+
+// ───────────────────────────── Informations de la boutique ─────────────────────────────
+// Nom complet de la propriétaire, téléphone, ville et adresse, enregistrés chez Eden Dev (gm_update_store).
+// Le nom de la boutique, le pays et le type restent ceux de l'inscription.
+
+/// Jeton du compte : avec le mot de passe (PC), ou la connexion gardée de l'Espace propriétaire (téléphone).
+fn account_token(dir: &std::path::Path, email: &str, password: &str) -> Result<String, String> {
+    if password.is_empty() {
+        owner_token(dir)
+    } else {
+        password_login(&email.trim().to_lowercase(), password)
+    }
+}
+
+/// Informations d'une boutique du compte, pour les modifier.
+pub fn store_info(dir: &std::path::Path, store_code: &str, email: &str, password: &str) -> Result<Value, String> {
+    let token = account_token(dir, email, password)?;
+    let stores = rpc_call("gm_my_stores", &token, json!({}))?;
+    stores
+        .as_array()
+        .and_then(|list| list.iter().find(|s| s["code"].as_str() == Some(store_code)).cloned())
+        .ok_or_else(|| "Boutique introuvable sur ce compte.".to_string())
+}
+
+/// Enregistre les informations modifiées ; retourne la boutique à jour.
+pub fn update_store(dir: &std::path::Path, a: &Value) -> Result<Value, String> {
+    let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default().trim().to_string();
+    for (k, label) in [("owner_name", "le nom complet de la propriétaire"), ("city", "la ville"), ("address", "l'adresse")] {
+        if text(k).is_empty() {
+            return Err(format!("Renseignez {label}."));
+        }
+    }
+    let token = account_token(dir, &text("email"), a.get("password").and_then(Value::as_str).unwrap_or_default())?;
+    let info = json!({ "owner_name": text("owner_name"), "phone": text("phone"), "city": text("city"), "address": text("address") });
+    let store = rpc_call("gm_update_store", &token, json!({ "p_store_code": text("store_code"), "p": info }))?;
+    // Liste gardée de l'Espace propriétaire : relue au prochain affichage.
+    let _ = std::fs::remove_file(dir.join(OWNER_CACHE));
+    Ok(store)
+}
+
+/// Espace propriétaire et compte Eden Dev (mot de passe, e-mail, informations de la boutique) : commande
+/// « owner » de cet appareil (jamais servie au réseau).
 pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Value, String> {
     let text = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
     match action {
@@ -604,6 +783,12 @@ pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Va
             a.get("login").and_then(Value::as_bool).unwrap_or(false),
         ),
         "change_password" => password_change(dir, &text("email"), &text("current"), &text("password")),
+        "confirm_signup" => owner_confirm(dir, &text("email"), &text("code")),
+        "resend_signup" => signup_resend(&text("email")),
+        "email_change_start" => email_change_start(dir, &text("email"), &text("password"), &text("new_email")),
+        "email_change_confirm" => email_change_confirm(dir, &text("old_email"), &text("new_email"), &text("code"), &text("which")),
+        "store_info" => store_info(dir, &text("store_code"), &text("email"), &text("password")),
+        "update_store" => update_store(dir, a),
         _ => Err("Action inconnue.".to_string()),
     }
 }
@@ -661,6 +846,16 @@ mod tests {
         for ok in ["Boutique-Eden-2026", "kadi7seydou", "Sikasso4892"] {
             assert!(password_ok(ok).is_ok(), "{ok}");
         }
+    }
+
+    #[test]
+    fn adresses_et_codes_recus_par_email() {
+        assert_eq!(valid_email("  Awa.Traore@Exemple.ML ").unwrap(), "awa.traore@exemple.ml");
+        for bad in ["", "awa", "awa@exemple", "awa traore@exemple.ml"] {
+            assert!(valid_email(bad).is_err(), "{bad}");
+        }
+        // Code trop court : refusé avant tout appel à Supabase.
+        assert_eq!(verify_code("signup", "awa@exemple.ml", "12 34").unwrap_err(), "Tapez le code reçu par e-mail (6 chiffres).");
     }
 
     #[test]

@@ -18,7 +18,10 @@ export interface OwnerServer {
 export interface OwnerStore {
   code: string;
   name: string;
+  owner_name?: string;
+  phone?: string;
   city?: string;
+  address?: string;
   status?: string;
   plan?: string | null;
   plan_label?: string | null;
@@ -60,11 +63,45 @@ export interface FoundShop {
   device?: "phone" | "pc" | string;
 }
 
+/** Adresse du compte pas encore confirmée : le code reçu à l'inscription est demandé. */
+export interface OwnerConfirm {
+  status: "confirm_email";
+  email: string;
+}
+
+/** Changement d'adresse : `done` quand c'est fait ; sinon un code est attendu (`other` : celui de l'ancienne adresse). */
+export interface EmailChange {
+  done: boolean;
+  other?: boolean;
+  email: string;
+  old_email: string;
+}
+
+/** Informations de la boutique modifiables par la propriétaire (enregistrées chez Eden Dev). */
+export interface StoreInfo {
+  owner_name: string;
+  phone: string;
+  city: string;
+  address: string;
+}
+
 const ownerCall = <T,>(action: string, args: Record<string, unknown> = {}) => local<T>("owner", { action, args });
+
+export const isConfirm = (r: unknown): r is OwnerConfirm => (r as OwnerConfirm | null)?.status === "confirm_email";
 
 export const owner = {
   status: () => ownerCall<{ connected: boolean; email?: string }>("status"),
-  login: (email: string, password: string) => ownerCall<OwnerStores>("login", { email, password }),
+  login: (email: string, password: string) => ownerCall<OwnerStores | OwnerConfirm>("login", { email, password }),
+  /** Adresse confirmée avec le code reçu à l'inscription : la propriétaire est connectée. */
+  confirmSignup: (email: string, code: string) => ownerCall<OwnerStores>("confirm_signup", { email, code }),
+  resendSignup: (email: string) => ownerCall<{ sent: boolean }>("resend_signup", { email }),
+  /** Changer l'e-mail du compte : mot de passe actuel, puis code reçu à la nouvelle adresse. */
+  emailChangeStart: (email: string, password: string, new_email: string) => ownerCall<EmailChange>("email_change_start", { email, password, new_email }),
+  emailChangeConfirm: (old_email: string, new_email: string, code: string, which: "new" | "old") =>
+    ownerCall<EmailChange>("email_change_confirm", { old_email, new_email, code, which }),
+  /** Informations d'une boutique : avec le mot de passe (PC) ou la connexion de l'Espace propriétaire. */
+  storeInfo: (store_code: string, email: string, password: string) => ownerCall<StoreInfo & { code: string; name: string }>("store_info", { store_code, email, password }),
+  updateStore: (p: StoreInfo & { store_code: string; email?: string; password?: string }) => ownerCall<StoreInfo & { code: string; name: string }>("update_store", { ...p }),
   logout: () => ownerCall<null>("logout"),
   stores: () => ownerCall<OwnerStores>("stores"),
   payments: (store_code: string) => ownerCall<OwnerPayment[]>("payments", { store_code }),

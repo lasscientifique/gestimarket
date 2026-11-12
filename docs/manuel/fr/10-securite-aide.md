@@ -54,6 +54,8 @@ En cas de problème, envoyez le **journal** du poste (Paramètres → Développe
 
 **J'ai oublié le mot de passe du compte de la boutique.** « Mot de passe oublié ? » : un code est envoyé à l'e-mail du compte.
 
+**Le code de confirmation n'arrive pas.** Regardez les courriers indésirables, puis « Renvoyer le code ». L'adresse était mal tapée ? Créez le compte de nouveau avec la bonne adresse, ou demandez à Eden Dev. Une fois connecté, « Changer l'e-mail du compte » corrige l'adresse.
+
 **J'ai oublié mon code PIN.** Un administrateur le refait dans Personnel. Code PIN de l'administrateur oublié : écran de connexion, avec le compte de la boutique.
 
 **Le stock est faux.** Stock & inventaire → ajuster le produit (motif : inventaire). Le journal montre chaque mouvement et son auteur.
