@@ -24,6 +24,9 @@ on:
       - "e2e/mobile.mjs"
       - "public/**"
       - "scripts/mobile/**"
+      # Conditions d'utilisation, licence et données personnelles, incluses dans l'application ; manuels rangés dedans.
+      - "docs/conditions/**"
+      - "scripts/fetch-manuals.mjs"
       - ".github/workflows/tauri-mobile.yml"
   workflow_dispatch:
 
