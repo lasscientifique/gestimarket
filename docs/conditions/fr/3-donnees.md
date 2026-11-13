@@ -15,6 +15,8 @@ Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 76 59 36 
 | Boutique : nom, nom du propriétaire, téléphone, pays, ville, adresse, type de commerce | Licence, facturation, assistance |
 | Identifiant de l'appareil (calculé, sans donnée personnelle), nom du PC, version de GestiMarket | Lier la licence à l'appareil, connaître la version installée |
 | Paiements : formule, montant, moyen, référence de la transaction, numéro du payeur | Activer et suivre l'abonnement |
+| Numéro WhatsApp du compte, s'il est choisi | Connexion, envoi des codes sur WhatsApp |
+| Messages WhatsApp envoyés au numéro de GestiMarket : numéro et heure du dernier message, messages de GestiMarket non remis (jamais le texte des messages) | N'envoyer un code que si la personne a écrit dans les 24 heures, comme l'exige WhatsApp |
 | Version des conditions acceptée à la création du compte | Preuve de l'acceptation |
 | Adresse du poste serveur (si l'application mobile ou l'adresse Internet est activée) | Ouvrir la boutique à distance |
 | Rapports de panne : message d'erreur, écran, type d'appareil, version, sans aucune donnée commerciale (désactivable : Paramètres → Sécurité) | Corriger les erreurs |
@@ -23,11 +25,11 @@ Eden Dev ne reçoit jamais les ventes, les produits, les stocks, les clients, le
 
 ## 3. Où sont ces données
 
-Chez Supabase, en Irlande (Union européenne). Le trafic de l'adresse Internet de la boutique passe par Cloudflare ; les vidéos d'aide et les mises à jour sont téléchargées depuis GitHub. Ces prestataires appliquent leurs propres règles de sécurité.
+Chez Supabase, en Irlande (Union européenne). Le trafic de l'adresse Internet de la boutique passe par Cloudflare ; les vidéos d'aide et les mises à jour sont téléchargées depuis GitHub. Les codes envoyés sur WhatsApp passent par Meta (WhatsApp Business Platform). Ces prestataires appliquent leurs propres règles de sécurité.
 
 ## 4. Combien de temps
 
-Les données du compte et des paiements sont gardées tant que le compte existe, puis pendant la durée exigée par la loi pour les pièces comptables. Les rapports de panne sont gardés 12 mois.
+Les données du compte et des paiements sont gardées tant que le compte existe, puis pendant la durée exigée par la loi pour les pièces comptables. Les rapports de panne sont gardés 12 mois. Les traces des messages WhatsApp (heure du dernier message, messages non remis) sont effacées 30 jours après la dernière activité.
 
 ## 5. Vos droits
 
