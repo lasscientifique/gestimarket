@@ -3,8 +3,11 @@
 // Supabase Auth (fournisseur « Phone » : inscription, connexion par code, numéro changé) appelle cette fonction
 // avec { user: { phone }, sms: { otp } }, signé selon Standard Webhooks. Elle envoie le code par la WhatsApp
 // Cloud API de Meta :
-//   - en message simple (par défaut) : sans entreprise vérifiée, Meta n'accepte de messages que si la personne
-//     a écrit à GestiMarket dans les 24 heures (GestiMarket affiche « Écrire à GestiMarket » avant le code) ;
+//   - en message simple (par défaut) : sans entreprise vérifiée, Meta ne remet le message que si la personne
+//     a écrit à GestiMarket dans les 24 heures (GestiMarket affiche « Écrire à GestiMarket » avant le code).
+//     Meta accepte l'envoi même hors de cette fenêtre puis l'abandonne sans le dire ici : la fonction
+//     gm-whatsapp-webhook note donc l'heure du dernier message reçu de chaque numéro, et le code n'est envoyé
+//     que dans la fenêtre (sinon « Écrivez d'abord… » tout de suite) ;
 //   - avec le modèle d'authentification WHATSAPP_TEMPLATE, s'il est défini (entreprise vérifiée par Meta) :
 //     le code part sans que la personne écrive d'abord.
 //
@@ -25,11 +28,26 @@ const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_ID") ?? "";
 const TEMPLATE = (Deno.env.get("WHATSAPP_TEMPLATE") ?? "").trim();
 const LANG = Deno.env.get("WHATSAPP_LANG") ?? "fr";
 const GRAPH = "https://graph.facebook.com/v21.0";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-/** Erreur rendue à Supabase Auth, qui la transmet telle quelle à GestiMarket. */
+/** Fonction SQL réservée aux fonctions (service_role) : fenêtre de 24 h, messages non remis. */
+async function rpc(name: string, args: Record<string, unknown>) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!r.ok) throw new Error(`${name} ${r.status} ${(await r.text()).slice(0, 200)}`);
+  return await r.json().catch(() => null);
+}
+
+/** Erreur rendue à Supabase Auth, qui la transmet telle quelle à GestiMarket (avec le code http_code).
+ *  La réponse HTTP reste 200 : sur un 400, Supabase Auth ignore le corps (« Invalid payload sent to hook ») ;
+ *  sur un 429 ou un 503, il rappelle la fonction. */
 function fail(http_code: number, e: { message: string }) {
   return new Response(JSON.stringify({ error: { http_code, message: e.message } }), {
-    status: http_code,
+    status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -93,6 +111,16 @@ Deno.serve(async (req) => {
   if (phone.length < 8 || !/^\d{4,10}$/.test(otp)) return fail(400, NO_WHATSAPP);
   if (!TOKEN || !PHONE_ID) return fail(503, NOT_READY);
 
+  // Message simple : seulement si la personne a écrit dans les 24 heures (notifications de Meta). Si la base
+  // ne répond pas, le code part quand même : Meta le remettra si la fenêtre est ouverte.
+  if (!TEMPLATE) {
+    const open = await rpc("gm_whatsapp_window_open", { p_phone: phone }).catch((e) => {
+      console.error("Fenêtre WhatsApp non vérifiée", String(e).slice(0, 300));
+      return true;
+    });
+    if (open === false) return fail(400, WRITE_FIRST);
+  }
+
   const r = await fetch(`${GRAPH}/${PHONE_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
@@ -103,7 +131,9 @@ Deno.serve(async (req) => {
   const err = r ? await r.json().catch(() => ({})) : {};
   const code = Number(err?.error?.code ?? 0);
   // Journal de la fonction (Supabase → Edge Functions → Logs) : code et texte de Meta, sans le code envoyé.
-  console.error("WhatsApp refusé", r?.status ?? "réseau", code, String(err?.error?.message ?? "").slice(0, 300));
+  const why = String(err?.error?.message ?? "").slice(0, 300);
+  console.error("WhatsApp refusé", r?.status ?? "réseau", code, why);
+  if (code) await rpc("gm_whatsapp_failed", { p_phone: phone, p_code: code, p_error: why }).catch(() => null);
   if (code === WINDOW_CLOSED) return fail(400, WRITE_FIRST);
   if (RECIPIENT_ERRORS.has(code)) return fail(400, NO_WHATSAPP);
   return fail(502, SEND_FAILED);
