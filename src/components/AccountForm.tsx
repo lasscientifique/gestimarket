@@ -8,7 +8,7 @@ import type { AccountLinkResult, AccountOptions, AccountStore, StoreInput } from
 import { tl } from "../lib/i18n";
 import { countryName } from "../lib/countries";
 import { ForgotPasswordModal, passwordProblem } from "./AccountPassword";
-import { ConfirmCode, PhoneInput } from "./AccountProfile";
+import { ConfirmCode, PhoneInput, WhatsAppWriteFirst } from "./AccountProfile";
 import { loginId, looksLikePhone, validPhone } from "../lib/phone";
 
 const EMPTY_STORE: StoreInput = { name: "", owner_name: "", phone: "", country: "ML", city: "", address: "", shop_type: "" };
@@ -242,6 +242,7 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
           </div>
           <h4 className="section-title">{tl("Boutique")}</h4>
           <StoreFields value={store} onChange={setStore} options={options} />
+          {useWhatsapp && <WhatsAppWriteFirst />}
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-lg btn-block" disabled={busy}>
             {busy ? tl("Création du compte…") : tl("Créer le compte et activer l'essai")}
@@ -266,8 +267,11 @@ export function AccountForm({ onLinked, startWith = "signup", termsVersion }: { 
             {busy ? tl("Connexion…") : tl("Se connecter")}
           </button>
           {wa && looksLikePhone(email) && (
-            <button type="button" className="btn btn-block wa-code-btn" disabled={busy} onClick={loginByCode}>
-              <MessageCircle size={16} />  {tl("Recevoir un code sur WhatsApp")}</button>
+            <>
+              <WhatsAppWriteFirst />
+              <button type="button" className="btn btn-block wa-code-btn" disabled={busy} onClick={loginByCode}>
+                <MessageCircle size={16} />  {tl("Recevoir un code sur WhatsApp")}</button>
+            </>
           )}
           <p className="muted small">
             <button type="button" className="link-btn" onClick={() => setForgot(true)}>{tl("Mot de passe oublié ?")}</button>

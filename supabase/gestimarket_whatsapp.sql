@@ -6,6 +6,9 @@
 -- seulement quand le numéro Meta, le modèle de message, la fonction et le crochet sont prêts.
 
 insert into public.gm_config (key, value) values ('whatsapp_enabled', 'false') on conflict (key) do nothing;
+-- Numéro WhatsApp d'envoi de GestiMarket (format international, ex. +22376000000). Sans entreprise vérifiée chez
+-- Meta, le code part en message simple : la personne écrit d'abord à ce numéro (fenêtre de 24 heures).
+insert into public.gm_config (key, value) values ('whatsapp_number', '') on conflict (key) do nothing;
 
 -- Formulaire d'inscription, formules (prix par devise), moyens de paiement et WhatsApp (sans connexion).
 create or replace function public.gm_public_options()
@@ -34,6 +37,7 @@ as $$
       'card_currency', upper(coalesce((select value from public.gm_config where key = 'card_currency'), 'XOF')),
       'card_currencies', to_jsonb(string_to_array(replace(upper(coalesce((select value from public.gm_config where key = 'card_currencies'), 'XOF')), ' ', ''), ','))
     ),
-    'whatsapp', coalesce((select value from public.gm_config where key = 'whatsapp_enabled'), 'false') = 'true'
+    'whatsapp', coalesce((select value from public.gm_config where key = 'whatsapp_enabled'), 'false') = 'true',
+    'whatsapp_number', coalesce((select value from public.gm_config where key = 'whatsapp_number'), '')
   )
 $$;

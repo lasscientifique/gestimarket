@@ -1541,3 +1541,5 @@ input, select, textarea { border-radius: 10px; }
 .account-channel button { white-space: normal; text-align: center; }
 .wa-code-btn { margin-top: 8px; color: #128c7e; border-color: color-mix(in srgb, #25d366 45%, var(--border)); }
 .account-ids .row-between span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.wa-write-first { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.wa-write-first .btn { flex-shrink: 0; }

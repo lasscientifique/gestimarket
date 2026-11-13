@@ -27,17 +27,25 @@ pub async fn rpc(state: State<'_, AppState>, cmd: String, args: Option<Value>) -
 
 /// Contact Eden Dev (Paramètres → Développeur Eden Dev) : ouvre la messagerie, WhatsApp ou l'appel
 /// avec le programme par défaut de ce PC. Seules ces adresses fixes peuvent être ouvertes
-/// (« releases » : page de téléchargement de la dernière version de GestiMarket).
+/// (« releases » : page de téléchargement de la dernière version de GestiMarket ; « whatsapp_gm » : conversation
+/// WhatsApp avec le numéro d'envoi des codes donné par Eden Dev, message « GestiMarket » prêt à envoyer).
 #[tauri::command]
-pub async fn open_contact(app: AppHandle, kind: String) -> AppResult<()> {
-    let url = match kind.as_str() {
-        "email" => "mailto:lasscientifique@gmail.com",
-        "whatsapp" => "https://wa.me/22376593676",
-        "phone" => "tel:+22376593676",
-        "releases" => "https://github.com/lasscientifique/gestimarket/releases/latest",
+pub async fn open_contact(app: AppHandle, kind: String, number: Option<String>) -> AppResult<()> {
+    let url: String = match kind.as_str() {
+        "email" => "mailto:lasscientifique@gmail.com".into(),
+        "whatsapp" => "https://wa.me/22376593676".into(),
+        "phone" => "tel:+22376593676".into(),
+        "releases" => "https://github.com/lasscientifique/gestimarket/releases/latest".into(),
+        "whatsapp_gm" => {
+            let digits: String = number.unwrap_or_default().chars().filter(char::is_ascii_digit).collect();
+            if !(8..=15).contains(&digits.len()) {
+                return invalid("Numéro WhatsApp de GestiMarket inconnu : réessayez avec Internet.");
+            }
+            format!("https://wa.me/{digits}?text=GestiMarket")
+        }
         _ => return invalid("Contact inconnu."),
     };
-    open_url(&app, url)
+    open_url(&app, &url)
 }
 
 /// Téléphone et tablette : WhatsApp, la messagerie ou le téléphone, ouverts par le système.

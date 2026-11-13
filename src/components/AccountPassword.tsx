@@ -3,7 +3,8 @@ import { KeyRound, MailCheck } from "lucide-react";
 import { errorMessage, useApp } from "../context/AppContext";
 import { owner } from "../lib/owner";
 import { tl } from "../lib/i18n";
-import { loginId, showPhone } from "../lib/phone";
+import { loginId, looksLikePhone, showPhone } from "../lib/phone";
+import { WhatsAppWriteFirst } from "./AccountProfile";
 import { Field, Modal } from "./ui";
 
 /** Même règle que le moteur (account.rs) : 8 caractères au moins, lettres et chiffres. */
@@ -85,6 +86,7 @@ export function ForgotPasswordModal({ email: initial = "", login: stay = false, 
           <Field label={tl("E-mail ou numéro WhatsApp")}>
             <input autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
           </Field>
+          {byWhatsapp && looksLikePhone(email) && <WhatsAppWriteFirst />}
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || !email}>{busy ? tl("Envoi…") : tl("Recevoir le code")}</button>
         </form>

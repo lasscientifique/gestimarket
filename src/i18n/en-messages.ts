@@ -726,5 +726,7 @@ export const EN_MESSAGES: Record<string, string> = {
   "Numéro WhatsApp pas encore confirmé : tapez le code reçu sur WhatsApp.": "WhatsApp number not confirmed yet: type the code received on WhatsApp.",
   "Signature du crochet invalide.": "Invalid hook signature.",
   "Tapez le code reçu (6 chiffres).": "Type the code you received (6 digits).",
+  "Numéro WhatsApp de GestiMarket inconnu : réessayez avec Internet.": "GestiMarket WhatsApp number unknown: try again with Internet.",
+  "Écrivez d'abord « GestiMarket » à GestiMarket sur WhatsApp (bouton « Écrire à GestiMarket »), puis redemandez le code.": "First write “GestiMarket” to GestiMarket on WhatsApp (“Write to GestiMarket” button), then ask for the code again.",
   "Un compte existe déjà avec ce numéro WhatsApp : choisissez « J'ai déjà un compte ».": "An account already exists with this WhatsApp number: choose “I already have an account”.",
 };

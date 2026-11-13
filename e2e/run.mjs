@@ -822,6 +822,12 @@ try {
   await ownerPage.reload();
   try {
     await ownerPage.locator(".owner-login input[autocomplete='username']").fill("70 00 00 01");
+    // Entreprise non vérifiée par Meta : la personne écrit d'abord à GestiMarket (message prêt dans WhatsApp).
+    const writeFirst = ownerPage.locator(".owner-login .wa-write-first a[href='https://wa.me/22376000000?text=GestiMarket']");
+    await writeFirst.waitFor({ timeout: 15_000 }).then(
+      () => check("WhatsApp : bouton « Écrire à GestiMarket » avant le code (fenêtre de 24 h)", true),
+      () => check("WhatsApp : bouton « Écrire à GestiMarket » avant le code (fenêtre de 24 h)", false, "bouton absent"),
+    );
     await ownerPage.locator(".owner-login .wa-code-btn").click();
     await seen(ownerPage, "Espace propriétaire : connexion par code WhatsApp", "Connexion par WhatsApp");
     await ownerPage.locator(".confirm-code input").fill("112233");

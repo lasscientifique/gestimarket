@@ -2601,6 +2601,8 @@ export const EN: Record<string, string> = {
   "Téléphone, ville et adresse d'une boutique : bouton « Informations » dans « Mes boutiques ».": "A shop's phone, city and address: “Details” button in “My shops”.",
   "Confirmez l'adresse de votre compte": "Confirm your account address",
   "Informations": "Details",
+  "D'abord, écrivez « GestiMarket » sur WhatsApp au {0} : le code vous est répondu sur WhatsApp.": "First, write “GestiMarket” on WhatsApp to {0}: the code is sent back to you on WhatsApp.",
+  "Écrire à GestiMarket": "Write to GestiMarket",
   // 0.26 « WhatsApp » : compte créé et ouvert avec un numéro WhatsApp.
   "Numéro WhatsApp invalide : tapez-le avec l'indicatif du pays (ex. +223 76 59 36 76).": "Invalid WhatsApp number: type it with the country code (e.g. +223 76 59 36 76).",
   "Avec mon numéro WhatsApp": "With my WhatsApp number",

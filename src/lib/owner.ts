@@ -95,6 +95,18 @@ export interface StoreInfo {
 
 const ownerCall = <T,>(action: string, args: Record<string, unknown> = {}) => local<T>("owner", { action, args });
 
+/** Numéro WhatsApp de GestiMarket (options d'Eden Dev), lu une seule fois ; vide sans Internet. */
+let waNumber: Promise<string> | null = null;
+export function whatsappNumber(): Promise<string> {
+  if (!waNumber) {
+    waNumber = owner.options().then((o) => o.whatsapp_number ?? "", () => {
+      waNumber = null;
+      return "";
+    });
+  }
+  return waNumber;
+}
+
 export const isConfirm = (r: unknown): r is OwnerConfirm => {
   const status = (r as OwnerConfirm | null)?.status;
   return status === "confirm_email" || status === "confirm_phone";

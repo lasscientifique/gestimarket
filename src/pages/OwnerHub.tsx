@@ -7,7 +7,7 @@ import {
 import { useApp } from "../context/AppContext";
 import { LanguageSwitch } from "../components/LanguageSwitch";
 import { ChangePasswordModal, ForgotPasswordModal } from "../components/AccountPassword";
-import { ChangeEmailModal, ChangePhoneModal, ConfirmCode, StoreInfoModal } from "../components/AccountProfile";
+import { ChangeEmailModal, ChangePhoneModal, ConfirmCode, StoreInfoModal, WhatsAppWriteFirst } from "../components/AccountProfile";
 import { loginId, looksLikePhone, showPhone } from "../lib/phone";
 import { BrandLogo } from "../components/Brand";
 import { Badge, Field, Modal } from "../components/ui";
@@ -227,8 +227,11 @@ function OwnerLogin({ wa, onDone, onContact }: { wa: boolean; onDone: (d: OwnerS
       </Field>
       <button className="btn btn-primary btn-block" disabled={busy}><LogIn size={16} />  {busy ? tl("Connexion…") : tl("Se connecter")}</button>
       {wa && looksLikePhone(email) && (
-        <button type="button" className="btn btn-block wa-code-btn" disabled={busy} onClick={() => void byCode()}>
-          <MessageCircle size={16} />  {tl("Recevoir un code sur WhatsApp")}</button>
+        <>
+          <WhatsAppWriteFirst />
+          <button type="button" className="btn btn-block wa-code-btn" disabled={busy} onClick={() => void byCode()}>
+            <MessageCircle size={16} />  {tl("Recevoir un code sur WhatsApp")}</button>
+        </>
       )}
       <button type="button" className="link-btn small" onClick={() => setForgot(true)}>{tl("Mot de passe oublié ?")}</button>
       {forgot && (

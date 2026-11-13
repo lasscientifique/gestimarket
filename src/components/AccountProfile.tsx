@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { AtSign, MailCheck, MessageCircle, Store } from "lucide-react";
 import { errorMessage, useApp } from "../context/AppContext";
-import { owner, type EmailChange, type PhoneChange, type StoreInfo } from "../lib/owner";
+import { owner, whatsappNumber, type EmailChange, type PhoneChange, type StoreInfo } from "../lib/owner";
+import { isTauri } from "../lib/transport";
 import { DIAL_CODES, dialFor, showPhone, toE164, validPhone } from "../lib/phone";
 import { countryName } from "../lib/countries";
 import { tl } from "../lib/i18n";
@@ -24,6 +26,44 @@ export function PhoneInput({ country, onChange, autoFocus }: { country?: string 
         ))}
       </select>
       <input inputMode="tel" autoComplete="tel-national" value={local} onChange={(e) => update(dial, e.target.value)} placeholder="76 59 36 76" required autoFocus={autoFocus} />
+    </div>
+  );
+}
+
+/**
+ * Avant un code sur WhatsApp : tant qu'Eden Dev n'est pas vérifiée par Meta, GestiMarket ne peut répondre que si
+ * la personne lui a écrit dans les 24 heures. Le bouton ouvre WhatsApp avec le message « GestiMarket » prêt.
+ */
+export function WhatsAppWriteFirst() {
+  const { toast } = useApp();
+  const [number, setNumber] = useState("");
+  useEffect(() => {
+    let alive = true;
+    void whatsappNumber().then((n) => {
+      if (alive) setNumber(n);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!number) return null;
+  const digits = number.replace(/\D/g, "");
+  const open = async (e: MouseEvent) => {
+    if (!isTauri) return;
+    e.preventDefault();
+    try {
+      await invoke("open_contact", { kind: "whatsapp_gm", number: digits });
+    } catch (err) {
+      toast.error(err);
+    }
+  };
+  return (
+    <div className="alert alert-info wa-write-first">
+      <span>
+        <MessageCircle size={16} />  {tl("D'abord, écrivez « GestiMarket » sur WhatsApp au {0} : le code vous est répondu sur WhatsApp.", [showPhone(`+${digits}`)])}
+      </span>
+      <a className="btn btn-sm" href={`https://wa.me/${digits}?text=GestiMarket`} target="_blank" rel="noreferrer" onClick={open}>
+        <MessageCircle size={14} />  {tl("Écrire à GestiMarket")}</a>
     </div>
   );
 }
@@ -93,6 +133,7 @@ export function ConfirmCode({ email, confirm, resend, onBack, signIn = false }: 
           : tl("Confirmez l'adresse du compte : un code a été envoyé à {0} (regardez aussi les courriers indésirables).", [email])}
       </div>
       <CodeInput value={code} onChange={setCode} whatsapp={whatsapp} />
+      {whatsapp && error && <WhatsAppWriteFirst />}
       {sent && <div className="alert alert-success">{tl("Nouveau code envoyé.")}</div>}
       {error && <div className="alert alert-danger">{error}</div>}
       <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>
@@ -224,6 +265,7 @@ export function ChangePhoneModal({ login, country, onClose, onDone }: { login: s
           <Field label={tl("Numéro WhatsApp")}>
             <PhoneInput country={country} onChange={setNext} />
           </Field>
+          <WhatsAppWriteFirst />
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || !password || !next}>{busy ? tl("Envoi…") : tl("Recevoir le code sur WhatsApp")}</button>
         </form>

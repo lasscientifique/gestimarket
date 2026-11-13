@@ -45,6 +45,7 @@ if (mode === "tunnel") {
     trial_days: 14,
     payment: { om_merchant_code: "", om_merchant_name: "", om_qr_payload: "", card_enabled: false, card_currency: "XOF", card_currencies: ["XOF"] },
     whatsapp: true,
+    whatsapp_number: "+22376000000",
   };
   const later = new Date(Date.now() + 20 * 86400e3).toISOString();
   // Boutique du compte : informations modifiables par la propriétaire (gm_update_store).

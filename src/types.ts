@@ -1128,6 +1128,8 @@ export interface AccountOptions {
   trial_days: number;
   /** Compte créé et ouvert avec un numéro WhatsApp (activé par Eden Dev : gm_config.whatsapp_enabled). */
   whatsapp?: boolean;
+  /** Numéro WhatsApp de GestiMarket (+223…) : la personne lui écrit d'abord, puis le code lui est répondu. */
+  whatsapp_number?: string;
   /** Moyens de paiement de l'abonnement (réglés par Eden Dev dans gm_config). */
   payment?: {
     om_merchant_code: string;

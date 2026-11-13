@@ -1,8 +1,12 @@
 // GestiMarket — codes du compte de la boutique envoyés sur WhatsApp (crochet « Send SMS » de Supabase Auth).
 //
 // Supabase Auth (fournisseur « Phone » : inscription, connexion par code, numéro changé) appelle cette fonction
-// avec { user: { phone }, sms: { otp } }, signé selon Standard Webhooks. Elle envoie le modèle d'authentification
-// de Meta (WhatsApp Cloud API) : « {code} est votre code de vérification » et le bouton « Copier le code ».
+// avec { user: { phone }, sms: { otp } }, signé selon Standard Webhooks. Elle envoie le code par la WhatsApp
+// Cloud API de Meta :
+//   - en message simple (par défaut) : sans entreprise vérifiée, Meta n'accepte de messages que si la personne
+//     a écrit à GestiMarket dans les 24 heures (GestiMarket affiche « Écrire à GestiMarket » avant le code) ;
+//   - avec le modèle d'authentification WHATSAPP_TEMPLATE, s'il est défini (entreprise vérifiée par Meta) :
+//     le code part sans que la personne écrive d'abord.
 //
 // Réglages :
 //   - Authentication → Hooks → Send SMS : HTTPS, adresse …/functions/v1/gm-whatsapp, « Generate secret ».
@@ -10,15 +14,15 @@
 //       SEND_SMS_HOOK_SECRET  le secret du crochet (« v1,whsec_… »)
 //       WHATSAPP_TOKEN        jeton permanent d'un utilisateur système Meta (whatsapp_business_messaging)
 //       WHATSAPP_PHONE_ID     identifiant du numéro d'envoi (WhatsApp Manager → Numéros de téléphone)
-//       WHATSAPP_TEMPLATE     nom du modèle d'authentification (« gestimarket_code » par défaut)
+//       WHATSAPP_TEMPLATE     facultatif : nom du modèle d'authentification approuvé (ex. « gestimarket_code »)
 //       WHATSAPP_LANG         langue du modèle (« fr » par défaut)
-//   - Puis gm_config.whatsapp_enabled = 'true' : l'option apparaît dans GestiMarket.
+//   - Puis gm_config : whatsapp_number = le numéro d'envoi (+223…), whatsapp_enabled = 'true'.
 import { Webhook } from "https://esm.sh/standardwebhooks@1.0.0";
 
 const HOOK_SECRET = (Deno.env.get("SEND_SMS_HOOK_SECRET") ?? "").replace(/^v1,whsec_/, "");
 const TOKEN = Deno.env.get("WHATSAPP_TOKEN") ?? "";
 const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_ID") ?? "";
-const TEMPLATE = Deno.env.get("WHATSAPP_TEMPLATE") ?? "gestimarket_code";
+const TEMPLATE = (Deno.env.get("WHATSAPP_TEMPLATE") ?? "").trim();
 const LANG = Deno.env.get("WHATSAPP_LANG") ?? "fr";
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -32,11 +36,47 @@ function fail(http_code: number, e: { message: string }) {
 
 const NOT_READY = { message: "L'envoi des codes sur WhatsApp n'est pas encore prêt chez Eden Dev : utilisez votre e-mail." };
 const NO_WHATSAPP = { message: "Ce numéro ne reçoit pas les messages WhatsApp : vérifiez-le, ou utilisez votre e-mail." };
+const WRITE_FIRST = {
+  message: "Écrivez d'abord « GestiMarket » à GestiMarket sur WhatsApp (bouton « Écrire à GestiMarket »), puis redemandez le code.",
+};
 const SEND_FAILED = { message: "Envoi du code sur WhatsApp impossible pour le moment : réessayez dans quelques minutes, ou utilisez votre e-mail." };
 
 /** Erreurs de Meta qui désignent le destinataire : message non livrable (pas de WhatsApp…), numéro non autorisé
  *  (numéro de test), destinataire égal à l'expéditeur. */
 const RECIPIENT_ERRORS = new Set([131026, 131030, 131021]);
+/** Plus de 24 heures depuis le dernier message de la personne : un message simple n'est pas permis. */
+const WINDOW_CLOSED = 131047;
+
+/** Message envoyé : modèle d'authentification (entreprise vérifiée) ou message simple dans la fenêtre de 24 h. */
+function message(to: string, otp: string) {
+  if (TEMPLATE) {
+    return {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to,
+      type: "template",
+      template: {
+        name: TEMPLATE,
+        language: { code: LANG },
+        components: [
+          { type: "body", parameters: [{ type: "text", text: otp }] },
+          // Bouton « Copier le code » des modèles d'authentification.
+          { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: otp }] },
+        ],
+      },
+    };
+  }
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "text",
+    text: {
+      preview_url: false,
+      body: `GestiMarket : votre code est ${otp}\n\nTapez-le dans GestiMarket. Il est valable 10 minutes.\nNe le donnez à personne, pas même à quelqu'un qui dit venir d'Eden Dev.`,
+    },
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return fail(405, NOT_READY);
@@ -56,21 +96,7 @@ Deno.serve(async (req) => {
   const r = await fetch(`${GRAPH}/${PHONE_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: phone,
-      type: "template",
-      template: {
-        name: TEMPLATE,
-        language: { code: LANG },
-        components: [
-          { type: "body", parameters: [{ type: "text", text: otp }] },
-          // Bouton « Copier le code » des modèles d'authentification.
-          { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: otp }] },
-        ],
-      },
-    }),
+    body: JSON.stringify(message(phone, otp)),
   }).catch(() => null);
   if (r?.ok) return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
 
@@ -78,6 +104,7 @@ Deno.serve(async (req) => {
   const code = Number(err?.error?.code ?? 0);
   // Journal de la fonction (Supabase → Edge Functions → Logs) : code et texte de Meta, sans le code envoyé.
   console.error("WhatsApp refusé", r?.status ?? "réseau", code, String(err?.error?.message ?? "").slice(0, 300));
+  if (code === WINDOW_CLOSED) return fail(400, WRITE_FIRST);
   if (RECIPIENT_ERRORS.has(code)) return fail(400, NO_WHATSAPP);
   return fail(502, SEND_FAILED);
 });
