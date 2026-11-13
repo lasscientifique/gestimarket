@@ -72,6 +72,22 @@ Deno.serve(async (req) => {
   const APP_SECRET = env("WHATSAPP_APP_SECRET");
   const PHONE_ID = env("WHATSAPP_PHONE_ID");
 
+  // Administration (Eden Dev) : l'app reçoit les notifications d'un compte WhatsApp seulement si elle y est
+  // abonnée (« subscribed_apps », faisable seulement par l'API). ?gm=apps&waba=<id du compte>&key=<jeton de
+  // vérification> montre les apps abonnées ; &do=subscribe abonne l'app du jeton WHATSAPP_TOKEN. Le jeton
+  // reste chez Supabase ; la réponse de Meta ne contient que des noms et identifiants d'apps.
+  if (req.method === "GET" && url.searchParams.get("gm") === "apps") {
+    const waba = digits(url.searchParams.get("waba"));
+    if (!VERIFY_TOKEN || !same(url.searchParams.get("key") ?? "", VERIFY_TOKEN) || waba.length < 5) return text("Refusé.", 403);
+    const subscribe = url.searchParams.get("do") === "subscribe";
+    const r = await fetch(`https://graph.facebook.com/v21.0/${waba}/subscribed_apps`, {
+      method: subscribe ? "POST" : "GET",
+      headers: { Authorization: `Bearer ${env("WHATSAPP_TOKEN")}` },
+    }).catch(() => null);
+    if (!r) return text("Meta injoignable.", 502);
+    return new Response(await r.text(), { status: r.status, headers: { "Content-Type": "application/json" } });
+  }
+
   // Vérification de l'adresse par Meta (« Vérifier et enregistrer »).
   if (req.method === "GET") {
     const ok = VERIFY_TOKEN && url.searchParams.get("hub.mode") === "subscribe" &&
