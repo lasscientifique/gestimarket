@@ -15,9 +15,8 @@
 //       WHATSAPP_VERIFY_TOKEN  texte choisi par Eden Dev, tapé aussi chez Meta (vérification de l'adresse)
 //       WHATSAPP_APP_SECRET    clé secrète de l'app Meta (Paramètres de l'app → Général) : signature des envois
 //       WHATSAPP_PHONE_ID      (déjà là pour gm-whatsapp) : seules les notifications de ce numéro comptent
-const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN") ?? "";
-const APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET") ?? "";
-const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_ID") ?? "";
+// Secrets lus à chaque appel : un secret ajouté ou changé compte tout de suite.
+const env = (k: string) => (Deno.env.get(k) ?? "").trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -36,9 +35,9 @@ function same(a: string, b: string) {
 }
 
 /** En-tête X-Hub-Signature-256 = « sha256= » + HMAC-SHA256 du corps brut avec la clé secrète de l'app. */
-async function signed(body: string, header: string | null) {
+async function signed(body: string, header: string | null, secret: string) {
   if (!header?.startsWith("sha256=")) return false;
-  const key = await crypto.subtle.importKey("raw", enc.encode(APP_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(body)));
   const hex = Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("");
   return same(hex, header.slice(7).toLowerCase());
@@ -69,6 +68,9 @@ type MetaEvent = { object?: string; entry?: { changes?: { field?: string; value?
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+  const VERIFY_TOKEN = env("WHATSAPP_VERIFY_TOKEN");
+  const APP_SECRET = env("WHATSAPP_APP_SECRET");
+  const PHONE_ID = env("WHATSAPP_PHONE_ID");
 
   // Vérification de l'adresse par Meta (« Vérifier et enregistrer »).
   if (req.method === "GET") {
@@ -83,7 +85,7 @@ Deno.serve(async (req) => {
     console.error("WHATSAPP_APP_SECRET manquant : notification ignorée");
     return text("Pas prêt.", 503);
   }
-  if (!(await signed(body, req.headers.get("x-hub-signature-256")))) return text("Signature invalide.", 401);
+  if (!(await signed(body, req.headers.get("x-hub-signature-256"), APP_SECRET))) return text("Signature invalide.", 401);
 
   let event: MetaEvent;
   try {
