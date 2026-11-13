@@ -87,35 +87,69 @@ fn private_v4(ip: &std::net::Ipv4Addr) -> bool {
     ip.is_private() && !ip.is_loopback()
 }
 
-/// Adresses IP locales de cet appareil (à saisir sur les postes clients).
-/// Les interfaces réseau d'abord : le point d'accès d'un téléphone serveur (sans Internet, la route vers
-/// Internet n'existe pas) ; puis l'astuce du socket UDP.
-pub fn local_ips() -> Vec<String> {
-    let mut ips = Vec::new();
-    if let Ok(list) = if_addrs::get_if_addrs() {
-        for i in list {
-            if let std::net::IpAddr::V4(v4) = i.ip() {
-                let ip = v4.to_string();
-                if private_v4(&v4) && !ips.contains(&ip) {
-                    ips.push(ip);
-                }
-            }
-        }
+/// Carte que les autres appareils ne joignent pas : données mobiles d'un téléphone, machines virtuelles,
+/// VPN, Bluetooth (noms Android, Linux et Windows).
+fn unreachable_card(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    const PREFIXES: [&str; 12] = ["rmnet", "ccmni", "v4-", "dummy", "tun", "ppp", "docker", "veth", "br-", "virbr", "vboxnet", "vmnet"];
+    const PARTS: [&str; 10] = ["vethernet", "virtualbox", "vmware", "hyper-v", "zerotier", "tailscale", "hamachi", "loopback", "bluetooth", "wsl"];
+    PREFIXES.iter().any(|p| n.starts_with(p)) || PARTS.iter().any(|p| n.contains(p))
+}
+
+/// Ordre des adresses : celle que les téléphones et les autres caisses joignent d'abord.
+/// 0 = carte de la route vers Internet ou le routeur (Wi-Fi, câble, point d'accès) ; 1 = autre carte ;
+/// 2 = carte injoignable (données mobiles, VirtualBox, Hyper-V, VPN…).
+fn card_rank(name: &str, ip: &str, route: &[String]) -> u8 {
+    if unreachable_card(name) {
+        2
+    } else if route.iter().any(|r| r == ip) {
+        0
+    } else {
+        1
     }
-    // Astuce sans envoi de paquet : « connecter » un socket UDP révèle l'interface réseau utilisée.
+}
+
+/// Adresses IP locales de cet appareil (à saisir sur les postes clients, QR codes des téléphones).
+///
+/// La première est celle que les autres appareils joignent. Sur un PC avec plusieurs cartes (VirtualBox,
+/// Hyper-V, prise débranchée…), les adresses virtuelles passaient avant le Wi-Fi : le premier QR code
+/// affiché ne marchait pas. La carte de la route est trouvée sans envoi de paquet : « connecter » un socket
+/// UDP révèle celle que choisit la table de routage. Sur un téléphone serveur, cette route passe souvent
+/// par les données mobiles : leur carte (rmnet…) est mise après le point d'accès.
+pub fn local_ips() -> Vec<String> {
+    let mut route = Vec::new();
     for target in ["8.8.8.8:80", "192.168.1.1:80", "10.0.0.1:80"] {
         if let Ok(sock) = std::net::UdpSocket::bind("0.0.0.0:0") {
             if sock.connect(target).is_ok() {
-                if let Ok(addr) = sock.local_addr() {
+                if let Ok(std::net::SocketAddr::V4(addr)) = sock.local_addr() {
                     let ip = addr.ip().to_string();
-                    if !ip.starts_with("127.") && !ips.contains(&ip) {
-                        ips.push(ip);
+                    if !addr.ip().is_loopback() && !addr.ip().is_unspecified() && !route.contains(&ip) {
+                        route.push(ip);
                     }
                 }
             }
         }
     }
-    ips
+    let mut cards: Vec<(u8, String)> = Vec::new();
+    if let Ok(list) = if_addrs::get_if_addrs() {
+        for i in list {
+            if let std::net::IpAddr::V4(v4) = i.ip() {
+                let ip = v4.to_string();
+                if private_v4(&v4) && !cards.iter().any(|(_, c)| c == &ip) {
+                    cards.push((card_rank(&i.name, &ip, &route), ip));
+                }
+            }
+        }
+    }
+    // Adresse de la route qui n'est pas une adresse privée de carte (données mobiles en 100.x, adresse
+    // publique) : gardée, mais en dernier.
+    for ip in &route {
+        if !cards.iter().any(|(_, c)| c == ip) {
+            cards.push((2, ip.clone()));
+        }
+    }
+    cards.sort_by_key(|(rank, _)| *rank); // tri stable : l'ordre des cartes est gardé dans chaque groupe
+    cards.into_iter().map(|(_, ip)| ip).collect()
 }
 
 /// Adresses à essayer pour trouver un serveur GestiMarket : tout le réseau /24 de chaque adresse locale.
@@ -616,6 +650,22 @@ mod tests {
         assert!(!c.iter().any(|ip| ip.octets()[0] == 8));
         // Deux adresses du même réseau : chaque appareil n'est essayé qu'une fois.
         assert_eq!(super::scan_candidates(&["192.168.1.10".into(), "192.168.1.20".into()]).len(), 254);
+    }
+
+    #[test]
+    fn adresse_joignable_en_premier() {
+        let route = vec!["192.168.100.20".to_string()];
+        // PC de l'essai du 13 novembre : 8 cartes VirtualBox (« Ethernet 3 »…), Hyper-V, Wi-Fi.
+        assert_eq!(super::card_rank("Wi-Fi", "192.168.100.20", &route), 0);
+        assert_eq!(super::card_rank("Ethernet 10", "192.168.208.2", &route), 1);
+        assert_eq!(super::card_rank("vEthernet (Default Switch)", "172.18.112.1", &route), 2);
+        assert_eq!(super::card_rank("VirtualBox Host-Only Network", "192.168.56.1", &route), 2);
+        // Téléphone serveur avec données mobiles : la route passe par rmnet, le point d'accès reste devant.
+        let phone = vec!["10.161.4.7".to_string()];
+        assert_eq!(super::card_rank("rmnet_data0", "10.161.4.7", &phone), 2);
+        assert_eq!(super::card_rank("ap0", "192.168.43.1", &phone), 1);
+        assert_eq!(super::card_rank("wlan0", "192.168.1.15", &["192.168.1.15".to_string()]), 0);
+        assert!(super::unreachable_card("ccmni1") && super::unreachable_card("tun0") && !super::unreachable_card("swlan0"));
     }
 
     #[test]

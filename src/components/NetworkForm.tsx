@@ -108,6 +108,9 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
   };
 
   const changed = JSON.stringify(c) !== JSON.stringify(info?.config);
+  // La première adresse est celle que les autres appareils joignent (Wi-Fi, câble, point d'accès). Les
+  // suivantes (VirtualBox, Hyper-V, VPN, prise débranchée…) sont repliées : avant, elles passaient devant.
+  const [mainIp, ...otherIps] = info?.local_ips ?? [];
   const serverUrls = (info?.local_ips ?? []).map((ip) => `http://${ip}:${c.port}`);
 
   return (
@@ -148,7 +151,14 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
       {c.mode === "server" && info?.config.mode === "server" && (
         <div className="alert alert-info">
           <strong>{tl("Adresse à saisir sur les postes clients (PC) :")}</strong>
-          <ul>{serverUrls.length ? serverUrls.map((u) => <li key={u} className="mono">{u}</li>) : <li>{tl("Adresse IP introuvable : vérifiez la connexion Wi-Fi / câble.")}</li>}</ul>
+          <ul>{serverUrls.length ? <li className="mono">{serverUrls[0]}</li> : <li>{tl("Adresse IP introuvable : vérifiez la connexion Wi-Fi / câble.")}</li>}</ul>
+          {serverUrls.length > 1 && (
+            <details className="other-addresses">
+              <summary>{tl("Autres adresses de ce PC ({0})", [String(serverUrls.length - 1)])}</summary>
+              <p className="muted small">{tl("Cartes réseau virtuelles, VPN ou prise débranchée : à essayer seulement si la première adresse ne marche pas.")}</p>
+              <ul>{serverUrls.slice(1).map((u) => <li key={u} className="mono">{u}</li>)}</ul>
+            </details>
+          )}
           {tl("Fonctionne aussi avec le point d'accès (partage de connexion) d'un téléphone : tous les appareils se connectent à ce point d'accès.")}</div>
       )}
       {androidApp && c.mode === "server" && (
@@ -168,14 +178,24 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
           </div>
         </div>
       )}
-      {c.mode === "server" && info?.config.mode === "server" && (info?.local_ips ?? []).length > 0 && (
+      {c.mode === "server" && info?.config.mode === "server" && mainIp && (
         <div className="phone-access">
           <h4 className="section-title">{tl("Téléphones et tablettes : scannez ce QR code")}</h4>
           <div className="phone-qr-list">
-            {info!.local_ips.map((ip) => (
-              <AddressQr key={ip} url={`https://${ip}:${c.port + 1}`} plain={`http://${ip}:${c.port}`} />
-            ))}
+            <AddressQr url={`https://${mainIp}:${c.port + 1}`} plain={`http://${mainIp}:${c.port}`} />
           </div>
+          <p className="muted small">{tl("Le téléphone doit être connecté au même Wi-Fi que ce PC (ou au point d'accès qu'il partage), pas aux données mobiles.")}</p>
+          {otherIps.length > 0 && (
+            <details className="other-addresses">
+              <summary>{tl("Autres adresses de ce PC ({0})", [String(otherIps.length)])}</summary>
+              <p className="muted small">{tl("Cartes réseau virtuelles, VPN ou prise débranchée : à essayer seulement si la première adresse ne marche pas.")}</p>
+              <div className="phone-qr-list">
+                {otherIps.map((ip) => (
+                  <AddressQr key={ip} url={`https://${ip}:${c.port + 1}`} plain={`http://${ip}:${c.port}`} />
+                ))}
+              </div>
+            </details>
+          )}
           <p className="muted small">
             {tl("L'adresse")} <strong>https</strong>  {tl("(port")} {c.port + 1}{tl(") active la caméra du téléphone pour scanner les codes-barres. À la première ouverture, le navigateur affiche « connexion non privée » : touchez « Paramètres avancés » puis « Continuer » (le certificat est créé par ce PC). L'interface s'adapte automatiquement à l'écran du téléphone ou de la tablette.")}</p>
         </div>
