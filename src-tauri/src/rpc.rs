@@ -792,13 +792,33 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             out(json!({ "postes": postes, "online": online }))
         }
 
-        // ───── Application mobile (Supabase) ─────
+        // ───── Application mobile (publication du poste serveur sur le service d'Eden Dev) ─────
         "cloud_status" => {
             state.require(origin, Admin)?;
             let mut st = crate::cloud::status();
+            let conn = state.conn();
             if st.shop_code.is_empty() {
-                st.shop_code = settings::get(&state.conn(), "shop_code")?;
+                st.shop_code = settings::get(&conn, "shop_code")?;
             }
+            st.enabled = crate::cloud::publish_enabled(&conn);
+            out(st)
+        }
+        // Interrupteur « Les téléphones de la boutique trouvent ce PC » (en marche par défaut).
+        "mobile_publish_set" => {
+            state.require(origin, Admin)?;
+            let on: bool = arg(&a, "on")?;
+            if !on {
+                let _ = crate::cloud::withdraw(state);
+            }
+            let conn = state.conn();
+            settings::set(&conn, "mobile_publish", if on { "1" } else { "0" })?;
+            audit::log_system(&conn, if on { "Application mobile : partage activé" } else { "Application mobile : partage coupé" }, "settings", None, "")?;
+            drop(conn);
+            if on {
+                let _ = crate::cloud::publish_once(state, true);
+            }
+            let mut st = crate::cloud::status();
+            st.enabled = on;
             out(st)
         }
         "cloud_publish_now" => {
@@ -806,27 +826,33 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             crate::cloud::publish_once(state, true).map_err(AppError::Validation)?;
             out(crate::cloud::status())
         }
-        // Adresse Internet automatique (tunnel Cloudflare créé par Eden Dev pour la boutique).
+        // Accès depuis Internet (automatique selon la formule ; tunnel Cloudflare créé par Eden Dev).
         "tunnel_status" => {
             state.require(origin, Admin)?;
             out(crate::tunnel::status(&state.conn()))
         }
+        // PC relié avant la 0.27 : la propriétaire se reconnecte une fois (jeton d'appareil), la suite est automatique.
         "tunnel_setup" => {
             account_access(state, origin)?;
-            let port = crate::cloud::port();
-            if port == 0 {
+            if crate::cloud::port() == 0 {
                 return invalid("Seul le poste serveur reçoit l'adresse Internet de la boutique.");
             }
             state.login_guard(&ip)?;
-            let asked = crate::account::request_tunnel(&arg::<String>(&a, "email")?, &arg::<String>(&a, "password")?, port);
-            state.login_result(&ip, !matches!(&asked, Err(e) if e.contains("mot de passe")));
-            let (url, token) = asked.map_err(AppError::Validation)?;
-            let conn = state.conn();
-            crate::tunnel::save(&conn, &url, &token).map_err(AppError::Validation)?;
-            audit::log_system(&conn, "Adresse Internet automatique activée", "settings", None, &url)?;
-            drop(conn);
-            let _ = crate::cloud::publish_once(state, true);
+            let linked = crate::account::relink_device(state, &arg::<String>(&a, "email")?, &arg::<String>(&a, "password")?);
+            state.login_result(&ip, !matches!(&linked, Err(e) if e.contains("mot de passe")));
+            linked.map_err(AppError::Validation)?;
+            audit::log_system(&state.conn(), "PC relié de nouveau au compte (accès depuis Internet)", "settings", None, "")?;
+            crate::tunnel::relinked();
             out(crate::tunnel::status(&state.conn()))
+        }
+        // Interrupteur « Accès depuis Internet » (en marche par défaut si la formule le comprend).
+        "internet_set" => {
+            account_access(state, origin)?;
+            let on: bool = arg(&a, "on")?;
+            let conn = state.conn();
+            crate::tunnel::set_enabled(&conn, on).map_err(AppError::Validation)?;
+            audit::log_system(&conn, if on { "Accès depuis Internet activé" } else { "Accès depuis Internet coupé" }, "settings", None, "")?;
+            out(crate::tunnel::status(&conn))
         }
         "tunnel_remove" => {
             account_access(state, origin)?;

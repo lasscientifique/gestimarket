@@ -53,7 +53,7 @@ fn error_message(code: u16, v: &Value) -> String {
         "otp_expired" | "otp_disabled" => Some("Code incorrect ou expiré : demandez un nouveau code."),
         "reauthentication_needed" | "session_not_found" | "bad_jwt" => Some("Session expirée : recommencez."),
         "email_address_not_authorized" => {
-            Some("Inscription impossible : Eden Dev doit désactiver la confirmation des e-mails dans Supabase.")
+            Some("Inscription impossible pour le moment : contactez Eden Dev.")
         }
         _ => None,
     };
@@ -467,17 +467,46 @@ pub fn verify_owner(login: &str, password: &str) -> Result<(), String> {
 
 /// Adresse Internet automatique : Eden Dev crée (ou redonne) le tunnel Cloudflare de la boutique de ce PC,
 /// vers le port du poste serveur. Retourne l'adresse publique et le jeton à donner à cloudflared.
-pub fn request_tunnel(email: &str, password: &str, port: u16) -> Result<(String, String), String> {
-    let store_code = license::account().store_code;
-    if store_code.is_empty() {
-        return Err("Ce PC n'est relié à aucun compte boutique (menu Abonnement & licence).".into());
-    }
-    let token = password_login(email, password)?;
-    let v = call(request("/functions/v1/gm-tunnel", Some(&token)), json!({ "store_code": store_code, "port": port }))?;
+/// Adresse Internet de la boutique demandée avec le jeton d'appareil de ce PC (sans mot de passe) :
+/// Eden Dev vérifie le PC, la boutique et la formule (PRO, BUSINESS).
+pub fn request_tunnel_auto(device_token: &str, port: u16) -> Result<(String, String), String> {
+    let v = call(
+        request("/functions/v1/gm-tunnel", None),
+        json!({ "pc_id": license::pc_id(), "device_token": device_token, "port": port }),
+    )?;
     match (v["status"].as_str(), v["url"].as_str(), v["token"].as_str()) {
         (Some("ok"), Some(url), Some(t)) if url.starts_with("https://") && !t.is_empty() => Ok((url.to_string(), t.to_string())),
         _ => Err(v["message"].as_str().unwrap_or("Réponse inattendue d'Eden Dev.").to_string()),
     }
+}
+
+/// Jeton d'appareil de ce PC, remis par Eden Dev à la propriétaire connectée, et gardé sur le PC (clé interne).
+fn fetch_device_token(state: &AppState, token: &str, store_code: &str) -> Result<(), String> {
+    let v = rpc_call("gm_pc_token", token, json!({ "p_store_code": store_code, "p_pc_id": license::pc_id() }))?;
+    let t = v.as_str().unwrap_or_default();
+    if t.len() < 40 {
+        return Err("Réponse inattendue d'Eden Dev.".into());
+    }
+    crate::services::settings::set(&state.conn(), "device_token", t).map_err(|e| e.to_string())
+}
+
+/// PC relié avant la 0.27 (sans jeton d'appareil) : la propriétaire se reconnecte une fois, puis l'accès
+/// depuis Internet de la boutique se règle tout seul.
+pub fn relink_device(state: &AppState, login: &str, password: &str) -> Result<(), String> {
+    let store_code = license::account().store_code;
+    if store_code.is_empty() {
+        return Err("Ce PC n'est relié à aucun compte boutique (menu Abonnement & licence).".into());
+    }
+    let token = password_login(login, password)?;
+    rpc_call(
+        "gm_register_pc",
+        &token,
+        json!({
+            "p_store_code": store_code, "p_pc_id": license::pc_id(), "p_slot": license::slot(),
+            "p_hostname": crate::network::hostname(), "p_version": env!("CARGO_PKG_VERSION"),
+        }),
+    )?;
+    fetch_device_token(state, &token, &store_code)
 }
 
 /// Nouvelle boutique sur le compte connecté (5 au maximum), rattachée à ce PC.
@@ -499,9 +528,15 @@ pub fn link(state: &AppState, store_code: &str) -> Result<Value, String> {
             "p_hostname": crate::network::hostname(), "p_version": env!("CARGO_PKG_VERSION"),
         }),
     )?;
+    let code = store["code"].as_str().unwrap_or(store_code).to_string();
     {
         let conn = state.conn();
-        license::set_account(&conn, &email, store["code"].as_str().unwrap_or(store_code), store["name"].as_str().unwrap_or_default());
+        license::set_account(&conn, &email, &code, store["name"].as_str().unwrap_or_default());
+    }
+    // Jeton d'appareil : l'accès depuis Internet de la boutique se règlera ensuite sans mot de passe.
+    match fetch_device_token(state, &token, &code) {
+        Ok(()) => crate::tunnel::relinked(),
+        Err(e) => crate::journal::error(format!("Jeton d'appareil non reçu : {e}")),
     }
     let synced = sync(state);
     Ok(json!({ "status": "linked", "store": store, "sync_error": synced.err() }))

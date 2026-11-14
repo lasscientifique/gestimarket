@@ -55,7 +55,7 @@ export function useLicense(): LicenseStatus | null {
 export const FEATURE_LABELS: Record<LicenseFeature, string> = {
   write: tl("Ventes, achats et modifications"),
   server: tl("Postes clients : autres PC, téléphones, tablettes"),
-  internet: tl("Accès par Internet (tunnel)"),
+  internet: tl("Accès depuis Internet"),
   customer_display: tl("Écran client"),
   logo: tl("Logo personnalisé"),
 };

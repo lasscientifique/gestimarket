@@ -1047,12 +1047,23 @@ export interface CloudStatus {
   public_error: string | null;
 }
 
-/** Adresse Internet automatique de la boutique (tunnel Cloudflare d'Eden Dev). */
+/** Accès depuis Internet de la boutique : automatique selon la formule (tunnel Cloudflare d'Eden Dev). */
 export interface TunnelStatus {
+  /** Poste serveur (seul lui porte l'adresse Internet). */
+  server: boolean;
+  /** La formule comprend l'accès depuis Internet (PRO, BUSINESS). */
+  allowed: boolean;
+  /** La boutique ne l'a pas coupé. */
+  enabled: boolean;
+  /** Adresse reçue d'Eden Dev. */
   configured: boolean;
   running: boolean;
-  /** Chemin de cloudflared sur ce PC (null : pas installé). */
-  cloudflared: string | null;
+  /** Module d'accès installé sur ce PC. */
+  module: boolean;
+  /** Téléchargement du module en cours (pourcentage). */
+  installing: number | null;
+  /** PC relié avant la 0.27 : la propriétaire doit se reconnecter une fois. */
+  needs_link: boolean;
   url: string;
   error: string | null;
 }

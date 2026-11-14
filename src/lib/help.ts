@@ -252,7 +252,7 @@ export const TIPS: Record<string, string> = {
   camera_scan:
     tl("Utilise la caméra du téléphone, de la tablette ou la webcam. Vidéo en direct sur l'adresse https (port 7879) ; sinon prenez le code en photo."),
   mobile_app:
-    tl("L'application mobile n'a qu'une WebView : elle demande à Supabase l'adresse du poste serveur (avec le code du commerce) puis l'ouvre. Le téléphone doit être sur le même Wi-Fi (ou point d'accès) que le serveur."),
+    tl("L'application GestiMarket du téléphone retrouve ce PC serveur grâce au service d'Eden Dev : la propriétaire avec son compte, le personnel avec le code du commerce. Sur le Wi-Fi de la boutique, le téléphone passe par le réseau local ; ailleurs, par l'accès depuis Internet (formules PRO et BUSINESS)."),
   other_tills:
     tl("Les tickets en cours des autres caisses, en direct. « Suivre » affiche les articles au fur et à mesure ; « Reprendre ce client » transfère son ticket sur votre caisse pour l'encaisser sans tout ressaisir (panne, problème de paiement, file d'attente)."),
   code_entry:

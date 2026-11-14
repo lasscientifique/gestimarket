@@ -9,7 +9,7 @@ import { HelpTip } from "../components/Help";
 import { Field, ImageField, PageHeader } from "../components/ui";
 import { OrangeMoneyQr } from "../components/OrangeMoneyQr";
 import { isRemote } from "../lib/transport";
-import { Network, Palette, Lock, Check, Sun, Moon, PanelLeft, RotateCw } from "lucide-react";
+import { Network, Palette, Lock, Check, Sun, Moon, PanelLeft } from "lucide-react";
 import { BrandLogo } from "../components/Brand";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
@@ -360,7 +360,7 @@ export default function SettingsPage() {
             </div>
           ) : (
             <>
-              <MobileAppSettings f={f} setF={setF} />
+              <MobileAppSettings />
               <InternetAddressSettings />
             </>
           )}
@@ -745,28 +745,27 @@ function BusinessTab() {
   );
 }
 
-/** Application mobile (FlutterFlow + WebView) : le poste serveur publie son adresse sur Supabase. */
-function MobileAppSettings({ f, setF }: { f: Settings; setF: (s: Settings) => void }) {
+/** Application mobile GestiMarket : les téléphones de la boutique retrouvent ce poste serveur tout seuls. */
+function MobileAppSettings() {
   const { toast } = useApp();
   const [status, setStatus] = useState<CloudStatus | null>(null);
   const [qr, setQr] = useState("");
   const [busy, setBusy] = useState(false);
-  const set = (k: string) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const load = () => api.cloudStatus().then(setStatus).catch(() => undefined);
   useEffect(() => {
     load();
     return every(15_000, load);
   }, []);
-  const code = status?.shop_code || f.shop_code || "";
+  const code = status?.shop_code ?? "";
   useEffect(() => {
     if (code) QRCode.toDataURL(`gestimarket:${code}`, { margin: 1, width: 180 }).then(setQr).catch(() => setQr(""));
   }, [code]);
+  const on = status?.enabled ?? true;
 
-  const publish = async () => {
+  const toggle = async (next: boolean) => {
     setBusy(true);
     try {
-      setStatus(await api.cloudPublishNow());
-      toast.success(tl("Adresse publiée sur Supabase."));
+      setStatus(await api.mobilePublishSet(next));
     } catch (e) {
       toast.error(e);
       load();
@@ -777,53 +776,39 @@ function MobileAppSettings({ f, setF }: { f: Settings; setF: (s: Settings) => vo
 
   return (
     <div className="card">
-      <h3 className="card-title"><Smartphone size={18} />  {tl("Application mobile (Supabase)")} <HelpTip k="mobile_app" /></h3>
+      <h3 className="card-title"><Smartphone size={18} />  {tl("Application mobile GestiMarket")} <HelpTip k="mobile_app" /></h3>
       <p className="muted">
-        {tl("Le poste serveur publie toutes les 30 secondes son état (actif / arrêté) et ses adresses. L'application mobile GestiMarket ouvre la boutique avec le compte boutique de la propriétaire, ou avec le")} <strong>{tl("code du commerce")}</strong>  {tl("pour le personnel. Laissez l'URL et la clé vides pour utiliser le service d'Eden Dev.")}</p>
+        {tl("Les téléphones de la boutique retrouvent ce PC serveur tout seuls : la propriétaire avec son compte, le personnel avec le code du commerce.")}</p>
       <label className="check" style={{ margin: "8px 0 12px" }}>
-        <input type="checkbox" checked={f.supabase_enabled === "1"} onChange={(e) => setF({ ...f, supabase_enabled: e.target.checked ? "1" : "0" })} />
-        {tl("Publier l'adresse du poste serveur sur Supabase")}</label>
-      <div className="form-grid">
-        <Field label={tl("URL du projet Supabase")} hint={tl("Vide : service d'Eden Dev (application GestiMarket). Sinon : votre projet (ex. https://abcd.supabase.co).")}>
-          <input value={f.supabase_url ?? ""} onChange={set("supabase_url")} placeholder="https://xxxxxxxx.supabase.co" />
-        </Field>
-        <Field label={tl("Clé publique (anon / publishable)")} hint={tl("Jamais la clé « service_role » : elle donnerait tous les droits.")}>
-          <input className="mono" value={f.supabase_key ?? ""} onChange={set("supabase_key")} placeholder={tl("eyJhbGciOi… ou sb_publishable_…")} />
-        </Field>
-        <Field label={tl("Code du commerce")} hint={tl("Créé automatiquement à la première publication. À saisir ou scanner une fois dans l'application.")}>
-          <input className="mono" value={f.shop_code ?? ""} onChange={(e) => setF({ ...f, shop_code: e.target.value.toUpperCase() })} placeholder={tl("GM-XXXXXX (automatique)")} />
-        </Field>
-        <Field label={tl("Adresse publique (facultatif)")} hint={tl("Remplie par l'adresse Internet automatique ci-dessous ; sinon votre propre tunnel ou redirection de port.")}>
-          <input value={f.public_url ?? ""} onChange={set("public_url")} placeholder="https://magasin.exemple.com" />
-        </Field>
-      </div>
-      {(f.supabase_key ?? "").includes("service_role") && <div className="alert alert-danger">{tl("Cette clé semble être la clé « service_role » : utilisez la clé publique (anon).")}</div>}
-
-      <h4 className="section-title">{tl("État de la publication")}</h4>
-      <div className="display-link">
-        {qr && <img src={qr} alt={tl("QR code du code commerce")} width={130} height={130} />}
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <div className="kv"><span>{tl("Code du commerce")}</span><strong className="mono">{code || tl("— (après la 1ʳᵉ publication)")}</strong></div>
-          <div className="kv">
-            <span>{tl("Poste serveur")}</span>
-            <span>{status?.running ? <Badge tone="success">{tl("publie toutes les 30 s")}</Badge> : <Badge>{tl("ce réseau n'a pas de poste serveur actif")}</Badge>}</span>
+        <input type="checkbox" checked={on} disabled={busy || !status} onChange={(e) => toggle(e.target.checked)} />
+        {tl("Les téléphones de la boutique trouvent ce PC")}</label>
+      {on && (
+        <div className="display-link">
+          {qr && <img src={qr} alt={tl("QR code du code commerce")} width={130} height={130} />}
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div className="kv"><span>{tl("Code du commerce")}</span><strong className="mono">{code || "—"}</strong></div>
+            <div className="kv">
+              <span>{tl("État")}</span>
+              <span>
+                {!status?.running ? (
+                  <Badge>{tl("se règle sur le poste serveur")}</Badge>
+                ) : status.last_ok_at ? (
+                  <Badge tone="success">{tl("à jour · {0}", [dateTime(status.last_ok_at)])}</Badge>
+                ) : (
+                  <Badge>{tl("en attente de la première mise à jour")}</Badge>
+                )}
+              </span>
+            </div>
+            {status?.last_error && <div className="alert alert-warning small">{status.last_error}</div>}
+            <p className="muted small">{tl("Le personnel saisit ou scanne ce code une fois dans l'application GestiMarket.")}</p>
           </div>
-          <div className="kv"><span>{tl("Dernière publication réussie")}</span><span>{status?.last_ok_at ? dateTime(status.last_ok_at) : tl("jamais")}</span></div>
-          {status?.last_error && <div className="alert alert-danger small">{status.last_error}</div>}
-          <div className="row-end" style={{ marginTop: 8 }}>
-            <button className="btn" disabled={busy} onClick={publish}><RotateCw size={15} />  {tl("Publier maintenant")}</button>
-          </div>
-          <p className="muted small">{tl("Enregistrez d'abord les modifications (bouton en haut), puis « Publier maintenant » pour tester.")}</p>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-/** Commande d'installation de cloudflared (une fois, sur le PC serveur). */
-const WINGET_CLOUDFLARED = "winget install --id Cloudflare.cloudflared";
-
-/** Adresse Internet automatique : tunnel Cloudflare créé par Eden Dev pour la boutique (PRO, BUSINESS). */
+/** Accès depuis Internet : automatique avec les formules PRO et BUSINESS, sauf si la boutique le coupe. */
 function InternetAddressSettings() {
   const { toast } = useApp();
   const [st, setSt] = useState<TunnelStatus | null>(null);
@@ -834,77 +819,89 @@ function InternetAddressSettings() {
   const load = () => api.tunnelStatus().then(setSt).catch(() => undefined);
   useEffect(() => {
     load();
-    return every(15_000, load);
+    return every(10_000, load);
   }, []);
 
-  const setup = async (e: FormEvent) => {
-    e.preventDefault();
+  const toggle = async (on: boolean) => {
     setBusy(true);
     try {
-      const s = await api.tunnelSetup(loginId(email), password);
-      setSt(s);
-      setAsking(false);
-      setPassword("");
-      toast.success(tl("Adresse Internet de la boutique : {0}", [s.url]));
+      setSt(await api.internetSet(on));
     } catch (err) {
       toast.error(err);
     } finally {
       setBusy(false);
     }
   };
-  const remove = async () => {
-    if (!confirm(tl("Retirer l'adresse Internet de ce PC ? Les téléphones ne joindront plus la boutique depuis Internet (l'adresse reste réservée à la boutique)."))) return;
+  const relink = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
     try {
-      setSt(await api.tunnelRemove());
+      setSt(await api.tunnelSetup(loginId(email), password));
+      setAsking(false);
+      setPassword("");
+      toast.success(tl("Compte relié : l'accès depuis Internet se met en route tout seul."));
     } catch (err) {
       toast.error(err);
+    } finally {
+      setBusy(false);
     }
   };
 
+  const state = !st
+    ? null
+    : !st.server
+      ? <Badge>{tl("se règle sur le poste serveur")}</Badge>
+      : st.installing != null
+        ? <Badge tone="info">{tl("installation… {0} %", [String(st.installing)])}</Badge>
+        : st.running
+          ? <Badge tone="success">{tl("en marche")}</Badge>
+          : st.needs_link
+            ? <Badge tone="warning">{tl("compte à relier")}</Badge>
+            : <Badge>{tl("mise en route…")}</Badge>;
+
   return (
     <div className="card">
-      <h3 className="card-title"><Network size={18} />  {tl("Adresse Internet de la boutique")}</h3>
-      <p className="muted">{tl("Eden Dev donne à la boutique une adresse fixe en HTTPS (ex. https://gm-000123.gestimarket.com) qui mène à ce poste serveur, sans redirection de port ni réglage de la box. Les téléphones autorisés retrouvent GestiMarket depuis n'importe où. Formules PRO et BUSINESS.")}</p>
-      {st?.configured ? (
+      <h3 className="card-title"><Network size={18} />  {tl("Accès depuis Internet")}</h3>
+      <p className="muted">{tl("La boutique a une adresse fixe et sécurisée (ex. https://gm-000123.gestimarket.shop) qui mène à ce PC serveur, sans réglage de la box. La propriétaire et les téléphones autorisés ouvrent GestiMarket de n'importe où. Inclus dans les formules PRO et BUSINESS.")}</p>
+      {st && !st.allowed && (
+        <div className="alert alert-info small">{tl("Disponible avec la formule PRO ou BUSINESS : voir « Abonnement & licence ».")}</div>
+      )}
+      {st?.allowed && (
         <>
-          <div className="kv"><span>{tl("Adresse")}</span><strong className="mono">{st.url}</strong></div>
-          <div className="kv">
-            <span>{tl("Tunnel")}</span>
-            <span>{st.running ? <Badge tone="success">{tl("en marche")}</Badge> : <Badge tone="danger">{tl("arrêté")}</Badge>}</span>
-          </div>
+          <label className="check" style={{ margin: "8px 0 12px" }}>
+            <input type="checkbox" checked={st.enabled} disabled={busy || isRemote()} onChange={(e) => toggle(e.target.checked)} />
+            {tl("Accès depuis Internet")}</label>
+          {st.enabled && (
+            <>
+              {st.url && <div className="kv"><span>{tl("Adresse")}</span><strong className="mono">{st.url}</strong></div>}
+              <div className="kv"><span>{tl("État")}</span><span>{state}</span></div>
+              {st.error && <div className="alert alert-warning small">{st.error}</div>}
+              {st.server && st.needs_link && !isRemote() && (asking ? (
+                <form onSubmit={relink} className="form-grid" style={{ marginTop: 10 }}>
+                  <Field label={tl("E-mail ou numéro WhatsApp du compte boutique")}>
+                    <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required autoFocus />
+                  </Field>
+                  <Field label={tl("Mot de passe du compte boutique")}>
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                  </Field>
+                  <div className="row-end" style={{ gridColumn: "1 / -1" }}>
+                    <button type="button" className="btn" onClick={() => setAsking(false)}>{tl("Annuler")}</button>
+                    <button className="btn btn-primary" disabled={busy}>{busy ? tl("Connexion…") : tl("Reconnecter le compte")}</button>
+                  </div>
+                </form>
+              ) : (
+                <div className="alert alert-info small">
+                  {tl("Ce PC a été relié au compte avant la version 0.27 : reconnectez-le une fois, la suite se fait toute seule.")}
+                  <div className="row-end" style={{ marginTop: 8 }}>
+                    <button className="btn btn-primary" onClick={() => setAsking(true)}>{tl("Reconnecter le compte")}</button>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </>
-      ) : (
-        <p className="small">{tl("Pas encore d'adresse Internet sur ce PC.")}</p>
       )}
-      {st && !st.cloudflared && (
-        <div className="alert alert-warning small">
-          {tl("cloudflared n'est pas installé sur ce PC. Ouvrez une invite de commandes, tapez la commande ci-dessous, puis redémarrez GestiMarket :")}
-          <div className="mono" style={{ marginTop: 6 }}>{WINGET_CLOUDFLARED}</div>
-        </div>
-      )}
-      {st?.error && <div className="alert alert-danger small">{st.error}</div>}
-      {isRemote() ? (
-        <p className="muted small">{tl("À régler sur le PC serveur de la boutique.")}</p>
-      ) : asking ? (
-        <form onSubmit={setup} className="form-grid" style={{ marginTop: 10 }}>
-          <Field label={tl("E-mail ou numéro WhatsApp du compte boutique")}>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required autoFocus />
-          </Field>
-          <Field label={tl("Mot de passe du compte boutique")}>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </Field>
-          <div className="row-end" style={{ gridColumn: "1 / -1" }}>
-            <button type="button" className="btn" onClick={() => setAsking(false)}>{tl("Annuler")}</button>
-            <button className="btn btn-primary" disabled={busy}>{busy ? tl("Création…") : tl("Créer l'adresse")}</button>
-          </div>
-        </form>
-      ) : (
-        <div className="row-end" style={{ marginTop: 10 }}>
-          {st?.configured && <button className="btn" onClick={remove}>{tl("Retirer de ce PC")}</button>}
-          <button className="btn btn-primary" onClick={() => setAsking(true)}>
-            {st?.configured ? tl("Redemander l'adresse") : tl("Créer l'adresse Internet")}</button>
-        </div>
-      )}
+      {isRemote() && <p className="muted small">{tl("À régler sur le PC serveur de la boutique.")}</p>}
     </div>
   );
 }

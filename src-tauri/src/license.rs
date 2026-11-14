@@ -565,7 +565,7 @@ const ALWAYS: &[&str] = &[
     "close_cash_session", "force_close_cash_session",
     "save_user", "reset_user_pin", "set_business_type", "business_profiles", "catalogue_tree",
     "poste_heartbeat", "list_postes", "live_cart_update", "live_carts", "cloud_status", "cloud_publish_now",
-    "tunnel_status", "tunnel_setup", "tunnel_remove",
+    "tunnel_status", "tunnel_setup", "tunnel_remove", "internet_set", "mobile_publish_set",
     "dashboard", "sales_report", "list_audit_log", "app_info", "backup_database", "run_auto_backup", "backup_status", "backup_protect", "terms_status", "accept_terms",
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
     "account_confirm_signup", "account_confirm_login", "account_resend_code", "account_otp_send",

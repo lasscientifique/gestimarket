@@ -333,6 +333,8 @@ export const api = {
   tunnelStatus: () => call<TunnelStatus>("tunnel_status"),
   tunnelSetup: (email: string, password: string) => call<TunnelStatus>("tunnel_setup", { email, password }),
   tunnelRemove: () => call<TunnelStatus>("tunnel_remove"),
+  internetSet: (on: boolean) => call<TunnelStatus>("internet_set", { on }),
+  mobilePublishSet: (on: boolean) => call<CloudStatus>("mobile_publish_set", { on }),
   cashierStats: () => call<CashierStats>("cashier_stats"),
   closeCashSession: (input: { counted_amount: number; note: string | null }, pin: string) =>
     call<CashSession>("close_cash_session", { input, pin }),

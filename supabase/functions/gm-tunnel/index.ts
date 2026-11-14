@@ -1,7 +1,10 @@
 // GestiMarket — adresse Internet automatique d'une boutique (tunnel Cloudflare géré par Eden Dev).
 //
-// GestiMarket (PC serveur) : POST JSON { "store_code", "port" } avec « Authorization: Bearer <session du
-// compte boutique> » (l'administrateur tape l'e-mail et le mot de passe du compte boutique une fois).
+// GestiMarket (PC serveur), deux façons de se présenter :
+//   - automatique (0.27) : POST JSON { "pc_id", "device_token", "port" } — jeton d'appareil remis au PC quand
+//     la propriétaire l'a relié à sa boutique (gm_pc_token) ; vérifié par gm_tunnel_target_pc ;
+//   - avec le compte : POST JSON { "store_code", "port" } et « Authorization: Bearer <session du compte boutique> ».
+// Dans les deux cas : boutique active, formule avec « internet » (PRO, BUSINESS), 10 demandes par heure.
 //   → tunnel « gm-000123 » créé une seule fois dans le compte Cloudflare d'Eden Dev
 //   → adresse https://gm-000123.<TUNNEL_DOMAIN> reliée à http://localhost:<port> du PC
 //   → { status: "ok", url, hostname, token } : GestiMarket lance cloudflared avec ce jeton.
@@ -40,7 +43,7 @@ async function cf(path: string, init: RequestInit = {}) {
   return j.result;
 }
 
-const NOT_OPEN = "L'adresse Internet automatique n'est pas encore ouverte chez Eden Dev : utilisez une adresse publique saisie à la main.";
+const NOT_OPEN = "L'accès depuis Internet n'est pas encore ouvert chez Eden Dev : réessayez plus tard.";
 
 /** Jeton Cloudflare, relu à chaque appel : un secret posé après le démarrage de la fonction est pris tout de suite. */
 function readToken(): string {
@@ -121,23 +124,30 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ status: "error", message: "Méthode POST attendue." }, 405);
   if (!readToken()) return json({ status: "error", message: NOT_OPEN }, 503);
   try {
-    const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-    const { data: u } = jwt ? await sb.auth.getUser(jwt) : { data: { user: null } };
-    if (!u?.user) return json({ status: "error", message: "Connectez-vous à votre compte boutique." }, 401);
-    const notReady = await configure();
-    if (notReady) return json({ status: "error", message: notReady }, 503);
-
-    let body: { store_code?: unknown; port?: unknown } = {};
+    let body: { store_code?: unknown; port?: unknown; pc_id?: unknown; device_token?: unknown } = {};
     try {
       body = await req.json();
     } catch {
       // refusé ci-dessous
     }
+    const deviceToken = typeof body.device_token === "string" ? body.device_token : "";
+    let uid = "";
+    if (!deviceToken) {
+      const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+      const { data: u } = jwt ? await sb.auth.getUser(jwt) : { data: { user: null } };
+      if (!u?.user) return json({ status: "error", message: "Connectez-vous à votre compte boutique." }, 401);
+      uid = u.user.id;
+    }
+    const notReady = await configure();
+    if (notReady) return json({ status: "error", message: notReady }, 503);
+
     const port = Number(body.port);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) {
       return json({ status: "error", message: "Port du serveur invalide." }, 400);
     }
-    const { data: t, error } = await sb.rpc("gm_tunnel_target", { p_uid: u.user.id, p_store_code: String(body.store_code ?? "") });
+    const { data: t, error } = deviceToken
+      ? await sb.rpc("gm_tunnel_target_pc", { p_pc_id: String(body.pc_id ?? ""), p_token: deviceToken })
+      : await sb.rpc("gm_tunnel_target", { p_uid: uid, p_store_code: String(body.store_code ?? "") });
     if (error) return json({ status: "error", message: error.message }, 400);
 
     const name = String(t.code).toLowerCase().replace(/[^a-z0-9-]/g, "");

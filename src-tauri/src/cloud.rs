@@ -1,9 +1,14 @@
-//! Publication du poste serveur sur Supabase, pour l'application mobile (FlutterFlow, WebView).
+//! Publication du poste serveur sur le service d'Eden Dev (Supabase), pour l'application mobile.
 //!
 //! Toutes les 30 s, le poste serveur publie son état (actif) et ses adresses sur le réseau local
 //! via la fonction SQL `gm_publish_server`. L'application mobile appelle `gm_get_server(code)`,
 //! reçoit l'adresse et l'ouvre dans sa WebView. Seul le poste qui détient le secret (créé
 //! automatiquement à la première publication) peut modifier la fiche de son commerce.
+//!
+//! 0.27 : publication en marche par défaut sur tout poste serveur (clé interne « mobile_publish », « 0 » =
+//! coupée par la boutique dans Paramètres → Réseau). Le projet est toujours celui d'Eden Dev ; les anciens
+//! réglages « supabase_url » et « supabase_key » ne servent plus qu'aux tests d'interface et ne sont plus
+//! montrés. Aucun message vu par la boutique ne nomme Supabase.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -97,16 +102,30 @@ fn check_public(url: &str) -> Result<u64, String> {
             if v.get("app").and_then(|a| a.as_str()) == Some("GestiMarket") {
                 Ok(t0.elapsed().as_millis() as u64)
             } else {
-                Err("L'adresse publique ne mène pas à GestiMarket.".into())
+                Err("L'adresse Internet ne mène pas à GestiMarket.".into())
             }
         }
-        Err(ureq::Error::Status(code, _)) => Err(format!("L'adresse publique répond {code} (tunnel arrêté ou mal configuré).")),
-        Err(e) => Err(format!("Adresse publique injoignable : {e}")),
+        Err(ureq::Error::Status(code, _)) => Err(format!("L'adresse Internet répond {code} (accès depuis Internet arrêté).")),
+        Err(_) => Err("Adresse Internet injoignable pour le moment.".into()),
     }
+}
+
+/// Partage avec l'application mobile en marche (sauf si la boutique l'a coupé).
+pub fn publish_enabled(conn: &rusqlite::Connection) -> bool {
+    settings::get(conn, "mobile_publish").unwrap_or_default().trim() != "0"
 }
 
 /// Publie une fois. `active = false` à l'arrêt du poste serveur.
 pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
+    publish(state, active, false)
+}
+
+/// Coupure par la boutique : l'application mobile voit tout de suite « serveur arrêté ».
+pub fn withdraw(state: &AppState) -> Result<(), String> {
+    publish(state, false, true)
+}
+
+fn publish(state: &AppState, active: bool, force: bool) -> Result<(), String> {
     let port = *PORT.lock().unwrap_or_else(|e| e.into_inner());
     if port == 0 {
         return Err("Ce poste n'est pas le poste serveur : seul le serveur publie son adresse.".into());
@@ -116,15 +135,18 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
         let s = settings::get_all(&conn).map_err(|e| e.to_string())?;
         let get = |k: &str| s.get(k).cloned().unwrap_or_default();
         let (code, secret) = ensure_identity(&conn).map_err(|e| e.to_string())?;
-        (get("supabase_enabled") == "1", get("supabase_url"), get("supabase_key"), get("public_url"), get("shop_name"), code, secret)
+        (publish_enabled(&conn), get("supabase_url"), get("supabase_key"), get("public_url"), get("shop_name"), code, secret)
     };
     set_status(|s| {
         s.enabled = enabled;
         s.shop_code = code.clone();
         s.running = true;
+        if !enabled {
+            s.last_error = None;
+        }
     });
-    if !enabled {
-        return Err("Publication Supabase désactivée.".into());
+    if !enabled && !force {
+        return Err("Le partage avec l'application mobile est coupé (Paramètres → Réseau & mobile).".into());
     }
     // Sans projet saisi : celui d'Eden Dev, lu par l'application mobile GestiMarket.
     let (base, key) = if base.trim().is_empty() && key.trim().is_empty() {
@@ -135,7 +157,7 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
     let base = base.trim().trim_end_matches('/').to_string();
     let local_test = base.starts_with("http://127.0.0.1") || base.starts_with("http://localhost");
     if !(base.starts_with("https://") || local_test) || key.trim().is_empty() {
-        return Err("Renseignez l'URL du projet Supabase (https://….supabase.co) et la clé publique (anon / publishable).".into());
+        return Err("Service Eden Dev mal réglé sur ce PC : contactez Eden Dev.".into());
     }
     // Boutique Eden Dev de ce PC : la propriétaire connectée dans l'application mobile retrouve ce serveur.
     let mut published = payload(&shop_name, port, &crate::network::local_ips(), &public_url, state.live.online_count());
@@ -163,7 +185,7 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
                 s.last_ok_at = Some(now());
                 s.last_error = None;
             });
-            crate::journal::state("Publication du poste serveur (Supabase)", Ok(()));
+            crate::journal::state("Partage avec l'application mobile", Ok(()));
             let public = public_url.trim().trim_end_matches('/').to_string();
             if active && !public.is_empty() {
                 let r = check_public(&public);
@@ -187,16 +209,14 @@ pub fn publish_once(state: &AppState, active: bool) -> Result<(), String> {
             let msg = match e {
                 ureq::Error::Status(code, r) => {
                     let text = r.into_string().unwrap_or_default();
-                    if code == 404 {
-                        "Fonction gm_publish_server introuvable : exécutez le script SQL fourni dans votre projet Supabase.".to_string()
-                    } else {
-                        format!("Supabase a répondu {code} : {}", text.chars().take(200).collect::<String>())
-                    }
+                    // Détail technique pour le journal seulement ; la boutique voit un message simple.
+                    crate::journal::error(format!("Publication du poste serveur : réponse {code} {}", text.chars().take(200).collect::<String>()));
+                    format!("Service Eden Dev momentanément indisponible (code {code}) : nouvel essai dans 30 secondes.")
                 }
-                other => format!("Supabase injoignable : {other}"),
+                _ => "Service Eden Dev injoignable : vérifiez la connexion à Internet de ce PC.".to_string(),
             };
             set_status(|s| s.last_error = Some(msg.clone()));
-            crate::journal::state("Publication du poste serveur (Supabase)", Err(&msg));
+            crate::journal::state("Partage avec l'application mobile", Err(&msg));
             Err(msg)
         }
     }

@@ -58,7 +58,8 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     // Activités de la boutique (la principale d'abord, 3 au plus), séparées par des virgules
     ("business_types", ""),
     ("enabled_features", "expiry,brand,sku,packagings,decimal"),
-    // Application mobile : publication de l'adresse du poste serveur sur Supabase
+    // Application mobile : ancien interrupteur (avant 0.27) et projet de test (tests d'interface seulement,
+    // jamais montrés). La publication suit maintenant « mobile_publish » (clé interne, voir cloud.rs).
     ("supabase_enabled", "0"),
     ("supabase_url", ""),
     ("supabase_key", ""),
@@ -90,6 +91,12 @@ const INTERNAL: &[&str] = &[
     "supabase_secret",
     // Jeton du tunnel Cloudflare de la boutique (adresse Internet automatique, voir tunnel.rs).
     "tunnel_token",
+    // Jeton d'appareil remis par Eden Dev quand le PC est relié au compte : adresse Internet sans mot de passe.
+    "device_token",
+    // Interrupteurs de Paramètres → Réseau & mobile (« 0 » = coupé par la boutique ; vide = marche) : changés par leurs
+    // propres commandes, jamais par l'enregistrement de la page des paramètres.
+    "mobile_publish",
+    "internet_enabled",
     // Licence et compte boutique (voir license.rs) : lus par « license_status », jamais par l'écran des paramètres.
     "license_file",
     "license_clock",

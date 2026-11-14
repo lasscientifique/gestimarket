@@ -29,4 +29,8 @@ The **https** address (port 7879) enables the browser camera to scan barcodes. T
 
 ## The shop's Internet address (server PC)
 
-With the PRO plan, the server PC can have an **Internet address** (`https://gm-000123.gestimarket.shop`): the owner opens the shop from anywhere. Settings → Network & mobile → **Create the Internet address**. Each phone connecting from the Internet must first be **authorised** by the administrator (access code or shop account).
+With the PRO and BUSINESS plans, the server PC has a fixed, secure **Internet address** (`https://gm-000123.gestimarket.shop`): the owner opens the shop from anywhere. It sets itself up **on its own**: GestiMarket installs what is needed the first time (Internet required), then keeps it running. Settings → Network & mobile → **Internet access** shows the address and its status; the switch turns access off if the shop wishes. Each phone connecting from the Internet must first be **authorised** by the administrator (access code or shop account).
+
+PC linked to the account before version 0.27: tap **Reconnect the account** once (e-mail or WhatsApp number, and the shop account password); the rest is automatic.
+
+**GestiMarket mobile app** (Settings → Network & mobile): the shop's phones find the server PC on their own, the owner with their account and staff with the **shop code** (shown with its QR code). The switch “The shop's phones find this PC” is on by default.
