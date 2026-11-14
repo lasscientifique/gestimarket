@@ -34,9 +34,9 @@ La restauration sert aussi à **changer de téléphone** et à **passer du tél�
 
 ## Contact Eden Dev
 
-- WhatsApp : @edendeveloppeur (+223 76 59 36 76)
-- Téléphone : +223 76 59 36 76
-- E-mail : lasscientifique@gmail.com
+- WhatsApp : +223 97 12 62 02
+- Téléphone : +223 97 12 62 02
+- E-mail : edendev.gestimarket@gmail.com
 
 En cas de problème, envoyez le **journal** du poste (Paramètres → Développeur Eden Dev → Journal).
 

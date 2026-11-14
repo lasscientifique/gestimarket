@@ -32,9 +32,9 @@ pub async fn rpc(state: State<'_, AppState>, cmd: String, args: Option<Value>) -
 #[tauri::command]
 pub async fn open_contact(app: AppHandle, kind: String, number: Option<String>) -> AppResult<()> {
     let url: String = match kind.as_str() {
-        "email" => "mailto:lasscientifique@gmail.com".into(),
-        "whatsapp" => "https://wa.me/22376593676".into(),
-        "phone" => "tel:+22376593676".into(),
+        "email" => "mailto:edendev.gestimarket@gmail.com".into(),
+        "whatsapp" => "https://wa.me/22397126202".into(),
+        "phone" => "tel:+22397126202".into(),
         "releases" => "https://github.com/lasscientifique/gestimarket/releases/latest".into(),
         "whatsapp_gm" => {
             let digits: String = number.unwrap_or_default().chars().filter(char::is_ascii_digit).collect();

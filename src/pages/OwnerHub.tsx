@@ -504,9 +504,9 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
 }
 
 const EDEN = {
-  email: { href: "mailto:lasscientifique@gmail.com", value: "lasscientifique@gmail.com" },
-  whatsapp: { href: "https://wa.me/22376593676", value: "@edendeveloppeur" },
-  phone: { href: "tel:+22376593676", value: "+223 76 59 36 76" },
+  email: { href: "mailto:edendev.gestimarket@gmail.com", value: "edendev.gestimarket@gmail.com" },
+  whatsapp: { href: "https://wa.me/22397126202", value: "+223 97 12 62 02" },
+  phone: { href: "tel:+22397126202", value: "+223 97 12 62 02" },
 } as const;
 
 /** Contact Eden Dev (même adresses que Paramètres → Développeur Eden Dev). */

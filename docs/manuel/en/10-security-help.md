@@ -34,9 +34,9 @@ Restoring is also how you **change phones** and **move from the phone to a PC**.
 
 ## Contact Eden Dev
 
-- WhatsApp: @edendeveloppeur (+223 76 59 36 76)
-- Phone: +223 76 59 36 76
-- E-mail: lasscientifique@gmail.com
+- WhatsApp: +223 97 12 62 02
+- Phone: +223 97 12 62 02
+- E-mail: edendev.gestimarket@gmail.com
 
 In case of a problem, send the station's **log** (Settings → Eden Dev developer → Log).
 

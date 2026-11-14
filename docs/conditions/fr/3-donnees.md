@@ -1,6 +1,6 @@
 # Données personnelles
 
-Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 76 59 36 76 · lasscientifique@gmail.com
+Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com
 
 ## 1. Qui est responsable de quoi
 
@@ -33,7 +33,7 @@ Les données du compte et des paiements sont gardées tant que le compte existe,
 
 ## 5. Vos droits
 
-Vous pouvez demander à voir, corriger ou supprimer les données de votre compte, par WhatsApp (+223 76 59 36 76) ou par e-mail (lasscientifique@gmail.com). La suppression du compte met fin à la licence ; les données de la boutique restent sur vos appareils. Vous pouvez aussi saisir l'Autorité de protection des données à caractère personnel du Mali (APDP).
+Vous pouvez demander à voir, corriger ou supprimer les données de votre compte, par WhatsApp (+223 97 12 62 02) ou par e-mail (edendev.gestimarket@gmail.com). La suppression du compte met fin à la licence ; les données de la boutique restent sur vos appareils. Vous pouvez aussi saisir l'Autorité de protection des données à caractère personnel du Mali (APDP).
 
 ## 6. Les données de vos clients
 

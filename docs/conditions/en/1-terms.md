@@ -1,6 +1,6 @@
 # Terms of use
 
-Version 2026-11 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 76 59 36 76 · lasscientifique@gmail.com · Translation: the French version prevails.
+Version 2026-11 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com · Translation: the French version prevails.
 
 ## 1. Purpose
 

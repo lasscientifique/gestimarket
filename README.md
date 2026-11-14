@@ -84,7 +84,7 @@ Logiciel de **caisse et de gestion de magasin** pour boutiques, supérettes, sup
 ### Personnalisation
 - Logo, nom du commerce, couleur du thème, style du menu, thème clair / sombre ; thème par défaut sinon.
 - Aide contextuelle (bouton « ? ») sur chaque écran et chaque action importante.
-- Paramètres → **Développeur Eden Dev** : contacter l'éditeur (e-mail lasscientifique@gmail.com, WhatsApp @edendeveloppeur, téléphone +223 76 59 36 76). Sur le PC, les liens s'ouvrent avec la messagerie, WhatsApp ou l'application d'appel de Windows ; dans un navigateur ou l'application mobile, comme des liens ordinaires.
+- Paramètres → **Développeur Eden Dev** : contacter l'éditeur (e-mail edendev.gestimarket@gmail.com, WhatsApp et téléphone +223 97 12 62 02). Sur le PC, les liens s'ouvrent avec la messagerie, WhatsApp ou l'application d'appel de Windows ; dans un navigateur ou l'application mobile, comme des liens ordinaires.
 
 ---
 

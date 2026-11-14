@@ -1,6 +1,6 @@
 # Contrat de licence d'utilisation
 
-Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 76 59 36 76 · lasscientifique@gmail.com
+Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com
 
 ## 1. Propriété
 

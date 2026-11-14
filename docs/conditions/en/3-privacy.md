@@ -1,6 +1,6 @@
 # Personal data
 
-Version 2026-11 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 76 59 36 76 · lasscientifique@gmail.com · Translation: the French version prevails.
+Version 2026-11 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com · Translation: the French version prevails.
 
 ## 1. Who is responsible for what
 
@@ -33,7 +33,7 @@ Account and payment data is kept while the account exists, then for the period r
 
 ## 5. Your rights
 
-You can ask to see, correct or delete your account data, by WhatsApp (+223 76 59 36 76) or by e-mail (lasscientifique@gmail.com). Deleting the account ends the licence; the shop's data stays on your devices. You can also contact Mali's personal data protection authority (APDP).
+You can ask to see, correct or delete your account data, by WhatsApp (+223 97 12 62 02) or by e-mail (edendev.gestimarket@gmail.com). Deleting the account ends the licence; the shop's data stays on your devices. You can also contact Mali's personal data protection authority (APDP).
 
 ## 6. Your customers' data
 

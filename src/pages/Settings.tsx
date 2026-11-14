@@ -449,14 +449,14 @@ export default function SettingsPage() {
 }
 
 // Coordonnées d'Eden Dev, éditeur de GestiMarket (mêmes adresses que la commande Rust « open_contact »).
-const EDEN_EMAIL = "lasscientifique@gmail.com";
-const EDEN_WHATSAPP = "@edendeveloppeur";
-const EDEN_PHONE = "+223 76 59 36 76";
+const EDEN_EMAIL = "edendev.gestimarket@gmail.com";
+const EDEN_WHATSAPP = "+223 97 12 62 02";
+const EDEN_PHONE = "+223 97 12 62 02";
 const EDEN_NAME = "Eden Dev";
 const EDEN_LINKS = {
   email: `mailto:${EDEN_EMAIL}`,
-  whatsapp: "https://wa.me/22376593676",
-  phone: "tel:+22376593676",
+  whatsapp: "https://wa.me/22397126202",
+  phone: "tel:+22397126202",
 } as const;
 
 /** Paramètres → Développeur Eden Dev : contacter l'éditeur du logiciel (e-mail, WhatsApp, téléphone). */
