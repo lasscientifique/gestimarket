@@ -9,6 +9,7 @@
 //!   2. il demande l'adresse avec le jeton d'appareil du PC (remis par Eden Dev quand la propriétaire a relié
 //!      ce PC à sa boutique : pas de mot de passe à retaper) ;
 //!   3. il lance cloudflared et le relance s'il s'arrête.
+//!
 //! La boutique peut couper l'accès (clé interne « internet_enabled » = « 0 »). Formule sans Internet ou
 //! abonnement fini : cloudflared est arrêté. Les écrans ne nomment ni Cloudflare, ni cloudflared, ni tunnel.
 
