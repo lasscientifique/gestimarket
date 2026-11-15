@@ -1,7 +1,7 @@
 // GestiMarket — codes du compte de la boutique envoyés sur WhatsApp (crochet « Send SMS » de Supabase Auth).
 //
 // Supabase Auth (fournisseur « Phone » : inscription, connexion par code, numéro changé) appelle cette fonction
-// avec { user: { phone }, sms: { otp } }, signé selon Standard Webhooks. Elle envoie le code par la WhatsApp
+// avec { user: { phone, new_phone }, sms: { otp } }, signé selon Standard Webhooks. Elle envoie le code par la WhatsApp
 // Cloud API de Meta :
 //   - en message simple (par défaut) : sans entreprise vérifiée, Meta ne remet le message que si la personne
 //     a écrit à GestiMarket dans les 24 heures (GestiMarket affiche « Écrire à GestiMarket » avant le code).
@@ -100,15 +100,23 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return fail(405, NOT_READY);
   const payload = await req.text();
   if (!HOOK_SECRET) return fail(503, NOT_READY);
-  let data: { user?: { phone?: string }; sms?: { otp?: string } };
+  let data: { user?: { phone?: string; new_phone?: string; phone_change?: string }; sms?: { otp?: string } };
   try {
     data = new Webhook(HOOK_SECRET).verify(payload, Object.fromEntries(req.headers)) as typeof data;
   } catch {
     return fail(401, { message: "Signature du crochet invalide." });
   }
-  const phone = String(data.user?.phone ?? "").replace(/\D/g, "");
+  // Numéro ajouté ou changé (« Numéro WhatsApp du compte ») : Supabase Auth met le nouveau numéro dans
+  // « new_phone » (le compte n'a pas encore de numéro, ou l'ancien reste dans « phone » jusqu'au code).
+  // Inscription et connexion : « phone ».
+  const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+  const phone = digits(data.user?.new_phone) || digits(data.user?.phone_change) || digits(data.user?.phone);
   const otp = String(data.sms?.otp ?? "");
-  if (phone.length < 8 || !/^\d{4,10}$/.test(otp)) return fail(400, NO_WHATSAPP);
+  if (phone.length < 8 || !/^\d{4,10}$/.test(otp)) {
+    // Champs reçus (noms seulement, jamais les valeurs) : pour comprendre un appel sans numéro.
+    console.error("Numéro absent de l'appel", Object.keys(data.user ?? {}).join(","), otp ? "code présent" : "code absent");
+    return fail(400, NO_WHATSAPP);
+  }
   if (!TOKEN || !PHONE_ID) return fail(503, NOT_READY);
 
   // Message simple : seulement si la personne a écrit dans les 24 heures (notifications de Meta). Si la base
