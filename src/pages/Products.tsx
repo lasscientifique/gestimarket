@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Pencil, Archive, Tags, Download, Wand2, Trash2, Upload, Printer, MapPin, Package, Camera } from "lucide-react";
+import { Plus, Search, Pencil, Archive, Tags, Download, Wand2, Trash2, Upload, Printer, MapPin, Package, Camera, ShoppingBag } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Badge, Empty, Field, ImageField, LocationBadge, Modal, PageHeader, Thumb, useShowMore } from "../components/ui";
@@ -14,9 +14,12 @@ import { exportCsv } from "../lib/files";
 import { csvMoney, currencySymbol, dateOnly, daysUntil, minorToInput, money, parseNumber, percent, qty, taxRates, toCsv, toMinor, UNIT_GROUPS } from "../lib/format";
 import type { Category, Location, Packaging, Product, Supplier } from "../types";
 import { tl } from "../lib/i18n";
+import { useLicense } from "../lib/license";
 
 export default function ProductsPage() {
   const { toast, confirm, askPin } = useApp();
+  // Sugu Eden (formules PRO et BUSINESS) : publication des produits choisis sur la place de marché d'Eden Dev.
+  const suguAllowed = !!useLicense()?.features.includes("sugu");
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -78,6 +81,16 @@ export default function ProductsPage() {
       return n;
     });
   const allSelected = products.length > 0 && products.every((p) => selected.has(p.id));
+
+  const suguPublish = async (on: boolean) => {
+    try {
+      const n = await api.suguPublish([...selected], on);
+      toast.success(on ? tl("{0} produit(s) seront publiés sur Sugu Eden.", [n]) : tl("{0} produit(s) seront retirés de Sugu Eden.", [n]));
+      load();
+    } catch (e) {
+      toast.error(e);
+    }
+  };
   const selectedProducts = products.filter((p) => selected.has(p.id));
 
   const doExport = async () => {
@@ -162,6 +175,12 @@ export default function ProductsPage() {
               }
             }}
           />
+          {suguAllowed && (
+            <>
+              <button className="btn btn-sm" onClick={() => suguPublish(true)}><ShoppingBag size={14} />  {tl("Publier sur Sugu Eden")}</button>
+              <button className="btn btn-sm" onClick={() => suguPublish(false)}>{tl("Retirer de Sugu Eden")}</button>
+            </>
+          )}
           <button className="btn btn-sm" onClick={() => setSelected(new Set())}>{tl("Désélectionner")}</button>
         </div>
       )}
@@ -199,6 +218,9 @@ export default function ProductsPage() {
                         <Thumb imageId={p.image_id} name={p.name} color={p.category_color} size={40} />
                         <div>
                           <strong>{p.name}</strong>
+                          {p.sugu_publish && p.active && (
+                            <span className="sugu-mark" title={tl("Publié sur Sugu Eden")}><ShoppingBag size={13} /></span>
+                          )}
                           <div className="muted small mono">
                             {p.barcode ?? tl("sans code-barres")}
                             {p.sku && <> · {p.sku}</>}
@@ -291,6 +313,7 @@ function ProductForm({
   onSaved: () => void;
 }) {
   const { toast, settings, askPin, hasFeature } = useApp();
+  const suguAllowed = !!useLicense()?.features.includes("sugu");
   const restaurant = settings.business_type === "restaurant";
   const [f, setF] = useState({
     barcode: product?.barcode ?? "",
@@ -313,6 +336,8 @@ function ProductForm({
     initial_stock: "",
     wholesale_price: product?.wholesale_price ? minorToInput(product.wholesale_price) : "",
     wholesale_min_qty: product?.wholesale_min_qty ? String(product.wholesale_min_qty).replace(".", ",") : "",
+    sugu_publish: product?.sugu_publish ?? false,
+    sugu_price: product?.sugu_price ? minorToInput(product.sugu_price) : "",
   });
   const [packs, setPacks] = useState<
     (Omit<Packaging, "sale_price" | "quantity" | "wholesale_price" | "wholesale_min_qty"> & { price: string; qty: string; wprice: string; wqty: string })[]
@@ -368,7 +393,7 @@ function ProductForm({
         if (!p) return;
         pin = p;
       }
-      await api.saveProduct(product?.id ?? null, {
+      const saved = await api.saveProduct(product?.id ?? null, {
         barcode: f.barcode.trim(),
         name: f.name,
         description: f.description.trim() || null,
@@ -401,6 +426,11 @@ function ProductForm({
             wholesale_min_qty: parseNumber(k.wqty) || 0,
           })),
       }, pin);
+      // Sugu Eden : publication et prix propre (vide : le prix de vente).
+      const suguPrice = f.sugu_price.trim() ? toMinor(f.sugu_price) : null;
+      if (f.sugu_publish !== (product?.sugu_publish ?? false) || suguPrice !== (product?.sugu_price ?? null)) {
+        await api.suguProduct(saved.id, f.sugu_publish, suguPrice);
+      }
       toast.success(product ? tl("Produit modifié.") : tl("Produit créé."));
       onSaved();
     } catch (e) {
@@ -590,6 +620,19 @@ function ProductForm({
           <Field label={tl("Description")} span={2}>
             <textarea rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} />
           </Field>
+          {(suguAllowed || f.sugu_publish) && (
+            <div className="span-2 sugu-product">
+              <label className="check">
+                <input type="checkbox" checked={f.sugu_publish} onChange={(e) => set("sugu_publish", e.target.checked)} />
+                <ShoppingBag size={15} />  {tl("Publier sur Sugu Eden (la place de marché d'Eden Dev)")}
+              </label>
+              {f.sugu_publish && (
+                <Field label={tl("Prix sur Sugu Eden")} hint={tl("Vide : le prix de vente ({0}). Photo, nom, catégorie et disponibilité sont publiés avec.", [money(price)])}>
+                  <input inputMode="decimal" className="num" value={f.sugu_price} onChange={(e) => set("sugu_price", e.target.value)} placeholder={minorToInput(price)} />
+                </Field>
+              )}
+            </div>
+          )}
           <label className="check span-2">
             <input type="checkbox" checked={f.track_stock} onChange={(e) => set("track_stock", e.target.checked)} />
             {tl("Suivre le stock (décocher pour un service, un plat ou un article non stocké)")}</label>

@@ -246,6 +246,9 @@ pub struct Product {
     /// Prix de gros (0 : aucun) et quantité à partir de laquelle il s'applique (0 : client grossiste seulement).
     pub wholesale_price: i64,
     pub wholesale_min_qty: f64,
+    /// Publié sur Sugu Eden (place de marché d'Eden Dev), au prix Sugu Eden s'il est donné, sinon au prix de vente.
+    pub sugu_publish: bool,
+    pub sugu_price: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -270,7 +273,7 @@ const PRODUCT_SELECT: &str = "SELECT p.id, p.barcode, p.name, p.description, p.c
         p.min_stock, p.track_stock, p.active, p.image_id, p.location_id, l.bloc, l.etage, l.rangee, l.label,
         p.expiry_date, p.created_at, p.updated_at, p.brand, p.sku,
         l.fixture_id, fx.name, (SELECT COUNT(*) FROM product_locations pl WHERE pl.product_id = p.id),
-        p.wholesale_price, p.wholesale_min_qty
+        p.wholesale_price, p.wholesale_min_qty, p.sugu_publish, p.sugu_price
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
@@ -317,6 +320,8 @@ fn product_from_row(r: &Row) -> rusqlite::Result<Product> {
         packagings: Vec::new(),
         wholesale_price: r.get(33)?,
         wholesale_min_qty: r.get(34)?,
+        sugu_publish: r.get(35)?,
+        sugu_price: r.get(36)?,
     })
 }
 

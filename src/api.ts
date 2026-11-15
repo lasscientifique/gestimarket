@@ -1,5 +1,6 @@
 import { local, rpc, setToken } from "./lib/transport";
 import type {
+  SuguStatus,
   AccountLinkResult,
   AccountLoginResult,
   AccountOptions,
@@ -335,6 +336,13 @@ export const api = {
   tunnelRemove: () => call<TunnelStatus>("tunnel_remove"),
   internetSet: (on: boolean) => call<TunnelStatus>("internet_set", { on }),
   mobilePublishSet: (on: boolean) => call<CloudStatus>("mobile_publish_set", { on }),
+  // Sugu Eden (place de marché d'Eden Dev)
+  suguStatus: () => call<SuguStatus>("sugu_status"),
+  suguSettings: (p: { enabled?: boolean; accept?: boolean; whatsapp?: string; description?: string; stock_mode?: string; stock_margin?: number }) =>
+    call<SuguStatus>("sugu_settings", p),
+  suguPublish: (ids: number[], on: boolean) => call<number>("sugu_publish", { ids, on }),
+  suguProduct: (id: number, on: boolean, price: number | null) => call<void>("sugu_product", { id, on, price }),
+  suguSyncNow: () => call<void>("sugu_sync_now"),
   cashierStats: () => call<CashierStats>("cashier_stats"),
   closeCashSession: (input: { counted_amount: number; note: string | null }, pin: string) =>
     call<CashSession>("close_cash_session", { input, pin }),

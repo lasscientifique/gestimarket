@@ -1,0 +1,49 @@
+# Site Sugu Eden (place de marché d'Eden Dev) : fabriqué à chaque changement de sugu/ et publié sur GitHub Pages.
+#
+# Une seule fois, dans GitHub : Settings → Pages → Build and deployment → Source : « GitHub Actions ».
+# Adresse : https://lasscientifique.github.io/gestimarket/ (gm_config.sugu_site_url chez Eden Dev), ou le nom de
+# domaine de Sugu Eden une fois réglé dans Settings → Pages → Custom domain.
+name: Sugu Eden (site)
+
+on:
+  push:
+    branches: [main]
+    paths: ["sugu/**", "vite.sugu.config.ts", ".github/workflows/sugu-eden.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sugu-eden-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run sugu:build
+      - name: Compatibilité anciens Android et iPhone (Chrome 70, iOS 13)
+        run: node scripts/check-compat.mjs dist-sugu/assets
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-sugu
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

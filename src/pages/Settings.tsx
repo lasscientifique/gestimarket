@@ -32,14 +32,15 @@ import { markBackupShared } from "../components/PhoneBanners";
 import { OfflineHelpCard } from "../components/OfflineHelp";
 import { RestoreBackupModal } from "../components/RestoreBackup";
 import { BackupProtectionCard } from "../components/BackupProtection";
-import { ArchiveRestore, BookOpen, PlayCircle } from "lucide-react";
+import { ArchiveRestore, BookOpen, PlayCircle, ShoppingBag } from "lucide-react";
 import { TermsCard } from "../components/Terms";
 import { UpdateTab } from "../components/UpdateTab";
+import { SuguTab } from "../components/SuguTab";
 import { openManual, openManualExternal } from "../components/Help";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
-type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup" | "update" | "help" | "developer";
+type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "sugu" | "backup" | "update" | "help" | "developer";
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "shop", label: tl("Commerce"), icon: <Store size={17} /> },
   { id: "business", label: tl("Type de commerce"), icon: <Building2 size={17} /> },
@@ -48,6 +49,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "sales", label: tl("Ventes & ticket"), icon: <Receipt size={17} /> },
   { id: "security", label: tl("Sécurité & PIN"), icon: <Lock size={17} /> },
   { id: "network", label: tl("Réseau & mobile"), icon: <Network size={17} /> },
+  { id: "sugu", label: tl("Sugu Eden"), icon: <ShoppingBag size={17} /> },
   { id: "backup", label: tl("Sauvegarde"), icon: <ShieldCheck size={17} /> },
   { id: "update", label: tl("Mise à jour"), icon: <Rocket size={17} /> },
   { id: "help", label: tl("Aide, conditions et licence"), icon: <BookOpen size={17} /> },
@@ -456,6 +458,7 @@ export default function SettingsPage() {
         </>
       )}
 
+      {tab === "sugu" && <SuguTab />}
       {tab === "update" && <UpdateTab />}
       {tab === "developer" && <DeveloperTab version={info?.version} />}
     </div>

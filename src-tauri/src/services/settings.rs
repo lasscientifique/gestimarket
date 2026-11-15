@@ -97,6 +97,16 @@ const INTERNAL: &[&str] = &[
     // propres commandes, jamais par l'enregistrement de la page des paramètres.
     "mobile_publish",
     "internet_enabled",
+    // Sugu Eden (voir sugu.rs) : réglés par « sugu_settings » (accord de la boutique daté), état de la publication.
+    "sugu_enabled",
+    "sugu_accepted_at",
+    "sugu_whatsapp",
+    "sugu_description",
+    "sugu_stock_mode",
+    "sugu_stock_margin",
+    "sugu_shop_hash",
+    "sugu_shop_url",
+    "sugu_shop_sent_at",
     // Licence et compte boutique (voir license.rs) : lus par « license_status », jamais par l'écran des paramètres.
     "license_file",
     "license_clock",

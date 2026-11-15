@@ -413,8 +413,31 @@ export interface Product {
   /** Prix de gros (0 : aucun) et quantité minimale (0 : client grossiste seulement). */
   wholesale_price: number;
   wholesale_min_qty: number;
+  /** Publié sur Sugu Eden, au prix Sugu Eden s'il est donné (sinon au prix de vente). */
+  sugu_publish: boolean;
+  sugu_price: number | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Sugu Eden : place de marché d'Eden Dev (Paramètres → Sugu Eden). */
+export interface SuguStatus {
+  enabled: boolean;
+  allowed: boolean;
+  linked: boolean;
+  here: boolean;
+  accepted_at: string | null;
+  whatsapp: string;
+  description: string;
+  stock_mode: "available" | "quantity";
+  stock_margin: number;
+  chosen: number;
+  online: number;
+  pending: number;
+  shop_url: string | null;
+  busy: boolean;
+  last_ok_at: string | null;
+  last_error: string | null;
 }
 
 export interface ProductInput {
@@ -1087,7 +1110,7 @@ export interface BoutiquesInfo {
 // ───────────── Abonnement, licence et compte boutique (Eden Dev) ─────────────
 
 export type PlanCode = "free" | "starter" | "pro" | "business";
-export type LicenseFeature = "write" | "server" | "internet" | "customer_display" | "logo";
+export type LicenseFeature = "write" | "server" | "internet" | "customer_display" | "logo" | "sugu";
 
 export interface LicenseStatus {
   /** Identifiant de ce PC (et de cette boutique sur le PC) : K7QM-2XPA-9DTR */

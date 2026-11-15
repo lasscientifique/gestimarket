@@ -51,9 +51,25 @@ pub async fn open_contact(app: AppHandle, kind: String, number: Option<String>) 
             }
             format!("https://wa.me/{digits}?text=GestiMarket")
         }
+        // Sugu Eden : la page de la boutique, remise par Eden Dev à la publication (https://…/#/b/<boutique>).
+        "sugu" => {
+            let url = number.unwrap_or_default();
+            if !sugu_url_ok(&url) {
+                return invalid("La boutique n'est pas encore sur Sugu Eden.");
+            }
+            url
+        }
         _ => return invalid("Contact inconnu."),
     };
     open_url(&app, &url)
+}
+
+/// Adresse d'une page de boutique Sugu Eden : https, sans espace ni guillemet, avec « /#/b/ ».
+fn sugu_url_ok(url: &str) -> bool {
+    url.starts_with("https://")
+        && url.len() < 300
+        && url.contains("/#/b/")
+        && url.chars().all(|c| c.is_ascii_alphanumeric() || "-._~:/#?=&%".contains(c))
 }
 
 /// Numéro de version « 0.28.0 » (chiffres et points seulement) : l'adresse de l'APK ne peut rien contenir d'autre.
@@ -561,5 +577,12 @@ mod tests {
         assert!(super::apk_version_ok("0.28.0") && super::apk_version_ok("1.2.10"));
         assert!(!super::apk_version_ok("0.28") && !super::apk_version_ok("0.28.0/../x") && !super::apk_version_ok("0.28.0?a=1"));
         assert!(!super::apk_version_ok("") && !super::apk_version_ok("a.b.c"));
+    }
+
+    #[test]
+    fn page_de_la_boutique_sur_sugu_eden() {
+        assert!(super::sugu_url_ok("https://lasscientifique.github.io/gestimarket/#/b/eden-superette-1"));
+        assert!(!super::sugu_url_ok("http://exemple.com/#/b/x") && !super::sugu_url_ok("https://exemple.com/"));
+        assert!(!super::sugu_url_ok("https://exemple.com/#/b/x\" onclick") && !super::sugu_url_ok("file:///#/b/x"));
     }
 }

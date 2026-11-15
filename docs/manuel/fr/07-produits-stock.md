@@ -7,6 +7,16 @@
 - **Importer** un catalogue depuis Excel (CSV) : Produits → Importer.
 - **Étiquettes** de rayon et de produits avec code-barres : sélectionnez les produits, puis Étiquettes.
 
+## Sugu Eden : vos produits sur la place de marché d'Eden Dev
+
+Avec les formules **PRO** et **BUSINESS**, la boutique montre les produits de son choix sur **Sugu Eden**, le site où les acheteurs de la ville cherchent un produit, voient son prix et sa disponibilité, puis **commandent par WhatsApp ou par téléphone, directement à la boutique**. Aucun paiement ne passe par Eden Dev.
+
+1. **Paramètres → Sugu Eden** (administrateur) : numéro WhatsApp des commandes, présentation de la boutique, stock montré (« En stock / Épuisé » ou la quantité, avec une marge de sécurité), puis l'accord et **Publier ma boutique sur Sugu Eden**. Nom, pays, ville et adresse sont ceux du compte de la boutique ; le logo, celui de Paramètres → Apparence.
+2. **Choisir les produits** : dans la fiche produit, cochez **Publier sur Sugu Eden** (prix Sugu Eden facultatif : vide, c'est le prix de vente) ; ou sélectionnez plusieurs produits dans la liste, puis **Publier sur Sugu Eden**. Une petite icône de sac marque les produits publiés.
+3. Le PC serveur (ou le poste unique) envoie tout seul, toutes les 2 minutes, ce qui a changé : photo, nom, prix, catégorie, disponibilité. Une vente en caisse met à jour la disponibilité.
+
+**Retirer la boutique de Sugu Eden** (même onglet) efface aussitôt la boutique et ses produits du site. À la fin de l'abonnement PRO ou BUSINESS, la boutique n'est plus montrée.
+
 ## Stock
 
 - **Alertes** : produits sous le seuil ou en rupture, et produits bientôt périmés (Stock & inventaire, tableau de bord).

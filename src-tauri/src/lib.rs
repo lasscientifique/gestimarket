@@ -15,6 +15,7 @@ mod report;
 mod rpc;
 mod services;
 mod state;
+mod sugu;
 mod tunnel;
 
 use std::time::Duration;
@@ -178,6 +179,10 @@ pub fn run() {
                 cloud::start(app.handle().clone(), config.port);
                 // Adresse Internet automatique : cloudflared lancé avec le jeton du tunnel de la boutique.
                 tunnel::start(app.handle().clone());
+            }
+            // Sugu Eden : le PC (ou le téléphone) qui garde la base publie les produits choisis par la boutique.
+            if config.mode != "client" {
+                sugu::start(app.handle().clone());
             }
 
             // Licence : horloge mémorisée chaque minute ; synchronisation avec Eden Dev toutes les 30 min

@@ -72,32 +72,33 @@ fn cached_thumb(dir: &Path, id: i64, size: u32) -> Option<(String, Vec<u8>)> {
     None
 }
 
-/// Fabrique la vignette d'une photo et la garde dans `dir`. Image illisible, SVG ou GIF, ou déjà
-/// petite : l'image d'origine.
-fn make_thumb(dir: &Path, id: i64, size: u32, mime: String, data: Vec<u8>) -> (String, Vec<u8>) {
-    if !matches!(mime.as_str(), "image/jpeg" | "image/png" | "image/webp") {
-        return (mime, data);
+/// Réduit une photo à `size` pixels au plus (plus grand côté) : JPEG qualité 80, ou PNG si elle a de la
+/// transparence (logo, détourage). `None` : illisible, SVG ou GIF, ou déjà assez petite.
+pub fn shrink(size: u32, mime: &str, data: &[u8]) -> Option<(&'static str, Vec<u8>)> {
+    if !matches!(mime, "image/jpeg" | "image/png" | "image/webp") {
+        return None;
     }
-    let Ok(img) = image::load_from_memory(&data) else { return (mime, data) };
+    let img = image::load_from_memory(data).ok()?;
     if img.width() <= size && img.height() <= size {
-        return (mime, data);
+        return None;
     }
     let small = img.thumbnail(size, size);
     let mut out: Vec<u8> = Vec::new();
-    let (ext, out_mime) = if small.color().has_alpha() {
-        // Logo ou détourage : PNG, pour garder la transparence.
-        if small.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).is_err() {
-            return (mime, data);
-        }
-        ("png", "image/png")
+    if small.color().has_alpha() {
+        small.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).ok()?;
+        Some(("image/png", out))
     } else {
         let rgb = small.to_rgb8();
-        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 80);
-        if encoder.encode_image(&rgb).is_err() {
-            return (mime, data);
-        }
-        ("jpg", "image/jpeg")
-    };
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 80).encode_image(&rgb).ok()?;
+        Some(("image/jpeg", out))
+    }
+}
+
+/// Fabrique la vignette d'une photo et la garde dans `dir`. Image illisible, SVG ou GIF, ou déjà
+/// petite : l'image d'origine.
+fn make_thumb(dir: &Path, id: i64, size: u32, mime: String, data: Vec<u8>) -> (String, Vec<u8>) {
+    let Some((out_mime, out)) = shrink(size, &mime, &data) else { return (mime, data) };
+    let ext = if out_mime == "image/png" { "png" } else { "jpg" };
     if std::fs::create_dir_all(dir).is_ok() {
         let _ = std::fs::write(dir.join(format!("{id}-{size}.{ext}")), &out);
     }

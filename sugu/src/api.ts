@@ -1,0 +1,132 @@
+// Données de Sugu Eden : fonctions publiques d'Eden Dev (lecture seule, clé publique).
+// Les boutiques GestiMarket publient leurs produits ; ici on ne fait que les lire.
+
+const SUPABASE_URL = "https://wpuchfnyuyujdflbmqpn.supabase.co";
+const PUBLIC_KEY = "sb_publishable_cbsxEz9jKifmGN8ahIIYcg_M14lFLv3";
+
+export interface ShopRef {
+  slug: string;
+  name: string;
+  city: string;
+  country: string;
+}
+
+export interface Item {
+  id: string;
+  name: string;
+  price: number;
+  unit: string;
+  brand: string;
+  category: string;
+  in_stock: boolean;
+  stock: number | null;
+  photo: string | null;
+  currency: string;
+  decimals: number;
+  shop: ShopRef;
+  description?: string;
+}
+
+export interface Shop extends ShopRef {
+  found: boolean;
+  address: string;
+  whatsapp: string;
+  phone: string;
+  description?: string;
+  logo: string | null;
+  shop_type?: string;
+  products?: number;
+  since?: string;
+}
+
+export interface Home {
+  countries: { code: string; shops: number }[];
+  cities: { city: string; shops: number }[];
+  categories: { category: string; products: number }[];
+  shops: (ShopRef & { logo: string | null; products: number; shop_type: string })[];
+}
+
+export interface Results {
+  total: number;
+  items: Item[];
+}
+
+export interface ProductPage {
+  found: boolean;
+  product?: Item;
+  shop?: Shop;
+  more?: Item[];
+}
+
+async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+      method: "POST",
+      headers: { apikey: PUBLIC_KEY, Authorization: `Bearer ${PUBLIC_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("Pas de connexion à Internet : réessayez dans un instant.");
+  }
+  if (!res.ok) throw new Error("Sugu Eden est momentanément indisponible : réessayez plus tard.");
+  return (await res.json()) as T;
+}
+
+export const api = {
+  home: (country: string) => rpc<Home>("sugu_home", { p_country: country || null }),
+  search: (p: { q?: string; country?: string; city?: string; category?: string; shop?: string; offset?: number; limit?: number }) =>
+    rpc<Results>("sugu_search", {
+      p_q: p.q || null,
+      p_country: p.country || null,
+      p_city: p.city || null,
+      p_category: p.category || null,
+      p_shop: p.shop || null,
+      p_limit: p.limit ?? 24,
+      p_offset: p.offset ?? 0,
+    }),
+  // Identifiant mal recopié : « introuvable », sans appel.
+  product: (id: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      ? rpc<ProductPage>("sugu_product", { p_id: id })
+      : Promise.resolve<ProductPage>({ found: false }),
+  shop: (slug: string) => rpc<Shop>("sugu_shop", { p_slug: slug }),
+};
+
+/** Adresse publique d'une photo (bucket « sugu »). */
+export const photoUrl = (path: string | null | undefined) => (path ? `${SUPABASE_URL}/storage/v1/object/public/sugu/${path}` : null);
+
+/** Prix au format du pays : « 15 000 F CFA ». */
+export function price(item: { price: number; currency: string; decimals: number }): string {
+  const value = item.price / Math.pow(10, item.decimals || 0);
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: item.currency || "XOF",
+      minimumFractionDigits: item.decimals || 0,
+      maximumFractionDigits: item.decimals || 0,
+    }).format(value);
+  } catch {
+    return `${value.toLocaleString("fr-FR")} ${item.currency}`;
+  }
+}
+
+let regions: Intl.DisplayNames | null | undefined;
+/** Nom d'un pays en français (« ML » → « Mali »). */
+export function countryName(code: string): string {
+  if (regions === undefined) {
+    try {
+      regions = new Intl.DisplayNames(["fr"], { type: "region" });
+    } catch {
+      regions = null;
+    }
+  }
+  return (regions && regions.of(code)) || code;
+}
+
+/** Lien WhatsApp vers la boutique, avec le message de commande déjà écrit. */
+export function whatsappLink(number: string, message: string): string | null {
+  const digits = number.replace(/[^0-9]/g, "");
+  if (digits.length < 8) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}

@@ -104,7 +104,7 @@ const PHONE_INVALID: &str = "Numéro WhatsApp invalide : tapez-le avec l'indicat
 
 /// Numéro WhatsApp au format international (+22376593676) : espaces, points et tirets ignorés, « 00 » vaut « + ».
 /// Sans indicatif, un numéro à 8 chiffres est pris pour un numéro du Mali.
-fn valid_phone(s: &str) -> Result<String, String> {
+pub(crate) fn valid_phone(s: &str) -> Result<String, String> {
     let t: String = s.chars().filter(|c| !c.is_whitespace() && !matches!(c, '-' | '.' | '(' | ')')).collect();
     let (international, digits) = match (t.strip_prefix('+'), t.strip_prefix("00")) {
         (Some(d), _) | (None, Some(d)) => (true, d),

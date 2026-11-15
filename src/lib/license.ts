@@ -58,6 +58,7 @@ export const FEATURE_LABELS: Record<LicenseFeature, string> = {
   internet: tl("Accès depuis Internet"),
   customer_display: tl("Écran client"),
   logo: tl("Logo personnalisé"),
+  sugu: tl("Vitrine sur Sugu Eden"),
 };
 
 /** Date ISO (licence) → « 16/11/2026 08:47 ». */

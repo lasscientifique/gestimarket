@@ -831,6 +831,37 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             state.require(origin, Admin)?;
             out(crate::tunnel::status(&state.conn()))
         }
+        // ───── Sugu Eden (place de marché d'Eden Dev, voir sugu.rs) ─────
+        "sugu_status" => run(Manager, &|c, _| out(crate::sugu::status(c))),
+        // Réglages et accord de la boutique : publier ou retirer la boutique, numéro WhatsApp des commandes…
+        "sugu_settings" => {
+            state.require(origin, Admin)?;
+            let conn = state.conn();
+            let before = settings::get(&conn, "sugu_enabled")? == "1";
+            crate::sugu::configure(&conn, &a).map_err(AppError::Validation)?;
+            let after = settings::get(&conn, "sugu_enabled")? == "1";
+            if before != after {
+                let what = if after { "Sugu Eden : boutique publiée" } else { "Sugu Eden : boutique retirée" };
+                audit::log_system(&conn, what, "settings", None, "")?;
+            }
+            out(crate::sugu::status(&conn))
+        }
+        // Produits cochés ou décochés « Publier sur Sugu Eden » (liste des produits).
+        "sugu_publish" => run(Manager, &|c, _| {
+            let ids: Vec<i64> = arg(&a, "ids")?;
+            let on: bool = arg(&a, "on")?;
+            out(crate::sugu::publish(c, &ids, on)?)
+        }),
+        // Fiche produit : publication et prix Sugu Eden.
+        "sugu_product" => run(Manager, &|c, _| {
+            crate::sugu::set_product(c, arg(&a, "id")?, arg(&a, "on")?, arg(&a, "price")?).map_err(AppError::Validation)?;
+            out(())
+        }),
+        "sugu_sync_now" => {
+            state.require(origin, Admin)?;
+            crate::sugu::wake();
+            out(())
+        }
         // PC relié avant la 0.27 : la propriétaire se reconnecte une fois (jeton d'appareil), la suite est automatique.
         "tunnel_setup" => {
             account_access(state, origin)?;

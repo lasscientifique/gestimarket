@@ -6,9 +6,9 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "node_modules", "src-tauri", "e2e/out", "aide", "demo", "public/compat.js"] },
+  { ignores: ["dist", "dist-sugu", "node_modules", "src-tauri", "e2e/out", "aide", "demo", "public/compat.js"] },
   {
-    files: ["src/**/*.{ts,tsx}", "vite.config.ts"],
+    files: ["src/**/*.{ts,tsx}", "sugu/src/**/*.{ts,tsx}", "vite.config.ts", "vite.sugu.config.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     plugins: { "react-hooks": reactHooks },
