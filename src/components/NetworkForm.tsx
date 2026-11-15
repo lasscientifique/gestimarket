@@ -1,8 +1,9 @@
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
-import { Monitor, Server, Laptop, Wifi, CheckCircle2, RotateCw, ScanLine, BatteryCharging, Radio } from "lucide-react";
+import { Monitor, Server, Laptop, Wifi, CheckCircle2, RotateCw, ScanLine, BatteryCharging, Radio, Globe, Search } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { getNetwork, isMobileApp, local, pingServer, type NetworkConfig } from "../lib/transport";
+import { getNetwork, isMobileApp, local, pingServer, type FoundServer, type NetworkConfig } from "../lib/transport";
+import { api } from "../api";
 import { hasNativeScanner, onNativeCode, requestNativeScan } from "../lib/native";
 import { askBatteryExemption, askNotifications, batteryRestricted, hasAndroidBridge, openHotspotSettings, serverService } from "../lib/android";
 import { Field } from "./ui";
@@ -46,6 +47,32 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
   const [c, setC] = useState<NetworkConfig>(info?.config ?? { mode: "local", poste_name: "Caisse 1", port: 7878, server_url: "" });
   const [test, setTest] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Poste client : par le code du commerce (réseau de la boutique ou Internet), ou par une adresse fixe.
+  const [byCode, setByCode] = useState(() => !!info?.config.shop_code || !info?.config.server_url);
+  const [code, setCode] = useState(info?.config.shop_code ?? "");
+  const [found, setFound] = useState<FoundServer | null>(null);
+  const [finding, setFinding] = useState(false);
+  // Poste serveur : code du commerce à donner aux PC clients (publié avec les adresses de ce PC).
+  const [ownCode, setOwnCode] = useState("");
+  useEffect(() => {
+    if (info?.config.mode !== "server") return;
+    api.cloudStatus().then((s) => setOwnCode(s.shop_code ?? "")).catch(() => {});
+  }, [info?.config.mode]);
+
+  const findShop = async () => {
+    setFound(null);
+    setTest(null);
+    setFinding(true);
+    try {
+      const r = await local<FoundServer>("find_shop", { code });
+      setFound(r);
+      setC((prev) => ({ ...prev, server_url: r.url, shop_code: code.trim().toUpperCase() }));
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setFinding(false);
+    }
+  };
 
   useEffect(() => {
     if (info) setC(info.config);
@@ -77,6 +104,7 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
   };
 
   const save = async () => {
+    if (c.mode === "client" && byCode && !c.shop_code) return toast.error(tl("Tapez le code du commerce, puis « Trouver la boutique »."));
     if (c.mode === "client" && !c.server_url.trim()) return toast.error(tl("Indiquez l'adresse du poste serveur."));
     if (!(await confirm({ title: tl("Changer le mode réseau"), message: tl("L'application va redémarrer pour appliquer le nouveau mode."), confirmLabel: tl("Enregistrer et redémarrer") }))) return;
     if (isMobileApp && !androidApp && c.mode === "server") return toast.error(tl("Un iPhone ou un iPad ne peut pas être poste serveur."));
@@ -135,9 +163,29 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
           </Field>
         )}
         {c.mode === "client" && (
+          <div className="span-2 client-join">
+            <div className="segmented">
+              <button type="button" className={byCode ? "active" : ""} onClick={() => setByCode(true)}><Globe size={15} />  {tl("Code du commerce")}</button>
+              <button type="button" className={!byCode ? "active" : ""} onClick={() => { setByCode(false); setFound(null); setC({ ...c, shop_code: "" }); }}><Wifi size={15} />  {tl("Adresse du poste serveur")}</button>
+            </div>
+          </div>
+        )}
+        {c.mode === "client" && byCode && (
+          <Field
+            label={tl("Code du commerce")}
+            span={2}
+            hint={tl("Affiché sur le poste serveur (Paramètres → Réseau & mobile). Dans la boutique, ce PC passe par son réseau ; ailleurs, par Internet (formule PRO ou BUSINESS, PC à autoriser à la première connexion).")}
+          >
+            <div className="input-group">
+              <input value={code} onChange={(e) => { setCode(e.target.value.toUpperCase()); setFound(null); }} placeholder={tl("Ex. GM-7KQ2PX")} autoCapitalize="characters" spellCheck={false} />
+              <button className="btn" type="button" onClick={findShop} disabled={finding || code.trim().length < 4}><Search size={16} />  {finding ? tl("Recherche…") : tl("Trouver la boutique")}</button>
+            </div>
+          </Field>
+        )}
+        {c.mode === "client" && !byCode && (
           <Field label={tl("Adresse du poste serveur")} hint={tl("Affichée sur le poste serveur (Paramètres → Réseau). Ex. 192.168.1.10:7878")}>
             <div className="input-group">
-              <input value={c.server_url} onChange={(e) => setC({ ...c, server_url: e.target.value })} placeholder="192.168.1.10:7878" />
+              <input value={c.server_url} onChange={(e) => setC({ ...c, server_url: e.target.value, shop_code: "" })} placeholder="192.168.1.10:7878" />
               {isMobileApp && hasNativeScanner() && (
                 <button className="btn" type="button" onClick={() => setScanQr(true)} title={tl("Scanner le QR code du poste serveur")}><ScanLine size={16} /></button>
               )}
@@ -147,6 +195,14 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
         )}
       </div>
       {test && <div className="alert alert-success"><CheckCircle2 size={15} /> {test}</div>}
+      {c.mode === "client" && byCode && found && (
+        <div className="alert alert-success">
+          <CheckCircle2 size={15} />{" "}
+          {found.internet
+            ? tl("Boutique « {0} » trouvée, par Internet. À la première connexion, ce PC sera autorisé comme un téléphone (code d'accès de l'administrateur ou compte boutique).", [found.shop_name])
+            : tl("Boutique « {0} » trouvée sur le réseau de la boutique.", [found.shop_name])}
+        </div>
+      )}
 
       {c.mode === "server" && info?.config.mode === "server" && (
         <div className="alert alert-info">
@@ -159,7 +215,14 @@ export function NetworkForm({ onSaved, compact }: { onSaved?: () => void; compac
               <ul>{serverUrls.slice(1).map((u) => <li key={u} className="mono">{u}</li>)}</ul>
             </details>
           )}
-          {tl("Fonctionne aussi avec le point d'accès (partage de connexion) d'un téléphone : tous les appareils se connectent à ce point d'accès.")}</div>
+          {tl("Fonctionne aussi avec le point d'accès (partage de connexion) d'un téléphone : tous les appareils se connectent à ce point d'accès.")}
+          {ownCode && (
+            <p className="client-code">
+              {tl("Ou, sur le PC client, le code du commerce :")} <strong className="mono">{ownCode}</strong>{" "}
+              {tl("(il retrouve ce PC tout seul, même hors de la boutique par Internet avec la formule PRO ou BUSINESS).")}
+            </p>
+          )}
+        </div>
       )}
       {androidApp && c.mode === "server" && (
         <div className="card phone-server-guide">

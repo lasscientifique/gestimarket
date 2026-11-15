@@ -25,7 +25,21 @@ export interface NetworkConfig {
   poste_name: string;
   port: number;
   server_url: string;
+  /** Poste client relié par le code du commerce : l'adresse du serveur est retrouvée à chaque démarrage. */
+  shop_code?: string;
 }
+
+/** Poste serveur trouvé avec le code du commerce. */
+export interface FoundServer {
+  url: string;
+  shop_name: string;
+  /** Par l'adresse Internet de la boutique (ce PC n'est pas sur son réseau). */
+  internet: boolean;
+}
+
+/** Ce poste client passe-t-il par Internet (code du commerce, hors du réseau de la boutique) ? */
+let viaInternet = false;
+export const clientViaInternet = () => viaInternet;
 
 export interface NetworkInfo {
   config: NetworkConfig;
@@ -111,6 +125,23 @@ export async function initTransport(): Promise<NetworkInfo | null> {
     network = null;
   }
   remoteBase = network?.config.mode === "client" && network.config.server_url ? network.config.server_url : null;
+  // Poste client relié par le code du commerce : réseau de la boutique d'abord, sinon Internet (au plus
+  // ~15 s ; en cas d'échec, l'adresse enregistrée reste et l'écran de connexion dira ce qui ne va pas).
+  if (network?.config.mode === "client" && network.config.shop_code) {
+    try {
+      const found = await Promise.race([
+        invoke<{ url: string; internet: boolean }>("locate_server"),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 15_000)),
+      ]);
+      if (found.url) {
+        remoteBase = found.url;
+        network = { ...network, config: { ...network.config, server_url: found.url } };
+        viaInternet = found.internet;
+      }
+    } catch {
+      /* adresse enregistrée gardée */
+    }
+  }
   // Boutique de la propriétaire ouverte à distance (application installée).
   const shop = isMobileApp ? remoteShop() : null;
   if (shop) remoteBase = shop.url.replace(/\/+$/, "");

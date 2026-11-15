@@ -35,11 +35,14 @@ pub struct NetworkConfig {
     pub port: u16,
     /// Adresse du serveur pour un poste client, ex. `http://192.168.1.10:7878`.
     pub server_url: String,
+    /// Poste client relié par le code du commerce (ex. `GM-7KQ2PX`) : à chaque démarrage, l'adresse du poste
+    /// serveur est retrouvée, par le réseau de la boutique d'abord, sinon par Internet. Vide : adresse fixe.
+    pub shop_code: String,
 }
 
 impl Default for NetworkConfig {
     fn default() -> Self {
-        Self { mode: "local".into(), poste_name: "Caisse 1".into(), port: 7878, server_url: String::new() }
+        Self { mode: "local".into(), poste_name: "Caisse 1".into(), port: 7878, server_url: String::new(), shop_code: String::new() }
     }
 }
 
@@ -76,6 +79,7 @@ impl NetworkState {
         if c.poste_name.trim().is_empty() {
             c.poste_name = "Caisse 1".into();
         }
+        c.shop_code = if c.mode == "client" { c.shop_code.trim().to_uppercase() } else { String::new() };
         std::fs::write(&self.path, serde_json::to_string_pretty(&c).unwrap_or_default())?;
         *self.config.lock().unwrap_or_else(|e| e.into_inner()) = c;
         Ok(())
@@ -366,6 +370,83 @@ fn client_route(addr: &std::net::SocketAddr, headers: &HeaderMap) -> (String, &'
     (peer.to_string(), if private_network(peer) { "local" } else { "internet" })
 }
 
+/// Poste serveur trouvé avec le code du commerce.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Located {
+    pub url: String,
+    pub shop_name: String,
+    /// Par l'adresse Internet de la boutique (ce PC n'est pas sur son réseau).
+    pub internet: bool,
+}
+
+/// Réponse de /api/ping : est-ce bien le poste serveur de ce commerce ? Les postes serveurs antérieurs à la
+/// 0.29 ne donnent pas leur code : le nom de la boutique publié doit alors être le même.
+fn same_shop(v: &Value, code: &str, name: Option<&str>) -> bool {
+    if v["app"].as_str() != Some("GestiMarket") {
+        return false;
+    }
+    match v["shop_code"].as_str().map(str::trim).filter(|c| !c.is_empty()) {
+        Some(c) => c.eq_ignore_ascii_case(code),
+        None => name.map(str::trim).is_some_and(|n| !n.is_empty() && v["shop_name"].as_str().map(str::trim) == Some(n)),
+    }
+}
+
+fn ping_shop(url: &str, code: &str, name: Option<&str>, timeout: std::time::Duration) -> bool {
+    let agent = ureq::AgentBuilder::new().timeout_connect(timeout).timeout(timeout + std::time::Duration::from_secs(3)).build();
+    let Ok(resp) = agent.get(&format!("{url}/api/ping")).call() else { return false };
+    resp.into_json::<Value>().is_ok_and(|v| same_shop(&v, code, name))
+}
+
+/// Adresse d'un poste serveur sur un réseau privé (celui de la boutique) : http://192.168.1.10:7878…
+fn lan_url(url: &str) -> bool {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.rsplit_once(':').map_or(host, |(h, _)| h).trim_start_matches('[').trim_end_matches(']');
+    host.parse::<std::net::IpAddr>().is_ok_and(|ip| private_network(ip.to_canonical()))
+}
+
+/// Poste client relié par le code du commerce : l'adresse actuelle si c'est celle du réseau de la boutique et
+/// qu'elle répond ; sinon les adresses publiées par le poste serveur, celles du réseau de la boutique d'abord,
+/// puis son adresse Internet (formule PRO ou BUSINESS ; ce PC est alors autorisé comme un téléphone).
+pub fn locate(code: &str, current: &str) -> Result<Located, String> {
+    use std::time::Duration;
+    let code = code.trim().to_uppercase();
+    if code.len() < 4 {
+        return Err("Tapez le code du commerce (affiché sur le poste serveur : Paramètres → Réseau & mobile).".into());
+    }
+    let current = current.trim().trim_end_matches('/');
+    if !current.is_empty() && lan_url(current) && ping_shop(current, &code, None, Duration::from_millis(1500)) {
+        return Ok(Located { url: current.to_string(), shop_name: String::new(), internet: false });
+    }
+    let v = crate::cloud::find_server(&code)?;
+    if v["found"].as_bool() != Some(true) {
+        return Err("Code du commerce inconnu : vérifiez-le sur le poste serveur (Paramètres → Réseau & mobile).".into());
+    }
+    let name = v["shop_name"].as_str().unwrap_or_default().to_string();
+    let mut lan: Vec<String> = v["urls"].as_array().map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect()).unwrap_or_default();
+    if lan.is_empty() {
+        lan.extend(v["url"].as_str().map(String::from));
+    }
+    for url in lan.iter().map(|u| u.trim_end_matches('/')).filter(|u| lan_url(u)) {
+        if ping_shop(url, &code, Some(&name), Duration::from_millis(1200)) {
+            return Ok(Located { url: url.to_string(), shop_name: name, internet: false });
+        }
+    }
+    let public = v["public_url"].as_str().map(|u| u.trim().trim_end_matches('/')).filter(|u| u.starts_with("https://")).map(String::from);
+    if let Some(public) = &public {
+        if ping_shop(public, &code, Some(&name), Duration::from_secs(8)) {
+            return Ok(Located { url: public.clone(), shop_name: name, internet: true });
+        }
+    }
+    Err(if v["active"].as_bool() != Some(true) {
+        "Le poste serveur de la boutique est éteint, ou n'a pas Internet : allumez-le, puis réessayez.".into()
+    } else if public.is_none() {
+        "Ce PC n'est pas sur le réseau de la boutique, et la boutique n'a pas d'accès depuis Internet (formule PRO ou BUSINESS, Paramètres → Réseau & mobile sur le poste serveur).".into()
+    } else {
+        "Poste serveur injoignable depuis ce PC : vérifiez la connexion à Internet, puis réessayez.".into()
+    })
+}
+
 /// Adresse d'un réseau du magasin : 10.x, 172.16–31.x, 192.168.x, 169.254.x ; en IPv6 fc00::/7 et fe80::/10.
 /// 100.64.0.0/10 (réseau partagé des opérateurs) n'en fait pas partie : d'autres abonnés peuvent s'y trouver.
 fn private_network(ip: std::net::IpAddr) -> bool {
@@ -598,9 +679,11 @@ async fn ping_handler(State(app): State<App>) -> Response {
     let name = { let conn = state.conn(); crate::services::settings::get(&conn, "shop_name").unwrap_or_default() };
     // Nom du poste serveur et type d'appareil : la TV et les téléphones les montrent dans la liste des boutiques.
     let poste = app.try_state::<NetworkState>().map(|n| n.get().poste_name).unwrap_or_default();
+    // Code du commerce : un poste client relié par ce code vérifie qu'il a trouvé la bonne boutique.
+    let code = { let conn = state.conn(); crate::services::settings::get(&conn, "shop_code").unwrap_or_default() };
     Json(json!({
         "app": "GestiMarket", "shop_name": name, "version": env!("CARGO_PKG_VERSION"),
-        "poste": poste, "device": if cfg!(mobile) { "phone" } else { "pc" },
+        "poste": poste, "device": if cfg!(mobile) { "phone" } else { "pc" }, "shop_code": code.trim().to_uppercase(),
     }))
     .into_response()
 }
@@ -706,6 +789,21 @@ mod tests {
             let a: SocketAddr = local.parse().unwrap();
             assert_eq!(client_route(&a, &HeaderMap::new()).1, "local", "{local}");
         }
+    }
+
+    #[test]
+    fn poste_client_relie_par_le_code_du_commerce() {
+        assert!(super::lan_url("http://192.168.1.10:7878") && super::lan_url("http://10.0.0.5:7878/") && super::lan_url("192.168.43.1:7878"));
+        assert!(!super::lan_url("https://boutique-k7.gestimarket.shop") && !super::lan_url("http://41.73.10.20:7878") && !super::lan_url(""));
+        let ping = |code: &str, name: &str| json!({ "app": "GestiMarket", "shop_code": code, "shop_name": name });
+        assert!(super::same_shop(&ping("GM-7KQ2PX", "Eden"), "gm-7kq2px", None));
+        // Même adresse sur un autre réseau : une autre boutique répond, elle est écartée.
+        assert!(!super::same_shop(&ping("GM-AAAAAA", "Eden"), "GM-7KQ2PX", Some("Eden")));
+        // Poste serveur 0.28 (sans code) : seulement si le nom publié est le même.
+        let old = json!({ "app": "GestiMarket", "shop_name": "Eden" });
+        assert!(super::same_shop(&old, "GM-7KQ2PX", Some("Eden")) && !super::same_shop(&old, "GM-7KQ2PX", None));
+        assert!(!super::same_shop(&json!({ "app": "Autre", "shop_code": "GM-7KQ2PX" }), "GM-7KQ2PX", None));
+        assert!(super::locate("ab", "").is_err());
     }
 
     #[test]

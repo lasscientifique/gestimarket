@@ -8,7 +8,7 @@ import type { AccountLinkResult, AccountOptions, AccountStore, StoreInput } from
 import { tl } from "../lib/i18n";
 import { countryName } from "../lib/countries";
 import { ForgotPasswordModal, passwordProblem } from "./AccountPassword";
-import { ConfirmCode, PhoneInput, WhatsAppWriteFirst } from "./AccountProfile";
+import { CityInput, ConfirmCode, PhoneInput, WhatsAppWriteFirst } from "./AccountProfile";
 import { loginId, looksLikePhone, validPhone } from "../lib/phone";
 
 const EMPTY_STORE: StoreInput = { name: "", owner_name: "", phone: "", country: "ML", city: "", address: "", shop_type: "" };
@@ -40,7 +40,7 @@ function StoreFields({ value, onChange, options }: { value: StoreInput; onChange
       </label>
       <label className="field">
         <span className="field-label">{tl("Ville *")}</span>
-        <input value={value.city} onChange={set("city")} />
+        <CityInput country={value.country} value={value.city} onChange={(city) => onChange({ ...value, city })} />
       </label>
       <label className="field span-2">
         <span className="field-label">{tl("Adresse *")}</span>

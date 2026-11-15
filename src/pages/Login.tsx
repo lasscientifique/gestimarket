@@ -16,6 +16,9 @@ import { tl } from "../lib/i18n";
 import { ForgotPasswordModal } from "../components/AccountPassword";
 import { loginId } from "../lib/phone";
 
+/** PC client relié par Internet (code du commerce) : autorisé comme un téléphone, avec les mêmes écrans. */
+const onPc = isTauri && !isMobileApp;
+
 const initials = (n: string) =>
   n
     .split(/\s+/)
@@ -166,7 +169,7 @@ export default function LoginPage() {
       <h2>{tl("Connexion")}</h2>
       {info?.internet && info.device && (
         <div className="alert alert-success small">
-          <Smartphone size={15} /> {tl("Téléphone autorisé : {0}", [info.device.label])}
+          <Smartphone size={15} /> {onPc ? tl("PC autorisé : {0}", [info.device.label]) : tl("Téléphone autorisé : {0}", [info.device.label])}
           {info.device.user_name ? ` · ${info.device.user_name}` : ""}
         </div>
       )}
@@ -267,7 +270,7 @@ export default function LoginPage() {
               info={info}
               onLinked={(user) => setUser(user)}
               onAccount={async () => {
-                setNotice(tl("Téléphone autorisé. Connectez-vous avec votre identifiant et votre code PIN."));
+                setNotice(onPc ? tl("PC autorisé. Connectez-vous avec votre identifiant et votre code PIN.") : tl("Téléphone autorisé. Connectez-vous avec votre identifiant et votre code PIN."));
                 await load();
               }}
             />
@@ -345,8 +348,12 @@ function AuthorizePhone({ info, onLinked, onAccount }: { info: LoginInfo; onLink
 
   return (
     <form onSubmit={submit} className="form-grid one">
-      <h2><ShieldCheck size={20} /> {tl("Autoriser ce téléphone")}</h2>
-      <p className="muted small">{tl("Connexion depuis Internet : ce téléphone doit être autorisé une seule fois. Ensuite, identifiant et code PIN suffisent.")}</p>
+      <h2><ShieldCheck size={20} /> {onPc ? tl("Autoriser ce PC") : tl("Autoriser ce téléphone")}</h2>
+      <p className="muted small">
+        {onPc
+          ? tl("Connexion depuis Internet : ce PC doit être autorisé une seule fois. Ensuite, identifiant et code PIN suffisent.")
+          : tl("Connexion depuis Internet : ce téléphone doit être autorisé une seule fois. Ensuite, identifiant et code PIN suffisent.")}
+      </p>
       <div className="segmented">
         <button type="button" className={tab === "code" ? "active" : ""} onClick={() => setTab("code")}><KeyRound size={14} />  {tl("Code d'accès")}</button>
         <button type="button" className={tab === "account" ? "active" : ""} onClick={() => setTab("account")}><Store size={14} />  {tl("Compte boutique")}</button>
@@ -370,7 +377,7 @@ function AuthorizePhone({ info, onLinked, onAccount }: { info: LoginInfo; onLink
           <Field label={tl("Mot de passe du compte boutique")}><input type="password" value={f.password} onChange={set("password")} /></Field>
         </>
       )}
-      <Field label={tl("Nom de ce téléphone")} hint={tl("Visible par l'administrateur, qui peut le retirer.")}>
+      <Field label={onPc ? tl("Nom de ce PC") : tl("Nom de ce téléphone")} hint={tl("Visible par l'administrateur, qui peut le retirer.")}>
         <input value={f.label} onChange={set("label")} maxLength={60} />
       </Field>
       {error && <div className="alert alert-danger">{error}</div>}
@@ -378,7 +385,7 @@ function AuthorizePhone({ info, onLinked, onAccount }: { info: LoginInfo; onLink
         className="btn btn-primary btn-lg btn-block"
         disabled={busy || (tab === "code" ? !f.username || f.pin.length < 4 || f.code.replace(/[^A-Za-z0-9]/g, "").length !== 8 : !f.email || !f.password)}
       >
-        <Smartphone size={18} /> {busy ? tl("Vérification…") : tl("Autoriser ce téléphone")}
+        <Smartphone size={18} /> {busy ? tl("Vérification…") : onPc ? tl("Autoriser ce PC") : tl("Autoriser ce téléphone")}
       </button>
     </form>
   );

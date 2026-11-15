@@ -232,6 +232,10 @@ try {
 
   // ── Poste client : test de connexion au poste serveur du Wi-Fi (http, adresse IP)
   await page.locator(".mode-card").filter({ hasText: "Poste client" }).first().click();
+  // 0.29 : « Code du commerce » proposé d'abord ; l'adresse fixe est le second choix.
+  const codeChoice = await page.locator(".client-join .segmented button").allInnerTexts();
+  check("poste client : code du commerce ou adresse du poste serveur", codeChoice.length === 2 && codeChoice[0].includes("Code du commerce"), codeChoice.join(", "));
+  await page.locator(".client-join .segmented button").filter({ hasText: "Adresse du poste serveur" }).click();
   await page.locator(".network-form input[placeholder='192.168.1.10:7878']").fill("10.0.2.2:7979");
   await page.locator(".network-form button").filter({ hasText: "Tester" }).first().click();
   const linked = await page.locator(".network-form .alert-success").filter({ hasText: "Boutique du serveur" }).first().waitFor({ timeout: 15_000 }).then(() => true, () => false);

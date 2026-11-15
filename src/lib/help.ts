@@ -210,7 +210,7 @@ export const PAGE_HELP: Record<string, PageHelp> = {
     title: tl("Poste & réseau"),
     purpose: tl("Voir et régler ce poste : son rôle (serveur, client, poste unique), sa liaison avec le serveur, l'écran client, et la liste de tous les appareils connectés."),
     steps: [
-      tl("Sur le PC qui garde la base : mode « Poste serveur ». Les autres PC : « Poste client » avec l'adresse du serveur."),
+      tl("Sur le PC qui garde la base : mode « Poste serveur ». Les autres PC : « Poste client » avec le code du commerce (dans la boutique ou ailleurs, par Internet) ou l'adresse du serveur."),
       tl("Les tablettes et téléphones ouvrent l'adresse du serveur (ou scannent le QR code) : rien à installer."),
       tl("« Synchronisé » signifie que l'appareil travaille en direct sur la base du serveur : ventes et stock sont partagés instantanément."),
       tl("Écran client : ouvrez-le sur un 2ᵉ écran, ou affichez l'adresse indiquée sur une TV / tablette."),

@@ -1,13 +1,31 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AtSign, MailCheck, MessageCircle, Store } from "lucide-react";
 import { errorMessage, useApp } from "../context/AppContext";
 import { owner, whatsappNumber, type EmailChange, type PhoneChange, type StoreInfo } from "../lib/owner";
 import { isTauri } from "../lib/transport";
 import { DIAL_CODES, dialFor, showPhone, toE164, validPhone } from "../lib/phone";
+import { citiesOf } from "../lib/cities";
 import { countryName } from "../lib/countries";
+import type { AccountOptions } from "../types";
 import { tl } from "../lib/i18n";
 import { Field, Modal } from "./ui";
+
+/** Ville : champ libre, avec les principales villes du pays proposées pendant la saisie. */
+export function CityInput({ country, value, onChange, required }: { country?: string | null; value: string; onChange: (city: string) => void; required?: boolean }) {
+  const id = useId();
+  const cities = citiesOf(country);
+  return (
+    <>
+      <input value={value} onChange={(e) => onChange(e.target.value)} list={cities.length ? id : undefined} required={required} autoComplete="address-level2" />
+      {cities.length > 0 && (
+        <datalist id={id}>
+          {cities.map((c) => <option key={c} value={c} />)}
+        </datalist>
+      )}
+    </>
+  );
+}
 
 /** Numéro WhatsApp : indicatif du pays (celui de la boutique par défaut) et numéro, rendu au format international. */
 export function PhoneInput({ country, onChange, autoFocus }: { country?: string | null; onChange: (e164: string) => void; autoFocus?: boolean }) {
@@ -284,19 +302,21 @@ export function ChangePhoneModal({ login, country, onClose, onDone }: { login: s
   );
 }
 
-const EMPTY_INFO: StoreInfo = { owner_name: "", phone: "", city: "", address: "" };
+const EMPTY_INFO: StoreInfo = { owner_name: "", phone: "", country: "", city: "", address: "" };
 
 const toInfo = (s: Partial<StoreInfo>): StoreInfo => ({
   owner_name: s.owner_name ?? "",
   phone: s.phone ?? "",
+  country: s.country ?? "",
   city: s.city ?? "",
   address: s.address ?? "",
 });
 
 /**
- * Informations de la boutique enregistrées chez Eden Dev : nom complet de la propriétaire, téléphone, ville,
- * adresse. Sur le PC (`initial` absent), le mot de passe du compte est demandé d'abord ; sur le téléphone,
- * la connexion de l'Espace propriétaire suffit. Internet nécessaire.
+ * Informations de la boutique enregistrées chez Eden Dev : nom complet de la propriétaire, téléphone, pays,
+ * ville, adresse. Sur le PC (`initial` absent), le mot de passe du compte est demandé d'abord ; sur le
+ * téléphone, la connexion de l'Espace propriétaire suffit. Internet nécessaire. Le pays changé est repris par
+ * le logiciel du PC de la boutique (pas la monnaie).
  */
 export function StoreInfoModal({ code, name, email, initial, onClose, onSaved }: {
   code: string;
@@ -310,12 +330,22 @@ export function StoreInfoModal({ code, name, email, initial, onClose, onSaved }:
   const withPassword = !initial;
   const [password, setPassword] = useState("");
   const [fields, setFields] = useState<StoreInfo | null>(initial ? toInfo(initial) : null);
+  const [loadedCountry, setLoadedCountry] = useState(initial?.country ?? "");
+  const [countries, setCountries] = useState<AccountOptions["countries"]>([]);
   const { busy, error, run } = useRun();
   const set = (k: keyof StoreInfo) => (e: { target: { value: string } }) => setFields({ ...(fields ?? EMPTY_INFO), [k]: e.target.value });
+  // Liste des pays d'Eden Dev (même ordre qu'à l'inscription) ; sans elle, seul le pays actuel s'affiche.
+  useEffect(() => {
+    owner.options().then((o) => setCountries(o.countries)).catch(() => {});
+  }, []);
 
   const load = (e: FormEvent) => {
     e.preventDefault();
-    void run(async () => setFields(toInfo(await owner.storeInfo(code, email, password))));
+    void run(async () => {
+      const info = toInfo(await owner.storeInfo(code, email, password));
+      setLoadedCountry(info.country);
+      setFields(info);
+    });
   };
   const save = (e: FormEvent) => {
     e.preventDefault();
@@ -330,7 +360,7 @@ export function StoreInfoModal({ code, name, email, initial, onClose, onSaved }:
 
   return (
     <Modal title={<><Store size={18} />  {tl("Informations de la boutique")}</>} onClose={onClose} width={520}>
-      <p className="muted small">{tl("{0} ({1}). Le nom de la boutique, le pays et le type ne changent pas : demandez à Eden Dev si besoin.", [name, code])}</p>
+      <p className="muted small">{tl("{0} ({1}). Le nom de la boutique et le type ne changent pas : demandez à Eden Dev si besoin.", [name, code])}</p>
       {!fields ? (
         <form onSubmit={load} className="stack">
           <Field label={tl("Mot de passe du compte ({0})", [email])}>
@@ -351,14 +381,28 @@ export function StoreInfoModal({ code, name, email, initial, onClose, onSaved }:
               <input value={fields.phone} onChange={set("phone")} inputMode="tel" />
             </label>
             <label className="field">
+              <span className="field-label">{tl("Pays *")}</span>
+              <select value={fields.country} onChange={set("country")}>
+                {!countries.some((c) => c.code === fields.country) && <option value={fields.country}>{countryName(fields.country, fields.country)}</option>}
+                {countries.map((c) => (
+                  <option key={c.code} value={c.code}>{countryName(c.code, c.label)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
               <span className="field-label">{tl("Ville *")}</span>
-              <input value={fields.city} onChange={set("city")} required />
+              <CityInput country={fields.country} value={fields.city} onChange={(city) => setFields({ ...fields, city })} required />
             </label>
             <label className="field span-2">
               <span className="field-label">{tl("Adresse *")}</span>
               <input value={fields.address} onChange={set("address")} placeholder={tl("Quartier, rue, repère")} required />
             </label>
           </div>
+          {loadedCountry && fields.country !== loadedCountry && (
+            <div className="alert alert-info small">
+              {tl("Le pays change aussi dans le logiciel de la boutique (indicatif des numéros, formats). La monnaie ne change pas toute seule : les prix déjà saisis restent dans la monnaie actuelle (Paramètres → Ventes & ticket).")}
+            </div>
+          )}
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy}>{busy ? tl("Enregistrement…") : tl("Enregistrer")}</button>
         </form>

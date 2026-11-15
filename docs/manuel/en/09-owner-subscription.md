@@ -7,7 +7,7 @@ With the shop's Eden Dev account (e-mail and password), on any phone:
 - **My shops**: each shop, its **server on or off**, its plan and end date. The list stays readable without Internet.
 - **Open** a shop remotely: the app screen opens, only the data goes over the Internet. Then sign in with your username and PIN. “Change shop” goes back to the list.
 - **Subscriptions**: the latest payments, activation with a **voucher card**, payment with **Orange Money** or **Moov Money** (reference received by SMS).
-- **Details** (under each shop): the owner's full name, **phone**, city and address, saved with Eden Dev. The shop name, country and type do not change: ask Eden Dev.
+- **Details** (under each shop): the owner's full name, **phone**, **country**, city and address, saved with Eden Dev. The country is the same everywhere: the shop's software takes it on its own (the currency does not change, it is set in Settings → Sales & receipt). The shop name and type do not change: ask Eden Dev.
 - **Contact Eden Dev**: WhatsApp, call, e-mail.
 
 The session stays open on the phone; “Sign out” erases it.

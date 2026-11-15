@@ -7,7 +7,7 @@ Avec le compte Eden Dev de la boutique (e-mail et mot de passe), sur n'importe q
 - **Mes boutiques** : chaque boutique, son **serveur allumé ou éteint**, sa formule et sa date de fin. La liste reste lisible sans Internet.
 - **Ouvrir** une boutique à distance : l'écran de l'application s'ouvre, seules les données passent par Internet. Connectez-vous ensuite avec votre identifiant et votre code PIN. « Changer de boutique » revient à la liste.
 - **Abonnements** : les derniers paiements, l'activation par **carte de bon**, le paiement **Orange Money** ou **Moov Money** (référence reçue par SMS).
-- **Informations** (sous chaque boutique) : nom complet de la propriétaire, **téléphone**, ville et adresse, enregistrés chez Eden Dev. Le nom de la boutique, le pays et le type ne changent pas : demandez à Eden Dev.
+- **Informations** (sous chaque boutique) : nom complet de la propriétaire, **téléphone**, **pays**, ville et adresse, enregistrés chez Eden Dev. Le pays est le même partout : le logiciel de la boutique le reprend tout seul (la monnaie ne change pas, elle se règle dans Paramètres → Ventes & ticket). Le nom de la boutique et le type ne changent pas : demandez à Eden Dev.
 - **Contact Eden Dev** : WhatsApp, appel, e-mail.
 
 La connexion reste ouverte sur le téléphone ; « Se déconnecter » l'efface.

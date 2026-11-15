@@ -4,7 +4,7 @@
 //  → lit l'abonnement de la boutique de ce PC (gm_license_target) ;
 //  → si la licence a changé : la signe (Ed25519), la dépose dans le bucket public « licences »
 //    (licences/<pc_id>.gml) et l'enregistre (gm_licenses) ;
-//  → répond { status, license_id, path, plan, expires_at, server_time, revoked }.
+//  → répond { status, license_id, path, plan, expires_at, server_time, revoked, country }.
 // GestiMarket télécharge ensuite le fichier signé : /storage/v1/object/public/licences/<pc_id>.gml
 //
 // Clé de signature : créée au premier appel et rangée dans Vault (gm_signing_key_init). La clé privée
@@ -61,7 +61,8 @@ Deno.serve(async (req) => {
   try {
     const { data: t, error } = await sb.rpc("gm_license_target", { p_pc_id: pc });
     if (error) throw error;
-    const base = { server_time: t.server_time, revoked: t.revoked ?? [] };
+    // Pays de la boutique : repris par le logiciel (un seul pays par boutique, celui du compte).
+    const base = { server_time: t.server_time, revoked: t.revoked ?? [], country: t.country ?? null };
     if (t.status !== "ok") return json({ ...base, status: t.status, store_code: t.store_code ?? null });
     if (t.current) {
       return json({ ...base, status: "ok", license_id: t.current.license_id, path: t.current.file_path, plan: t.plan, expires_at: t.expires_at });

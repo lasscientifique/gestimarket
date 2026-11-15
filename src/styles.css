@@ -1206,6 +1206,9 @@ input, select, textarea { border-radius: 10px; }
 }
 .phone-access { margin: 12px 0; }
 .phone-qr-list { display: flex; flex-wrap: wrap; gap: 12px; }
+.client-join .segmented { max-width: 460px; }
+.client-join .segmented button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.client-code { margin: 8px 0 0; }
 .other-addresses { margin-top: 8px; }
 .other-addresses summary { cursor: pointer; font-weight: 600; }
 .other-addresses .phone-qr-list { margin-top: 8px; }

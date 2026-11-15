@@ -89,6 +89,8 @@ export interface EmailChange {
 export interface StoreInfo {
   owner_name: string;
   phone: string;
+  /** Pays (ISO, deux lettres) : un seul par boutique, repris par le logiciel. */
+  country: string;
   city: string;
   address: string;
 }

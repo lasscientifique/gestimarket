@@ -321,6 +321,31 @@ pub async fn open_help(app: AppHandle, state: State<'_, AppState>, name: String)
     open_url(&app, &format!("{}/{name}", crate::aide::HELP_RELEASE))
 }
 
+/// Poste client relié par le code du commerce : trouve le poste serveur (réseau de la boutique d'abord, sinon
+/// son adresse Internet), sans rien enregistrer.
+#[tauri::command]
+pub async fn find_shop(code: String) -> AppResult<serde_json::Value> {
+    let found = tauri::async_runtime::spawn_blocking(move || network::locate(&code, "")).await.map_err(internal)?.map_err(AppError::Validation)?;
+    Ok(serde_json::json!({ "url": found.url, "shop_name": found.shop_name, "internet": found.internet }))
+}
+
+/// Démarrage d'un poste client relié par le code du commerce : le chemin vers le poste serveur (réseau de la
+/// boutique, sinon Internet), enregistré s'il a changé. Sans code : l'adresse enregistrée, telle quelle.
+#[tauri::command]
+pub async fn locate_server(net: State<'_, NetworkState>) -> AppResult<serde_json::Value> {
+    let config = net.get();
+    if config.mode != "client" || config.shop_code.trim().is_empty() {
+        return Ok(serde_json::json!({ "url": config.server_url, "internet": false, "changed": false }));
+    }
+    let (code, current) = (config.shop_code.clone(), config.server_url.clone());
+    let found = tauri::async_runtime::spawn_blocking(move || network::locate(&code, &current)).await.map_err(internal)?.map_err(AppError::Validation)?;
+    let changed = found.url != config.server_url;
+    if changed {
+        net.save(NetworkConfig { server_url: found.url.clone(), ..config })?;
+    }
+    Ok(serde_json::json!({ "url": found.url, "internet": found.internet, "changed": changed }))
+}
+
 /// Boutiques GestiMarket trouvées sur le Wi-Fi ou le partage de connexion de cet appareil.
 #[tauri::command]
 pub async fn discover_servers() -> AppResult<Vec<serde_json::Value>> {

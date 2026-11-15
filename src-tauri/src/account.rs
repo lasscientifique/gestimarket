@@ -532,6 +532,7 @@ pub fn link(state: &AppState, store_code: &str) -> Result<Value, String> {
     {
         let conn = state.conn();
         license::set_account(&conn, &email, &code, store["name"].as_str().unwrap_or_default());
+        adopt_country(&conn, store["country"].as_str());
     }
     // Jeton d'appareil : l'accès depuis Internet de la boutique se règlera ensuite sans mot de passe.
     match fetch_device_token(state, &token, &code) {
@@ -540,6 +541,20 @@ pub fn link(state: &AppState, store_code: &str) -> Result<Value, String> {
     }
     let synced = sync(state);
     Ok(json!({ "status": "linked", "store": store, "sync_error": synced.err() }))
+}
+
+/// Un seul pays par boutique : celui du compte, repris dans les réglages du logiciel (indicatif des numéros,
+/// formats, Sugu Eden). Deux lettres ; « XX » (Autre pays) laisse le réglage du logiciel tel quel. La monnaie
+/// ne change pas : les prix déjà saisis restent dans la monnaie choisie.
+fn adopt_country(conn: &rusqlite::Connection, country: Option<&str>) {
+    let Some(c) = country.map(str::trim).filter(|c| country_code_ok(c)) else { return };
+    if crate::services::settings::get(conn, "country").ok().as_deref() != Some(c) {
+        let _ = crate::services::settings::set(conn, "country", c);
+    }
+}
+
+fn country_code_ok(c: &str) -> bool {
+    c.len() == 2 && c.chars().all(|x| x.is_ascii_uppercase()) && c != "XX"
 }
 
 // ───────────────────────────── Paiement de l'abonnement ─────────────────────────────
@@ -921,6 +936,14 @@ fn login_changed(dir: &std::path::Path, old: &str, new: &str, refresh: Option<&s
 /// Après une commande « owner » réussie : le nouvel identifiant du compte (e-mail ou numéro) est reporté sur la
 /// boutique de ce PC (Abonnement & licence), si c'est l'ancien qui y était enregistré.
 pub fn after_owner_action(conn: &rusqlite::Connection, action: &str, v: &Value) {
+    // Pays changé dans « Informations de la boutique » : repris tout de suite si c'est la boutique de ce PC.
+    if action == "update_store" {
+        let code = license::account().store_code;
+        if !code.is_empty() && v["code"].as_str() == Some(code.as_str()) {
+            adopt_country(conn, v["country"].as_str());
+        }
+        return;
+    }
     let changes = matches!(action, "email_change_start" | "email_change_confirm" | "phone_change_start" | "phone_change_confirm");
     if !changes || v["done"].as_bool() != Some(true) {
         return;
@@ -936,8 +959,8 @@ pub fn after_owner_action(conn: &rusqlite::Connection, action: &str, v: &Value) 
 }
 
 // ───────────────────────────── Informations de la boutique ─────────────────────────────
-// Nom complet de la propriétaire, téléphone, ville et adresse, enregistrés chez Eden Dev (gm_update_store).
-// Le nom de la boutique, le pays et le type restent ceux de l'inscription.
+// Nom complet de la propriétaire, téléphone, pays, ville et adresse, enregistrés chez Eden Dev (gm_update_store).
+// Le nom de la boutique et le type restent ceux de l'inscription.
 
 /// Jeton du compte : avec le mot de passe (PC), ou la connexion gardée de l'Espace propriétaire (téléphone).
 fn account_token(dir: &std::path::Path, login: &str, password: &str) -> Result<String, String> {
@@ -967,7 +990,15 @@ pub fn update_store(dir: &std::path::Path, a: &Value) -> Result<Value, String> {
         }
     }
     let token = account_token(dir, &text("email"), a.get("password").and_then(Value::as_str).unwrap_or_default())?;
-    let info = json!({ "owner_name": text("owner_name"), "phone": text("phone"), "city": text("city"), "address": text("address") });
+    let mut info = json!({ "owner_name": text("owner_name"), "phone": text("phone"), "city": text("city"), "address": text("address") });
+    let country = text("country").to_uppercase();
+    if !country.is_empty() {
+        let two_letters = country.len() == 2 && country.chars().all(|c| c.is_ascii_uppercase());
+        if !two_letters {
+            return Err("Pays inconnu.".into());
+        }
+        info["country"] = json!(country);
+    }
     let store = rpc_call("gm_update_store", &token, json!({ "p_store_code": text("store_code"), "p": info }))?;
     // Liste gardée de l'Espace propriétaire : relue au prochain affichage.
     let _ = std::fs::remove_file(dir.join(OWNER_CACHE));
@@ -1029,6 +1060,8 @@ pub fn sync(state: &AppState) -> Result<String, String> {
         if let Some(t) = v["server_time"].as_str() {
             license::note_server_time(&state.conn(), t);
         }
+        // Pays du compte (changé par la propriétaire, sur ce PC ou ailleurs) : repris par le logiciel.
+        adopt_country(&state.conn(), v["country"].as_str());
         let current = license::current_license_id();
         if let (Some(cur), Some(revoked)) = (&current, v["revoked"].as_array()) {
             if revoked.iter().any(|x| x.as_str() == Some(cur.as_str())) {
@@ -1118,6 +1151,21 @@ mod tests {
         assert_eq!(phone.code_kind("recovery"), "sms");
         assert_eq!(confirm_status(&phone)["status"], "confirm_phone");
         assert_eq!(confirm_status(&email)["status"], "confirm_email");
+    }
+
+    #[test]
+    fn pays_du_compte_repris_par_le_logiciel() {
+        assert!(country_code_ok("ML") && country_code_ok("SN") && country_code_ok("FR"));
+        for bad in ["", "XX", "ml", "MLI", "M1", " M"] {
+            assert!(!country_code_ok(bad), "{bad}");
+        }
+        let conn = crate::db::open_in_memory().unwrap();
+        adopt_country(&conn, Some("SN"));
+        assert_eq!(crate::services::settings::get(&conn, "country").unwrap(), "SN");
+        // « Autre pays » ou valeur absente : le réglage du logiciel reste.
+        adopt_country(&conn, Some("XX"));
+        adopt_country(&conn, None);
+        assert_eq!(crate::services::settings::get(&conn, "country").unwrap(), "SN");
     }
 
     #[test]

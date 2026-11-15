@@ -75,6 +75,24 @@ pub fn ensure_identity(conn: &rusqlite::Connection) -> crate::error::AppResult<(
     Ok((code.trim().to_uppercase(), secret))
 }
 
+/// Fiche publiée d'un commerce (poste client relié par le code du commerce) : adresses du poste serveur, son
+/// adresse Internet et son état. Lisible avec la clé publique d'Eden Dev (fonction gm_get_server).
+pub fn find_server(code: &str) -> Result<Value, String> {
+    let base = crate::license::supabase_url();
+    let key = crate::license::SUPABASE_KEY;
+    let res = ureq::post(&format!("{}/rest/v1/rpc/gm_get_server", base.trim_end_matches('/')))
+        .timeout(Duration::from_secs(10))
+        .set("apikey", key)
+        .set("Authorization", &format!("Bearer {key}"))
+        .set("Content-Type", "application/json")
+        .send_json(json!({ "p_shop_code": code.trim().to_uppercase() }));
+    match res {
+        Ok(r) => r.into_json().map_err(|_| "Réponse inattendue d'Eden Dev.".to_string()),
+        Err(ureq::Error::Status(..)) => Err("Service Eden Dev indisponible pour le moment : réessayez plus tard.".into()),
+        Err(_) => Err("Service Eden Dev injoignable : vérifiez la connexion à Internet de ce PC.".into()),
+    }
+}
+
 /// Contenu publié : nom du commerce et adresses du poste serveur.
 pub fn payload(shop_name: &str, port: u16, ips: &[String], public_url: &str, postes_online: usize) -> Value {
     let urls: Vec<String> = ips.iter().map(|ip| format!("http://{ip}:{port}")).collect();

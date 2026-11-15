@@ -231,6 +231,8 @@ pub fn run() {
             commands::get_network_config,
             commands::save_network_config,
             commands::discover_servers,
+            commands::find_shop,
+            commands::locate_server,
             commands::help_offline_status,
             commands::help_offline_download,
             commands::open_help,

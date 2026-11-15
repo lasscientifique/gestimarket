@@ -24,6 +24,7 @@ On the new device:
 
 - **Android app**: “Join a shop” (first start) or Station & network → Client station. The shop is found by itself; otherwise, scan the server's QR code.
 - **iPhone, iPad, browser**: scan the QR code shown on the server (Station & network), or type its address, for example `http://192.168.1.10:7878`.
+- **Client PC**: Station & network → Client station → **Shop code** (shown on the server PC, for example `GM-7KQ2PX`), then **Find the shop**. In the shop, the PC uses its network; elsewhere (another building, at home), it uses the shop's Internet address (PRO and BUSINESS plans) and must be **authorized** once, like a phone. At each start, it takes the shortest path again on its own. If the Internet goes down, the till waits for it to come back.
 
 The **https** address (port 7879) enables the browser camera to scan barcodes. The first time, the browser shows “connection not private”: tap “Advanced”, then “Continue”.
 

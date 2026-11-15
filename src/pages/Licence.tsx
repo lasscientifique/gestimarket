@@ -17,7 +17,7 @@ const FEATURES = Object.keys(FEATURE_LABELS) as LicenseFeature[];
 
 /** Abonnement de la boutique : formule, licence de ce PC, compte Eden Dev et paiement. */
 export default function LicencePage() {
-  const { toast } = useApp();
+  const { toast, refreshSettings } = useApp();
   const lic = useLicense();
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [busy, setBusy] = useState(false);
@@ -186,7 +186,13 @@ export default function LicencePage() {
                 {emailOpen && <ChangeEmailModal email={lic.account.email} onClose={() => setEmailOpen(false)} onDone={() => refreshLicense()} />}
                 {phoneOpen && <ChangePhoneModal login={lic.account.email} onClose={() => setPhoneOpen(false)} onDone={() => refreshLicense()} />}
                 {storeOpen && (
-                  <StoreInfoModal code={lic.account.store_code} name={lic.account.store_name} email={lic.account.email} onClose={() => setStoreOpen(false)} />
+                  <StoreInfoModal
+                    code={lic.account.store_code}
+                    name={lic.account.store_name}
+                    email={lic.account.email}
+                    onClose={() => setStoreOpen(false)}
+                    onSaved={() => void refreshSettings()}
+                  />
                 )}
               </>
             ) : (

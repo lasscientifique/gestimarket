@@ -57,6 +57,8 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
 export default function SettingsPage() {
   const { settings, setSettings, toast, askPin } = useApp();
   const [f, setF] = useState<Settings>(settings);
+  // PC relié à un compte boutique : le pays est celui du compte (un seul pays par boutique).
+  const accountLinked = !!useLicense()?.account?.store_code;
   const [loyalty, setLoyalty] = useState(minorToInput(Number(settings.loyalty_step || 0)));
   const [info, setInfo] = useState<{ version: string; db_path: string; last_auto_backup: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -197,8 +199,11 @@ export default function SettingsPage() {
             <Field label={tl("Identifiants légaux (NIF, RCCM…)")} span={2} hint={tl("Une ligne par identifiant ; imprimés sur le ticket.")}>
               <textarea rows={2} value={f.shop_tax_id ?? ""} onChange={set("shop_tax_id")} />
             </Field>
-            <Field label={tl("Pays")}>
-              <select value={f.country ?? "ML"} onChange={set("country")}>
+            <Field
+              label={tl("Pays")}
+              hint={accountLinked ? tl("Celui du compte de la boutique : il se change dans Abonnement & licence → Informations de la boutique.") : undefined}
+            >
+              <select value={f.country ?? "ML"} onChange={set("country")} disabled={accountLinked}>
                 {countryOptions().map((c) => (
                   <option key={c.code} value={c.code}>{c.label}</option>
                 ))}
