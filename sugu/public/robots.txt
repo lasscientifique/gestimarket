@@ -1,0 +1,3 @@
+# Sugu Eden : les boutiques et leurs produits peuvent être trouvés par les moteurs de recherche.
+User-agent: *
+Allow: /
