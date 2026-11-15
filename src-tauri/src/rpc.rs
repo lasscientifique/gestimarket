@@ -903,6 +903,9 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         // ───── Nouvelle version et erreurs du programme ─────
         "update_status" => {
             state.require(origin, Any)?;
+            if a.get("force").and_then(Value::as_bool).unwrap_or(false) {
+                crate::report::forget_latest();
+            }
             Ok(crate::report::update_status())
         }
         // Erreur imprévue de l'interface (aussi avant la connexion) : envoyée à Eden Dev si la boutique le permet.

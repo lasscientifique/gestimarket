@@ -751,4 +751,5 @@ export const EN_MESSAGES: Record<string, string> = {
   "Service Eden Dev momentanément indisponible (code {}) : nouvel essai dans 30 secondes.": "Eden Dev service temporarily unavailable (code {}): new attempt in 30 seconds.",
   "Écriture impossible dans le dossier de GestiMarket : {}": "Cannot write to the GestiMarket folder: {}",
   "L'accès depuis Internet n'est pas encore ouvert chez Eden Dev : réessayez plus tard.": "Internet access is not open yet at Eden Dev: try again later.",
+  "Version inconnue : vérifiez d'abord les mises à jour.": "Unknown version: check for updates first.",
 };

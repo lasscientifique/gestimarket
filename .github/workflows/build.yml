@@ -275,12 +275,26 @@ jobs:
       - run: npm ci
       - name: Manuels rangés dans l'application (dernière édition publiée)
         run: node scripts/fetch-manuals.mjs
+      # Nouveautés de la version : le message de l'étiquette (« git tag -a vX.Y.Z -m … »), écrit pour la boutique.
+      # Il devient le texte de la version sur GitHub et les « Nouveautés » de Paramètres → Mise à jour.
+      - name: Nouveautés de la version
+        id: notes
+        shell: bash
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          notes=$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/^-----BEGIN PGP/,$d')
+          [ -n "$notes" ] || notes="Installateurs de GestiMarket. Sous Windows, utilisez le fichier -setup.exe."
+          { echo "body<<GM_NOTES_EOF"; echo "$notes"; echo "GM_NOTES_EOF"; } >> "$GITHUB_OUTPUT"
+      # Mise à jour en un clic (0.28) : chaque installateur est signé avec la clé d'Eden Dev (secrets du dépôt) ;
+      # tauri-action publie aussi latest.json, lu par GestiMarket pour savoir quoi télécharger.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "GestiMarket ${{ github.ref_name }}"
-          releaseBody: "Installateurs de GestiMarket. Sous Windows, utilisez le fichier .msi ou -setup.exe."
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json

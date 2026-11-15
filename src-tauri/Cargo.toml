@@ -1,6 +1,6 @@
 [package]
 name = "gestimarket"
-version = "0.27.0"
+version = "0.28.0"
 description = "GestiMarket — logiciel de gestion de supermarché et de boutiques"
 authors = ["GestiMarket"]
 edition = "2021"
@@ -53,6 +53,11 @@ winreg = "0.52"
 # Android et iOS : lecture des codes-barres et QR codes par la caméra du téléphone (vue native).
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"
+
+# PC (Windows, Linux, macOS) : mise à jour en un clic, signée par Eden Dev (0.28), puis redémarrage.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Le hachage Argon2 est très lent sans optimisation : on optimise ces dépendances même en debug.
 [profile.dev.package.argon2]

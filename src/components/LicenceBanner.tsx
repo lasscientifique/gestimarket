@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { AlertTriangle, Download, X } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { api } from "../api";
-import { isTauri } from "../lib/transport";
 import { useApp } from "../context/AppContext";
 import { useLicense } from "../lib/license";
 import { tl, tm } from "../lib/i18n";
@@ -45,7 +43,7 @@ const DISMISSED = "gm-update-dismissed";
 let checked: { latest: string | null; newer: boolean } | null = null;
 
 /**
- * Nouvelle version de GestiMarket publiée : bandeau pour l'administrateur, avec la page de téléchargement.
+ * Nouvelle version de GestiMarket publiée : bandeau pour l'administrateur, qui ouvre Paramètres → Mise à jour.
  * Vérifié une fois par session ; « Plus tard » le cache jusqu'à la version suivante.
  */
 export function UpdateBanner() {
@@ -75,13 +73,6 @@ export function UpdateBanner() {
   }, [admin]);
   if (!admin || !info?.newer || !info.latest || dismissed === info.latest) return null;
   const latest = info.latest;
-  const open = async () => {
-    if (isTauri) {
-      await invoke("open_contact", { kind: "releases" }).catch(() => undefined);
-    } else {
-      window.open("https://github.com/lasscientifique/gestimarket/releases/latest", "_blank", "noopener");
-    }
-  };
   const later = () => {
     try {
       localStorage.setItem(DISMISSED, latest);
@@ -94,7 +85,7 @@ export function UpdateBanner() {
     <div className="licence-banner info" role="status">
       <Download size={18} />
       <span className="licence-banner-text">{tl("GestiMarket {0} est disponible (vous avez la {1}).", [latest, __APP_VERSION__])}</span>
-      <button className="btn btn-sm" onClick={open}>{tl("Télécharger")}</button>
+      <NavLink to="/settings?tab=update" className="btn btn-sm">{tl("Voir la mise à jour")}</NavLink>
       <button className="icon-btn" onClick={later} aria-label={tl("Plus tard")} title={tl("Plus tard")}><X size={16} /></button>
     </div>
   );

@@ -11,11 +11,11 @@ import { OrangeMoneyQr } from "../components/OrangeMoneyQr";
 import { isRemote } from "../lib/transport";
 import { Network, Palette, Lock, Check, Sun, Moon, PanelLeft } from "lucide-react";
 import { BrandLogo } from "../components/Brand";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import QRCode from "qrcode";
 import { Badge } from "../components/ui";
 import { activitiesOf, BusinessTypeGrid, featuresOf, FeatureToggles, useBusinessProfiles } from "../components/BusinessType";
-import { Building2, Code2, Copy, FileText, Mail, MessageCircle, Phone, Star } from "lucide-react";
+import { Building2, Code2, Copy, FileText, Mail, MessageCircle, Phone, Rocket, Star } from "lucide-react";
 import { currencyDecimals, currencySymbol, dateTime, isoDate, minorToInput, money, toMinor } from "../lib/format";
 import { useLicense } from "../lib/license";
 import { Stars } from "../components/CustomerAccount";
@@ -34,11 +34,12 @@ import { RestoreBackupModal } from "../components/RestoreBackup";
 import { BackupProtectionCard } from "../components/BackupProtection";
 import { ArchiveRestore, BookOpen, PlayCircle } from "lucide-react";
 import { TermsCard } from "../components/Terms";
+import { UpdateTab } from "../components/UpdateTab";
 import { openManual, openManualExternal } from "../components/Help";
 
 const idOrNull = (v: string | undefined) => (v && Number(v) > 0 ? Number(v) : null);
 
-type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup" | "help" | "developer";
+type TabId = "shop" | "business" | "appearance" | "payments" | "sales" | "security" | "network" | "backup" | "update" | "help" | "developer";
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "shop", label: tl("Commerce"), icon: <Store size={17} /> },
   { id: "business", label: tl("Type de commerce"), icon: <Building2 size={17} /> },
@@ -48,6 +49,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: "security", label: tl("Sécurité & PIN"), icon: <Lock size={17} /> },
   { id: "network", label: tl("Réseau & mobile"), icon: <Network size={17} /> },
   { id: "backup", label: tl("Sauvegarde"), icon: <ShieldCheck size={17} /> },
+  { id: "update", label: tl("Mise à jour"), icon: <Rocket size={17} /> },
   { id: "help", label: tl("Aide, conditions et licence"), icon: <BookOpen size={17} /> },
   { id: "developer", label: tl("Développeur Eden Dev"), icon: <Code2 size={17} /> },
 ];
@@ -68,6 +70,12 @@ export default function SettingsPage() {
       return "shop";
     }
   });
+  // Lien vers un onglet alors que la page est déjà ouverte (bandeau « nouvelle version », « ?tab=update »).
+  const location = useLocation();
+  useEffect(() => {
+    const asked = new URLSearchParams(location.search).get("tab");
+    if (asked && TABS.some((t) => t.id === asked)) setTab(asked as TabId);
+  }, [location.search]);
   useEffect(() => {
     try {
       sessionStorage.setItem("gm-settings-tab", tab);
@@ -443,6 +451,7 @@ export default function SettingsPage() {
         </>
       )}
 
+      {tab === "update" && <UpdateTab />}
       {tab === "developer" && <DeveloperTab version={info?.version} />}
     </div>
   );
@@ -496,7 +505,11 @@ function DeveloperTab({ version }: { version?: string }) {
         ))}
       </div>
       {isTauri && <JournalCard openWhatsApp={openLink("whatsapp")} />}
-      {version && <p className="muted small" style={{ marginTop: 12 }}>{tl("GestiMarket version {0}", [version])}</p>}
+      {version && (
+        <p className="muted small" style={{ marginTop: 12 }}>
+          {tl("GestiMarket version {0}", [version])}  ·  <Link to="/settings?tab=update">{tl("Vérifier les mises à jour")}</Link>
+        </p>
+      )}
     </div>
   );
 }

@@ -36,6 +36,14 @@ pub async fn open_contact(app: AppHandle, kind: String, number: Option<String>) 
         "whatsapp" => "https://wa.me/22397126202".into(),
         "phone" => "tel:+22397126202".into(),
         "releases" => "https://github.com/lasscientifique/gestimarket/releases/latest".into(),
+        // Téléphone Android (Paramètres → Mise à jour) : l'APK de la version annoncée, ouvert dans le navigateur.
+        "apk" => {
+            let version = number.unwrap_or_default();
+            if !apk_version_ok(&version) {
+                return invalid("Version inconnue : vérifiez d'abord les mises à jour.");
+            }
+            format!("https://github.com/lasscientifique/gestimarket/releases/download/v{version}/GestiMarket_{version}_android_essai.apk")
+        }
         "whatsapp_gm" => {
             let digits: String = number.unwrap_or_default().chars().filter(char::is_ascii_digit).collect();
             if !(8..=15).contains(&digits.len()) {
@@ -46,6 +54,12 @@ pub async fn open_contact(app: AppHandle, kind: String, number: Option<String>) 
         _ => return invalid("Contact inconnu."),
     };
     open_url(&app, &url)
+}
+
+/// Numéro de version « 0.28.0 » (chiffres et points seulement) : l'adresse de l'APK ne peut rien contenir d'autre.
+fn apk_version_ok(v: &str) -> bool {
+    let parts: Vec<&str> = v.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 4 && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// Téléphone et tablette : WhatsApp, la messagerie ou le téléphone, ouverts par le système.
@@ -513,4 +527,14 @@ pub async fn create_boutique(app: AppHandle, state: State<'_, AppState>) -> AppR
     let _ = crate::services::audit::log(&state.conn(), &admin, "Création d'une boutique", "settings", None, format!("Boutique {slot} créée sur ce PC"));
     crate::boutique::launch(slot).map_err(internal)?;
     Ok(slot)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn version_de_l_apk() {
+        assert!(super::apk_version_ok("0.28.0") && super::apk_version_ok("1.2.10"));
+        assert!(!super::apk_version_ok("0.28") && !super::apk_version_ok("0.28.0/../x") && !super::apk_version_ok("0.28.0?a=1"));
+        assert!(!super::apk_version_ok("") && !super::apk_version_ok("a.b.c"));
+    }
 }

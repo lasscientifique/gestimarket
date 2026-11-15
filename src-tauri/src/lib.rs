@@ -35,6 +35,11 @@ pub fn run() {
     // Téléphone et tablette : scanner natif (caméra) pour les codes-barres et QR codes.
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    // PC : mise à jour en un clic (Paramètres → Mise à jour), signée par Eden Dev, puis redémarrage.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
     builder
         // Photos servies depuis la base : media://localhost/<id> (http://media.localhost/<id> sous Windows).
         .register_uri_scheme_protocol("media", |ctx, request| {

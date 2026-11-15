@@ -47,6 +47,11 @@ fn fetch_latest() -> Option<String> {
     version_from_location(resp.header("location")?)
 }
 
+/// « Vérifier maintenant » (Paramètres → Mise à jour) : la prochaine demande interroge de nouveau GitHub.
+pub fn forget_latest() {
+    *lock(&LATEST) = None;
+}
+
 /// Dernière version publiée (gardée 6 h ; 30 min après un échec, par exemple sans Internet).
 pub fn latest_version() -> Option<String> {
     if cfg!(test) {

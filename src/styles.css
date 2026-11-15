@@ -1546,3 +1546,9 @@ input, select, textarea { border-radius: 10px; }
 .account-ids .row-between span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .wa-write-first { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
 .wa-write-first .btn { flex-shrink: 0; }
+
+/* Paramètres → Mise à jour : nouveautés de la version et barre de téléchargement. */
+.update-notes { white-space: pre-wrap; line-height: 1.5; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.update-progress { position: relative; margin-top: 12px; height: 28px; border-radius: 8px; background: var(--border); overflow: hidden; }
+.update-progress-bar { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .35; transition: width .3s; }
+.update-progress span { position: relative; display: block; line-height: 28px; padding: 0 10px; }

@@ -8,7 +8,7 @@
 
 **Version portable** : le fichier **GestiMarket_x.y.z_portable_windows.zip** contient `gestimarket.exe`, qui se lance sans installation (clé USB, PC sans droits).
 
-**Mise à jour** : installez simplement la nouvelle version par-dessus. Les données sont gardées. L'administrateur voit un bandeau « GestiMarket x.y.z est disponible » quand une nouvelle version sort.
+**Mise à jour** (depuis la 0.28) : quand une nouvelle version sort, l'administrateur voit un bandeau « GestiMarket x.y.z est disponible ». **Voir la mise à jour** ouvre Paramètres → **Mise à jour**, qui montre la version installée, la nouvelle version et ses **nouveautés**. **Mettre à jour maintenant** fait une sauvegarde, télécharge la nouvelle version, vérifie qu'elle vient bien d'Eden Dev (signature), l'installe sans question et redémarre GestiMarket. Les données sont gardées. Chaque PC se met à jour depuis sa propre fenêtre ; sur le PC serveur, la page liste les appareils restés sur une version plus ancienne. Avant la 0.28, ou sans Internet : installez simplement la nouvelle version par-dessus.
 
 ## Sur un téléphone, une tablette ou une TV Android
 
