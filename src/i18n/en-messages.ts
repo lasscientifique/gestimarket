@@ -771,4 +771,8 @@ export const EN_MESSAGES: Record<string, string> = {
   "Sugu Eden est inclus dans les formules PRO et BUSINESS : voir « Abonnement & licence ».": "Sugu Eden is included in the PRO and BUSINESS plans: see “Subscription & licence”.",
   "Sugu Eden est momentanément indisponible : réessayez plus tard.": "Sugu Eden is temporarily unavailable: try again later.",
   "Sugu Eden injoignable : vérifiez la connexion à Internet de ce PC.": "Sugu Eden unreachable: check this PC's Internet connection.",
+  "Classement Sugu Eden inconnu : choisissez une sous-catégorie de la liste.": "Unknown Sugu Eden classification: choose a subcategory from the list.",
+  "Paramètres invalides : {}": "Invalid parameters: {}",
+  "Photo introuvable : ajoutez-la de nouveau.": "Photo not found: add it again.",
+  "{} : {} photo(s) en plus": "{}: {} more photo(s)",
 };

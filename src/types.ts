@@ -416,8 +416,37 @@ export interface Product {
   /** Publié sur Sugu Eden, au prix Sugu Eden s'il est donné (sinon au prix de vente). */
   sugu_publish: boolean;
   sugu_price: number | null;
+  /** Classement Sugu Eden (sous-catégorie « femmes/vetements/robes »). */
+  sugu_code: string | null;
+  sugu_condition: "new" | "used" | "refurbished";
+  sugu_audience: "women" | "men" | "unisex" | "kids" | null;
+  sugu_keywords: string | null;
+  /** Photos en plus de la principale (image_id), dans l'ordre. */
+  photos: number[];
   created_at: string;
   updated_at: string;
+}
+
+/** Classement Sugu Eden : Catégorie (niveau 1) → Section (2) → Sous-catégorie (3). */
+export interface SuguNode {
+  code: string;
+  parent: string | null;
+  level: 1 | 2 | 3;
+  name: string;
+  synonyms: string;
+}
+
+export interface SuguTaxonomy {
+  version: number;
+  items: SuguNode[];
+  /** Catégories du type de commerce de la boutique, proposées en premier. */
+  favored: string[];
+}
+
+export interface SuguSuggestion {
+  code: string;
+  label: string;
+  score: number;
 }
 
 /** Sugu Eden : place de marché d'Eden Dev (Paramètres → Sugu Eden). */

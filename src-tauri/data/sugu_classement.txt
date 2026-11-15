@@ -1,0 +1,581 @@
+# Classement Sugu Eden : Catégorie / Section / Sous-catégorie (2 espaces par niveau).
+# Repris de Sugu Eden v1, corrigé (fautes, doublons, sections vides). Version : ligne « @version ».
+# Le code de chaque ligne est fabriqué à partir des noms (« femmes/vetements/robes ») : ne pas renommer une
+# ligne déjà utilisée sans garder son ancien code (« Nouveau nom = ancien-code »).
+# « ; » après le nom : mots de recherche (synonymes), séparés par des virgules.
+@version 1
+Femmes
+  Vêtements
+    Robes
+    Tops & T-shirts ; t-shirt, top, débardeur
+    Chemisiers & Chemises ; chemise, chemisier
+    Pantalons & Jeans ; pantalon, jean
+    Jupes
+    Ensembles
+    Combinaisons
+    Vestes & Manteaux ; veste, manteau
+    Pulls & Gilets ; pull, gilet
+    Voiles & Hijabs ; voile, hijab, foulard
+  Chaussures
+    Baskets & Sneakers ; basket, sneaker, tennis
+    Talons & Escarpins ; talon, escarpin
+    Ballerines & Chaussures plates ; ballerine
+    Sandales & Tongs ; sandale, tong, claquette
+    Bottes & Bottines
+    Mocassins
+  Sacs & Accessoires
+    Sacs à main ; sac
+    Sacs à dos
+    Pochettes
+    Portefeuilles
+    Ceintures
+    Lunettes
+    Foulards & Écharpes
+    Chapeaux & Casquettes
+  Bijoux
+    Colliers
+    Bagues
+    Bracelets
+    Boucles d'oreilles
+    Parures
+  Montres
+    Montres classiques ; montre
+    Montres connectées ; smartwatch
+    Bracelets de montre
+  Traditionnel
+    Boubous ; boubou, grand boubou
+    Pagnes & Wax ; pagne, wax, bazin
+    Tenues africaines
+    Accessoires traditionnels
+  Lingerie & Nuit
+    Soutiens-gorge
+    Culottes
+    Ensembles lingerie
+    Nuisettes & Pyjamas ; pyjama, nuisette
+    Bodys
+  Sport & Fitness
+    Tenues de sport ; jogging, legging
+    Chaussures de sport
+    Accessoires de sport
+  Maternité
+    Vêtements de grossesse
+    Accessoires maternité
+  Mariage & Cérémonie
+    Robes de mariée
+    Tenues de cérémonie
+    Accessoires de mariage
+Hommes
+  Vêtements
+    T-shirts & Polos ; t-shirt, polo
+    Chemises
+    Pantalons & Jeans ; pantalon, jean
+    Ensembles
+    Vestes & Manteaux ; veste, blouson, manteau
+    Pulls & Gilets ; pull, gilet, sweat
+    Costumes ; costume, complet
+  Chaussures
+    Baskets & Sneakers ; basket, sneaker, tennis
+    Chaussures de ville ; chaussure habillée, richelieu
+    Mocassins
+    Sandales & Tongs ; sandale, tong, claquette
+    Bottes & Boots
+  Accessoires
+    Ceintures
+    Portefeuilles
+    Lunettes
+    Chapeaux & Casquettes ; casquette, bonnet
+    Cravates & Nœuds papillon
+  Montres & Bijoux
+    Montres ; montre
+    Bracelets
+    Colliers & Chaînes
+    Bagues
+  Sacs
+    Sacs à dos
+    Sacoches
+    Sacs de voyage
+  Traditionnel
+    Tenues traditionnelles ; boubou, bazin, grand boubou
+    Accessoires traditionnels
+  Sous-vêtements & Nuit
+    Boxers & Slips ; boxer, slip, caleçon
+    Maillots de corps
+    Pyjamas & Peignoirs
+  Sport & Fitness
+    Tenues de sport ; jogging, maillot
+    Chaussures de sport
+    Équipements de fitness
+  Mariage & Cérémonie
+    Costumes de cérémonie
+    Accessoires de cérémonie
+Enfants
+  Vêtements
+    T-shirts & Polos
+    Chemises
+    Pantalons & Shorts
+    Robes
+    Ensembles
+    Pyjamas
+    Vestes & Manteaux
+    Sous-vêtements
+  Chaussures
+    Baskets ; basket, tennis
+    Sandales
+    Chaussures habillées
+    Chaussons
+  Bébé & Puériculture
+    Vêtements bébé ; body, grenouillère
+    Couches & Lingettes ; couche, pampers
+    Biberons & Tétines ; biberon
+    Poussettes & Porte-bébés ; poussette
+    Soins bébé
+  Jouets
+    Jeux & Jouets éducatifs
+    Peluches
+    Poupées & Figurines ; poupée
+    Jeux de construction ; lego
+    Voitures & Circuits
+    Jeux électroniques
+  Accessoires
+    Sacs
+    Casquettes & Bonnets
+    Montres enfants
+    Lunettes
+  Scolaire
+    Cartables & Sacs d'école ; cartable
+    Trousses
+    Fournitures scolaires ; cahier, stylo, crayon
+Électronique
+  Téléphones & Tablettes
+    Smartphones ; téléphone, portable, iphone, samsung, android, tecno, infinix
+    Téléphones simples
+    Tablettes ; ipad, tablette
+    Coques & Protections ; coque, verre trempé
+    Écouteurs & Casques ; écouteur, airpods
+  Ordinateurs
+    Ordinateurs portables ; pc portable, laptop, macbook
+    Ordinateurs de bureau ; pc, unité centrale
+    Sacoches & Housses
+  Accessoires informatiques
+    Claviers & Souris ; clavier, souris
+    Écrans ; écran, moniteur
+    Imprimantes
+    Disques externes & Clés USB ; clé usb, disque dur
+  Accessoires
+    Câbles & Chargeurs ; câble, chargeur
+    Cartes mémoire ; carte sd
+    Supports & Stands
+  Audio & Vidéo
+    Casques audio
+    Haut-parleurs ; enceinte, bluetooth
+    Téléviseurs ; télé, tv
+    Projecteurs
+  Gaming
+    Consoles ; playstation, ps5, xbox
+    Jeux vidéo
+    Manettes
+    Accessoires gaming
+  Objets connectés
+    Montres connectées ; smartwatch
+    Bracelets fitness
+  Sécurité & Surveillance
+    Caméras de surveillance
+    Alarmes
+    Interphones
+  Réseaux & Internet
+    Routeurs & Modems ; wifi, routeur, modem
+    Répéteurs Wi-Fi
+    Câbles réseau
+  Énergie & Batteries
+    Batteries
+    Power banks ; batterie externe
+    Onduleurs
+    Panneaux solaires ; solaire
+  Photo & Caméras
+    Appareils photo
+    Caméras vidéo
+    Objectifs & Trépieds
+  Composants
+    Cartes mères & Processeurs
+    Mémoire RAM
+    Disques durs & SSD
+    Cartes graphiques
+    Alimentations
+Maison & Décoration
+  Mobilier
+    Canapés & Fauteuils ; canapé, salon
+    Tables & Chaises
+    Lits & Matelas ; lit, matelas
+    Armoires & Dressings
+    Étagères
+  Décoration intérieure
+    Tableaux & Cadres
+    Miroirs
+    Horloges
+    Vases & Objets décoratifs
+    Tapis
+  Linge de maison
+    Rideaux
+    Draps & Parures
+    Serviettes
+    Couvertures
+    Nappes
+  Cuisine & Arts de la table
+    Vaisselle ; assiette, plat
+    Casseroles & Poêles ; marmite, casserole
+    Ustensiles de cuisine
+    Verres & Tasses
+    Couverts
+  Électroménager
+    Réfrigérateurs & Congélateurs ; frigo, congélateur
+    Machines à laver
+    Micro-ondes & Fours
+    Ventilateurs & Climatiseurs ; ventilateur, climatiseur, clim
+    Petits appareils ; mixeur, blender, fer à repasser
+  Salle de bain
+    Serviettes de bain
+    Tapis & Rideaux de douche
+    Accessoires de bain
+  Rangement & Organisation
+    Boîtes de rangement
+    Paniers
+    Cintres & Organisateurs
+  Éclairage
+    Lampes
+    Suspensions & Plafonniers
+    Ampoules
+  Jardin & Extérieur
+    Mobilier de jardin
+    Plantes & Pots
+    Arrosage
+  Bricolage & Outils
+    Outils manuels
+    Outils électriques ; perceuse, meuleuse
+    Peinture
+    Quincaillerie
+  Matériaux de construction
+    Ciment & Béton ; ciment
+    Fer & Acier ; fer à béton
+    Tôles & Toiture ; tôle
+    Carrelage & Revêtements ; carreau
+    Plomberie
+    Électricité
+  Maison connectée
+    Ampoules & Prises connectées
+    Caméras connectées
+    Assistants vocaux
+  Parfums d'intérieur
+    Bougies parfumées
+    Encens & Diffuseurs ; encens, thiouraye, wusulan
+  Artisanat & Décoration traditionnelle
+    Objets artisanaux
+    Textiles traditionnels
+Automobile & Moto
+  Vente de véhicules
+    Voitures ; voiture, véhicule
+    Motos & Scooters ; moto, jakarta, scooter
+    Camions & Bus
+  Pièces détachées
+    Moteur
+    Transmission
+    Freinage ; plaquette, frein
+    Suspension
+    Filtres
+    Batteries auto
+    Électricité auto
+  Pneus & Jantes
+    Pneus ; pneu
+    Jantes
+  Entretien
+    Huiles & Lubrifiants ; huile moteur
+    Nettoyage auto
+  Moto
+    Pièces moto
+    Casques moto
+    Accessoires moto
+  Accessoires
+    Tapis & Housses de sièges
+    Chargeurs & Supports auto
+    Autoradios & Haut-parleurs ; autoradio
+    GPS & Caméras embarquées
+  Carrosserie & Éclairage
+    Pare-chocs
+    Rétroviseurs
+    Phares & Feux
+  Outils & Diagnostic
+    Valises de diagnostic
+    Outils mécaniques
+Sports & Loisirs
+  Sports collectifs
+    Football ; ballon, maillot de foot, crampons
+    Basketball
+    Handball
+    Volleyball
+  Sports individuels
+    Running & Athlétisme
+    Cyclisme ; vélo
+    Tennis
+    Natation
+  Fitness & Musculation
+    Haltères & Poids ; haltère
+    Appareils de fitness
+    Tapis & Bandes élastiques
+  Arts martiaux & Combat
+    Boxe
+    Karaté
+    Judo
+    Taekwondo
+  Plein air
+    Randonnée
+    Camping
+    Pêche
+  Sports nautiques
+    Plongée & Natation
+    Kayak & Surf
+  Loisirs
+    Jeux de société
+    Jeux de plein air
+    Skateboards & Trottinettes ; trottinette, skate
+Alimentation
+  Fruits & Légumes
+    Fruits
+    Légumes
+    Tubercules ; igname, manioc, patate
+  Viandes & Poissons
+    Bœuf
+    Mouton & Chèvre
+    Poulet & Volaille ; poulet
+    Poisson ; poisson frais, poisson fumé
+  Épicerie
+    Riz & Céréales ; riz, mil, maïs, fonio
+    Pâtes
+    Huiles ; huile
+    Sucre & Farine ; sucre, farine
+    Conserves
+    Épices & Condiments ; cube, piment, sel
+  Boissons
+    Eau
+    Jus
+    Sodas
+    Boissons chaudes ; café, thé, lipton
+  Produits laitiers & Œufs
+    Lait ; lait en poudre
+    Fromage
+    Yaourt
+    Œufs
+  Boulangerie & Pâtisserie
+    Pain
+    Viennoiseries
+    Gâteaux
+  Snacks & Confiseries
+    Biscuits
+    Chips
+    Bonbons & Chocolats
+  Surgelés
+    Légumes surgelés
+    Viandes & Poissons surgelés
+  Alimentation bébé
+    Lait bébé
+    Petits pots & Céréales bébé
+  Produits locaux & Bio
+    Produits du terroir ; karité, soumbala, dégué
+    Produits bio
+  Plats préparés
+    Plats cuisinés
+    Fast-food
+Beauté & Cosmétiques
+  Soins du visage
+    Crèmes visage
+    Nettoyants & Démaquillants
+    Masques & Gommages
+  Soins du corps
+    Laits & Crèmes corporelles ; lait de toilette
+    Gels douche
+    Huiles corporelles
+  Cheveux
+    Shampoings & Après-shampoings ; shampoing
+    Mèches & Perruques ; mèche, perruque, tissage
+    Produits coiffants
+  Maquillage
+    Teint ; fond de teint, poudre
+    Lèvres ; rouge à lèvres
+    Yeux ; mascara, crayon
+  Parfums
+    Eau de parfum ; parfum
+    Eau de toilette
+    Huiles parfumées & Encens
+  Onglerie
+    Vernis
+    Faux ongles
+  Hygiène
+    Savons
+    Déodorants
+    Soins intimes
+  Cosmétiques naturels
+    Beurre de karité ; karité
+    Huiles naturelles
+    Savons naturels ; savon noir
+  Accessoires beauté
+    Brosses & Peignes
+    Pinceaux & Éponges
+  Beauté homme
+    Barbe & Rasage ; rasoir, barbe
+Santé & Bien-être
+  Parapharmacie
+    Parapharmacie
+    Premiers secours ; pansement
+  Bien-être
+    Relaxation & Massage
+    Aromathérapie
+  Nutrition & Diététique
+    Compléments alimentaires
+    Nutrition sportive
+  Matériel médical
+    Tensiomètres
+    Thermomètres
+    Matériel de diagnostic
+  Médecines douces
+    Plantes médicinales
+  Santé femme
+    Hygiène féminine ; serviette hygiénique
+    Grossesse & Maternité
+  Santé enfant
+    Soins & Hygiène enfant
+Immobilier
+  Vente
+    Maisons & Villas
+    Appartements
+    Terrains ; parcelle, terrain
+    Locaux commerciaux
+  Location
+    Maisons & Villas
+    Appartements & Studios ; studio, chambre
+    Courte durée
+    Locaux commerciaux & Entrepôts ; magasin, entrepôt
+Agriculture & Élevage
+  Cultures
+    Céréales
+    Maraîchage
+    Fruits
+  Élevage
+    Bovins
+    Ovins & Caprins ; mouton, chèvre
+    Volaille
+  Matériel agricole
+    Tracteurs & Machines
+    Outils agricoles
+    Irrigation
+  Semences & Plants
+    Semences
+    Plants
+  Engrais & Produits phytosanitaires
+    Engrais
+    Produits phytosanitaires
+  Aliments pour bétail
+    Aliments pour bétail ; tourteau, son
+  Produits vétérinaires
+    Produits vétérinaires
+  Produits d'élevage
+    Lait
+    Œufs
+    Miel
+  Transformation agricole
+    Moulins & Décortiqueuses
+    Emballages
+Services
+  Transport & Livraison
+    Livraison
+    Taxi
+    Déménagement
+    Location de véhicules
+  Maison
+    Ménage & Nettoyage
+    Plomberie
+    Électricité
+    Peinture & Bricolage
+  Informatique
+    Maintenance informatique
+    Réparation de téléphones
+    Développement & Sites web
+    Réseaux & Sécurité
+  Formation
+    Cours particuliers
+    Formation professionnelle
+    Coaching
+  Événementiel
+    Mariages & Fêtes
+    Location de matériel
+  Beauté
+    Coiffure & Tresses ; tresse, coiffure
+    Maquillage
+    Esthétique
+  Santé
+    Soins à domicile
+  Sécurité
+    Gardiennage
+  Communication & Marketing
+    Community management
+    Publicité
+  Gestion & Juridique
+    Comptabilité
+    Secrétariat
+    Conseil juridique
+Art & Artisanat
+  Objets artisanaux
+    Objets décoratifs
+    Vannerie
+    Poterie
+  Textiles artisanaux
+    Bogolan ; bogolan
+    Tissus teints ; indigo, teinture
+    Pagnes tissés
+  Sculptures
+    Sculptures en bois
+    Bronze & Métal
+  Peintures & Tableaux
+    Peintures
+  Bijoux artisanaux
+    Bijoux faits main
+  Art africain
+    Masques
+    Statuettes
+Librairie & Éducation
+  Livres scolaires
+    Primaire
+    Secondaire
+  Livres universitaires
+    Manuels universitaires
+  Romans & Littérature
+    Romans
+    Littérature africaine
+  Livres enfants
+    Contes & Albums
+  Livres religieux
+    Livres religieux ; coran, bible
+  Manuels professionnels
+    Informatique
+    Gestion & Commerce
+    Santé
+  Supports éducatifs
+    Manuels pédagogiques
+Bureautique & Fournitures
+  Fournitures de bureau
+    Stylos & Crayons ; stylo, bic
+    Cahiers & Blocs ; cahier
+    Papier
+  Impression & Consommables
+    Cartouches & Toners ; cartouche, encre
+    Papier imprimante ; rame
+  Mobilier de bureau
+    Bureaux
+    Chaises de bureau
+    Armoires de bureau
+  Classement & Archivage
+    Classeurs
+    Chemises & Sous-chemises
+  Équipements bureautiques
+    Photocopieurs
+    Calculatrices
+Autres
+  Autres
+    Autres produits

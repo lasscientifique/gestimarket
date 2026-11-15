@@ -107,6 +107,8 @@ const INTERNAL: &[&str] = &[
     "sugu_shop_hash",
     "sugu_shop_url",
     "sugu_shop_sent_at",
+    // Classement Sugu Eden reçu d'Eden Dev quand il est plus récent que celui de GestiMarket (voir sugu_tax.rs).
+    "sugu_taxonomy_cache",
     // Licence et compte boutique (voir license.rs) : lus par « license_status », jamais par l'écran des paramètres.
     "license_file",
     "license_clock",

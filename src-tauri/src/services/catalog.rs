@@ -249,6 +249,14 @@ pub struct Product {
     /// Publié sur Sugu Eden (place de marché d'Eden Dev), au prix Sugu Eden s'il est donné, sinon au prix de vente.
     pub sugu_publish: bool,
     pub sugu_price: Option<i64>,
+    /// Classement Sugu Eden (sous-catégorie « femmes/vetements/robes »), état (new, used, refurbished), public visé
+    /// (women, men, unisex, kids) et mots-clés de recherche.
+    pub sugu_code: Option<String>,
+    pub sugu_condition: String,
+    pub sugu_audience: Option<String>,
+    pub sugu_keywords: Option<String>,
+    /// Photos en plus de la photo principale (`image_id`), dans l'ordre.
+    pub photos: Vec<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -273,7 +281,8 @@ const PRODUCT_SELECT: &str = "SELECT p.id, p.barcode, p.name, p.description, p.c
         p.min_stock, p.track_stock, p.active, p.image_id, p.location_id, l.bloc, l.etage, l.rangee, l.label,
         p.expiry_date, p.created_at, p.updated_at, p.brand, p.sku,
         l.fixture_id, fx.name, (SELECT COUNT(*) FROM product_locations pl WHERE pl.product_id = p.id),
-        p.wholesale_price, p.wholesale_min_qty, p.sugu_publish, p.sugu_price
+        p.wholesale_price, p.wholesale_min_qty, p.sugu_publish, p.sugu_price,
+        p.sugu_code, p.sugu_condition, p.sugu_audience, p.sugu_keywords
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
@@ -322,6 +331,11 @@ fn product_from_row(r: &Row) -> rusqlite::Result<Product> {
         wholesale_min_qty: r.get(34)?,
         sugu_publish: r.get(35)?,
         sugu_price: r.get(36)?,
+        sugu_code: r.get(37)?,
+        sugu_condition: r.get(38)?,
+        sugu_audience: r.get(39)?,
+        sugu_keywords: r.get(40)?,
+        photos: Vec::new(),
     })
 }
 
@@ -341,6 +355,8 @@ pub struct ProductFilter {
     /// Produits dont la date de péremption tombe dans les N prochains jours (ou est dépassée).
     pub expiring_days: Option<i64>,
     pub include_inactive: Option<bool>,
+    /// Sugu Eden : produits publiés à qui il manque le classement ou la photo.
+    pub sugu_incomplete: Option<bool>,
     pub limit: Option<i64>,
 }
 
@@ -419,6 +435,9 @@ pub fn list_products(conn: &Connection, f: &ProductFilter) -> AppResult<Vec<Prod
     if f.low_stock.unwrap_or(false) {
         q.and("p.track_stock = 1 AND p.stock <= p.min_stock", vec![]);
     }
+    if f.sugu_incomplete.unwrap_or(false) {
+        q.and("p.sugu_publish = 1 AND (p.sugu_code IS NULL OR p.sugu_code = '' OR p.image_id IS NULL)", vec![]);
+    }
     if let Some(days) = f.expiring_days {
         q.and(
             "p.expiry_date IS NOT NULL AND p.expiry_date <> '' AND p.expiry_date <= date('now', 'localtime', ?) AND p.stock > 0",
@@ -462,9 +481,17 @@ fn enrich(conn: &Connection, list: &mut [Product]) -> AppResult<()> {
         let (pid, pack) = row?;
         packs.entry(pid).or_default().push(pack);
     }
+    let mut photos: HashMap<i64, Vec<i64>> = HashMap::new();
+    let mut stmt = conn.prepare("SELECT product_id, media_id FROM product_photos ORDER BY product_id, position, id")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+    for row in rows {
+        let (pid, media) = row?;
+        photos.entry(pid).or_default().push(media);
+    }
     for p in list.iter_mut() {
         p.category_path = p.category_id.and_then(|c| paths.get(&c).cloned());
         p.packagings = packs.remove(&p.id).unwrap_or_default();
+        p.photos = photos.remove(&p.id).unwrap_or_default();
     }
     Ok(())
 }
@@ -743,6 +770,35 @@ pub fn save_product(conn: &mut Connection, user: &SessionUser, id: Option<i64>, 
     }
     tx.commit()?;
     get_product(conn, product_id)
+}
+
+/// Photos en plus de la photo principale : 7 au plus, dans l'ordre donné. Les photos retirées sont effacées si
+/// plus rien ne les utilise.
+pub fn set_photos(conn: &mut Connection, user: &SessionUser, id: i64, photos: &[i64]) -> AppResult<()> {
+    if photos.len() > 7 {
+        return invalid("7 photos au plus en plus de la photo principale.");
+    }
+    let name: String = conn.query_row("SELECT name FROM products WHERE id = ?1", [id], |r| r.get(0))?;
+    let tx = conn.transaction()?;
+    let before: Vec<i64> = {
+        let mut stmt = tx.prepare("SELECT media_id FROM product_photos WHERE product_id = ?1")?;
+        let rows = stmt.query_map([id], |r| r.get(0))?.collect::<Result<Vec<i64>, _>>()?;
+        rows
+    };
+    tx.execute("DELETE FROM product_photos WHERE product_id = ?1", [id])?;
+    for (i, media) in photos.iter().enumerate() {
+        let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM media WHERE id = ?1)", [media], |r| r.get(0))?;
+        if !exists {
+            return invalid("Photo introuvable : ajoutez-la de nouveau.");
+        }
+        tx.execute("INSERT INTO product_photos (product_id, media_id, position) VALUES (?1, ?2, ?3)", params![id, media, i as i64])?;
+    }
+    for old in before.iter().filter(|m| !photos.contains(m)) {
+        crate::services::media::cleanup(&tx, Some(*old))?;
+    }
+    audit::log(&tx, user, "Photos du produit", "product", Some(id), format!("{name} : {} photo(s) en plus", photos.len()))?;
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn archive_product(conn: &Connection, user: &SessionUser, id: i64) -> AppResult<()> {

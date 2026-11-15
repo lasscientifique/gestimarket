@@ -26,7 +26,11 @@ use crate::services::{media, settings};
 use crate::state::AppState;
 
 /// Taille des photos publiées (plus grand côté) et poids maximal accepté par Eden Dev.
-const PHOTO_SIZE: u32 = 640;
+const PHOTO_SIZE: u32 = 1000;
+/// Photos d'un produit sur Sugu Eden : la principale et 7 autres.
+pub const MAX_PHOTOS_PER_PRODUCT: usize = 8;
+/// Le classement d'Eden Dev est relu une fois par jour.
+const TAXONOMY_REFRESH: Duration = Duration::from_secs(24 * 3600);
 const PHOTO_MAX_BYTES: usize = 680 * 1024;
 /// Envoi par paquets : produits et photos par appel.
 const BATCH_ITEMS: usize = 60;
@@ -69,6 +73,7 @@ struct Runtime {
     last_ok_at: Option<String>,
     last_error: Option<String>,
     shop_sent: Option<Instant>,
+    taxonomy_checked: Option<Instant>,
 }
 
 static RUNTIME: Mutex<Option<Runtime>> = Mutex::new(None);
@@ -195,30 +200,84 @@ pub fn publish(conn: &Connection, ids: &[i64], on: bool) -> rusqlite::Result<usi
     Ok(n)
 }
 
-/// Fiche produit : publication et prix Sugu Eden (vide ou 0 : le prix de vente).
-pub fn set_product(conn: &Connection, id: i64, on: bool, price: Option<i64>) -> Result<(), String> {
-    if price.is_some_and(|p| p < 0) {
+/// Fiche produit, onglet Sugu Eden : publication, prix Sugu Eden (vide ou 0 : le prix de vente), classement
+/// (sous-catégorie), état, public visé et mots-clés.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ProductFields {
+    pub on: bool,
+    #[serde(default)]
+    pub price: Option<i64>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub condition: Option<String>,
+    #[serde(default)]
+    pub audience: Option<String>,
+    #[serde(default)]
+    pub keywords: Option<String>,
+}
+
+pub fn set_product(conn: &Connection, id: i64, f: &ProductFields) -> Result<(), String> {
+    if f.price.is_some_and(|p| p < 0) {
         return Err("Le prix Sugu Eden ne peut pas être négatif.".into());
     }
+    let code = f.code.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    if code.is_some_and(|c| !crate::sugu_tax::is_leaf(c)) {
+        return Err("Classement Sugu Eden inconnu : choisissez une sous-catégorie de la liste.".into());
+    }
+    let condition = match f.condition.as_deref().map(str::trim) {
+        Some("used") => "used",
+        Some("refurbished") => "refurbished",
+        _ => "new",
+    };
+    let audience = f.audience.as_deref().map(str::trim).filter(|a| ["women", "men", "unisex", "kids"].contains(a));
+    let keywords: Option<String> = f.keywords.as_deref().map(|k| k.trim().chars().take(200).collect::<String>()).filter(|k| !k.is_empty());
     conn.execute(
-        "UPDATE products SET sugu_publish = ?1, sugu_price = ?2 WHERE id = ?3",
-        params![on, price.filter(|p| *p > 0), id],
+        "UPDATE products SET sugu_publish = ?1, sugu_price = ?2, sugu_code = ?3, sugu_condition = ?4, sugu_audience = ?5,
+                sugu_keywords = ?6 WHERE id = ?7",
+        params![f.on, f.price.filter(|p| *p > 0), code, condition, audience, keywords, id],
     )
     .map_err(|e| e.to_string())?;
     wake();
     Ok(())
 }
 
+/// Classement Sugu Eden de plusieurs produits d'un coup (liste des produits).
+pub fn classify(conn: &Connection, ids: &[i64], code: &str) -> Result<usize, String> {
+    let code = code.trim();
+    if !crate::sugu_tax::is_leaf(code) {
+        return Err("Classement Sugu Eden inconnu : choisissez une sous-catégorie de la liste.".into());
+    }
+    let audience = crate::sugu_tax::audience_of(code);
+    let mut n = 0;
+    for id in ids {
+        n += conn
+            .execute(
+                "UPDATE products SET sugu_code = ?1, sugu_audience = COALESCE(sugu_audience, ?2) WHERE id = ?3",
+                params![code, audience, id],
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    wake();
+    Ok(n)
+}
+
 // ───────────────────────────── Ce qui part sur Sugu Eden ─────────────────────────────
 
-/// Un produit tel qu'il est publié, son empreinte et la clé de sa photo (numéro de la photo, vide : aucune).
+/// Un produit tel qu'il est publié, son empreinte et ses photos (la principale d'abord ; la clé d'une photo est
+/// son numéro).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
     pub id: i64,
     pub item: Value,
     pub hash: String,
-    pub photo_key: String,
-    pub image_id: Option<i64>,
+    pub photos: Vec<i64>,
+}
+
+impl Row {
+    fn keys(&self) -> Vec<String> {
+        self.photos.iter().map(i64::to_string).collect()
+    }
 }
 
 fn hash_of(v: &Value) -> String {
@@ -238,9 +297,20 @@ pub fn availability(track: bool, stock: f64, margin: i64, mode: &str) -> (bool, 
 pub fn published_rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {
     let margin: i64 = get(conn, "sugu_stock_margin").trim().parse().unwrap_or(1);
     let mode = get(conn, "sugu_stock_mode");
+    // Photos en plus de la principale, dans l'ordre.
+    let mut extra: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT pp.product_id, pp.media_id FROM product_photos pp JOIN products p ON p.id = pp.product_id
+         WHERE p.sugu_publish = 1 ORDER BY pp.product_id, pp.position, pp.id",
+    )?;
+    for row in stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+        let (pid, media) = row?;
+        extra.entry(pid).or_default().push(media);
+    }
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, COALESCE(p.description, ''), COALESCE(pc.name, c.name, ''), COALESCE(p.brand, ''), p.unit,
-                COALESCE(NULLIF(p.sugu_price, 0), p.sale_price), p.track_stock, p.stock, p.image_id
+                COALESCE(NULLIF(p.sugu_price, 0), p.sale_price), p.track_stock, p.stock, p.image_id,
+                COALESCE(p.sugu_code, ''), p.sugu_condition, COALESCE(p.sugu_audience, ''), COALESCE(p.sugu_keywords, '')
          FROM products p
          LEFT JOIN categories c ON c.id = p.category_id
          LEFT JOIN categories pc ON pc.id = c.parent_id
@@ -250,20 +320,29 @@ pub fn published_rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {
     let rows = stmt.query_map([], |r| {
         let id: i64 = r.get(0)?;
         let (in_stock, stock) = availability(r.get(7)?, r.get(8)?, margin, &mode);
-        let image_id: Option<i64> = r.get(9)?;
-        let photo_key = image_id.map(|i| i.to_string()).unwrap_or_default();
+        let main: Option<i64> = r.get(9)?;
+        let mut photos: Vec<i64> = main.into_iter().collect();
+        for m in extra.get(&id).cloned().unwrap_or_default() {
+            if photos.len() < MAX_PHOTOS_PER_PRODUCT && !photos.contains(&m) {
+                photos.push(m);
+            }
+        }
         let item = json!({
             "local_id": id, "name": r.get::<_, String>(1)?, "description": r.get::<_, String>(2)?,
             "category": r.get::<_, String>(3)?, "brand": r.get::<_, String>(4)?, "unit": r.get::<_, String>(5)?,
-            "price": r.get::<_, i64>(6)?, "in_stock": in_stock, "stock": stock, "photo_key": photo_key,
+            "price": r.get::<_, i64>(6)?, "in_stock": in_stock, "stock": stock,
+            "code": r.get::<_, String>(10)?, "condition": r.get::<_, String>(11)?, "audience": r.get::<_, String>(12)?,
+            "keywords": r.get::<_, String>(13)?,
+            "photos": photos.iter().map(|m| json!({ "key": m.to_string() })).collect::<Vec<_>>(),
         });
-        Ok(Row { id, hash: hash_of(&item), item, photo_key, image_id })
+        Ok(Row { id, hash: hash_of(&item), item, photos })
     })?;
     rows.collect()
 }
 
-/// À envoyer (nouveaux ou changés, avec « photo à envoyer ») et à retirer (plus cochés, archivés, effacés).
-pub fn diff(conn: &Connection, rows: &[Row]) -> (Vec<(Row, bool)>, Vec<i64>) {
+/// À envoyer (nouveaux ou changés, avec les photos qu'Eden Dev n'a pas encore) et à retirer (plus cochés,
+/// archivés, effacés). La colonne « photo_key » de sugu_sync garde les numéros des photos déjà envoyées.
+pub fn diff(conn: &Connection, rows: &[Row]) -> (Vec<(Row, Vec<String>)>, Vec<i64>) {
     let mut synced = std::collections::HashMap::<i64, (String, String)>::new();
     if let Ok(mut stmt) = conn.prepare("SELECT product_id, hash, photo_key FROM sugu_sync") {
         if let Ok(it) = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, (r.get::<_, String>(1)?, r.get::<_, String>(2)?)))) {
@@ -274,8 +353,12 @@ pub fn diff(conn: &Connection, rows: &[Row]) -> (Vec<(Row, bool)>, Vec<i64>) {
     for row in rows {
         match synced.remove(&row.id) {
             Some((hash, _)) if hash == row.hash => {}
-            Some((_, photo)) => send.push((row.clone(), !row.photo_key.is_empty() && photo != row.photo_key)),
-            None => send.push((row.clone(), !row.photo_key.is_empty())),
+            Some((_, sent)) => {
+                let sent: Vec<&str> = sent.split(',').filter(|k| !k.is_empty()).collect();
+                let missing = row.keys().into_iter().filter(|k| !sent.contains(&k.as_str())).collect();
+                send.push((row.clone(), missing));
+            }
+            None => send.push((row.clone(), row.keys())),
         }
     }
     let mut remove: Vec<i64> = synced.into_keys().collect();
@@ -283,7 +366,7 @@ pub fn diff(conn: &Connection, rows: &[Row]) -> (Vec<(Row, bool)>, Vec<i64>) {
     (send, remove)
 }
 
-/// Photo publiée : 640 pixels au plus ; trop lourde ou illisible : pas de photo.
+/// Photo publiée : 1 000 pixels au plus ; trop lourde ou illisible : pas de photo.
 fn photo(conn: &Connection, image_id: i64) -> Option<Value> {
     let (mime, data) = media::get(conn, image_id).ok()??;
     let (mime, data) = match media::shrink(PHOTO_SIZE, &mime, &data) {
@@ -336,8 +419,45 @@ fn shop_profile(conn: &Connection) -> (Value, Option<i64>) {
     (profile, logo)
 }
 
+/// Classement plus récent chez Eden Dev : repris et gardé sur ce PC (clé interne « sugu_taxonomy_cache »).
+fn refresh_taxonomy(conn_of: impl Fn() -> Result<(), String>) {
+    let due = runtime(|r| r.taxonomy_checked.is_none_or(|t| t.elapsed() > TAXONOMY_REFRESH));
+    if !due {
+        return;
+    }
+    runtime(|r| r.taxonomy_checked = Some(Instant::now()));
+    let _ = conn_of();
+}
+
+fn fetch_taxonomy() -> Option<crate::sugu_tax::Taxonomy> {
+    let url = format!("{}/rest/v1/rpc/sugu_taxonomy", crate::license::supabase_url().trim_end_matches('/'));
+    let key = crate::license::SUPABASE_KEY;
+    let v: Value = ureq::post(&url)
+        .timeout(Duration::from_secs(20))
+        .set("apikey", key)
+        .set("Authorization", &format!("Bearer {key}"))
+        .set("Content-Type", "application/json")
+        .send_json(json!({}))
+        .ok()?
+        .into_json()
+        .ok()?;
+    crate::sugu_tax::from_remote(&v)
+}
+
 fn tick(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
+    // Classement d'Eden Dev : seulement pour un PC relié au compte (il publie, ou le fera).
+    if !crate::license::account().store_code.is_empty() {
+        refresh_taxonomy(|| {
+            if let Some(t) = fetch_taxonomy() {
+                if crate::sugu_tax::adopt(t.clone()) {
+                    let raw = serde_json::to_string(&t).map_err(|e| e.to_string())?;
+                    settings::set(&state.conn(), "sugu_taxonomy_cache", &raw).map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(())
+        });
+    }
     let device = {
         let conn = state.conn();
         let device = get(&conn, "device_token");
@@ -400,20 +520,28 @@ fn tick(app: &AppHandle) -> Result<(), String> {
     };
     for chunk in send.chunks(BATCH_ITEMS) {
         let mut items = Vec::new();
-        let mut photos = 0;
-        for (row, with_photo) in chunk {
-            let mut item = row.item.clone();
-            if *with_photo && photos < BATCH_PHOTOS {
-                if let Some(p) = row.image_id.and_then(|id| photo(&state.conn(), id)) {
-                    item["photo"] = p;
-                    photos += 1;
-                } else {
-                    item["photo_key"] = json!("");
-                }
-            } else if *with_photo {
-                // Photo pour le paquet suivant : le produit sera renvoyé au prochain passage.
+        let mut budget = BATCH_PHOTOS;
+        for (row, missing) in chunk {
+            if missing.len() > budget && budget < BATCH_PHOTOS {
+                // Photos pour le paquet suivant : le produit sera renvoyé au prochain passage.
                 continue;
             }
+            // Photos dans l'ordre ; celles qu'Eden Dev a déjà sont désignées par leur numéro seulement. Une photo
+            // illisible ou trop lourde est laissée de côté.
+            let mut photos = Vec::new();
+            for key in row.keys() {
+                if missing.contains(&key) {
+                    let data = key.parse().ok().and_then(|id| photo(&state.conn(), id));
+                    if let Some(p) = data {
+                        photos.push(json!({ "key": key, "photo": p }));
+                        budget = budget.saturating_sub(1);
+                    }
+                } else {
+                    photos.push(json!({ "key": key }));
+                }
+            }
+            let mut item = row.item.clone();
+            item["photos"] = Value::Array(photos);
             items.push((row, item));
         }
         let mut body = base(&device, "products");
@@ -422,11 +550,11 @@ fn tick(app: &AppHandle) -> Result<(), String> {
         call(body)?;
         let conn = state.conn();
         for (row, item) in &items {
-            let photo_key = item["photo_key"].as_str().unwrap_or_default();
+            let sent: Vec<&str> = item["photos"].as_array().map(|a| a.iter().filter_map(|p| p["key"].as_str()).collect()).unwrap_or_default();
             conn.execute(
                 "INSERT INTO sugu_sync (product_id, hash, photo_key, synced_at) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT(product_id) DO UPDATE SET hash = excluded.hash, photo_key = excluded.photo_key, synced_at = excluded.synced_at",
-                params![row.id, row.hash, photo_key, now()],
+                params![row.id, row.hash, sent.join(","), now()],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -447,6 +575,9 @@ fn tick(app: &AppHandle) -> Result<(), String> {
 /// Publication en arrière-plan : toutes les 2 minutes, ou tout de suite après un changement.
 pub fn start(app: AppHandle) {
     STARTED.store(true, Ordering::Relaxed);
+    if let Some(state) = app.try_state::<AppState>() {
+        crate::sugu_tax::load_cache(&state.conn());
+    }
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(20));
         loop {
@@ -509,15 +640,24 @@ mod tests {
         // Déjà envoyé, inchangé : rien à envoyer.
         c.execute("INSERT INTO sugu_sync (product_id, hash, photo_key, synced_at) VALUES (?1, ?2, '', 'x')", params![rows[0].id, rows[0].hash]).unwrap();
         assert_eq!(diff(&c, &rows).0.len(), 0);
-        // Prix Sugu Eden : le produit change.
-        set_product(&c, rows[0].id, true, Some(14000)).unwrap();
+        // Prix Sugu Eden et classement : le produit change.
+        let fields = ProductFields { on: true, price: Some(14000), code: Some("alimentation/epicerie/riz-cereales".into()), ..Default::default() };
+        set_product(&c, rows[0].id, &fields).unwrap();
         let rows = published_rows(&c).unwrap();
         assert_eq!(rows[0].item["price"], json!(14000));
+        assert_eq!(rows[0].item["code"], json!("alimentation/epicerie/riz-cereales"));
+        assert_eq!(rows[0].item["condition"], json!("new"));
         assert_eq!(diff(&c, &rows).0.len(), 1);
         // Décoché : à retirer.
         publish(&c, &[rows[0].id], false).unwrap();
         let rows = published_rows(&c).unwrap();
         assert_eq!(diff(&c, &rows), (vec![], vec![1]));
-        assert!(set_product(&c, 1, true, Some(-5)).is_err());
+        assert!(set_product(&c, 1, &ProductFields { on: true, price: Some(-5), ..Default::default() }).is_err());
+        assert!(set_product(&c, 1, &ProductFields { on: true, code: Some("femmes".into()), ..Default::default() }).is_err(), "pas une sous-catégorie");
+        // Classement de plusieurs produits : le public est proposé (Femmes → women).
+        assert_eq!(classify(&c, &[1, 2], "femmes/vetements/robes").unwrap(), 2);
+        let audience: Option<String> = c.query_row("SELECT sugu_audience FROM products WHERE id = 2", [], |r| r.get(0)).unwrap();
+        assert_eq!(audience.as_deref(), Some("women"));
+        assert!(classify(&c, &[1], "inconnu").is_err());
     }
 }

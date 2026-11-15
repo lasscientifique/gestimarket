@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api, countryName, photoUrl, price, whatsappLink, type Home, type Item, type ProductPage, type Shop } from "./api";
+import { AUDIENCES, CONDITIONS, api, countryName, photoUrl, price, whatsappLink, type Home, type Item, type ProductPage, type Shop, type TaxNode } from "./api";
 
 // ───────────────────────────── Pages derrière « # » ─────────────────────────────
 // #/                         accueil
 // #/r?q=riz&ville=Bamako     recherche (q, pays, ville, cat)
 // #/p/<id>                   fiche produit
 // #/b/<boutique>             page d'une boutique
+// #/c/<classement>           catégorie, section ou sous-catégorie (« femmes/vetements/robes »)
 
-type Route = { page: "home" | "results" | "product" | "shop" | "missing"; id: string; query: URLSearchParams };
+type Route = { page: "home" | "results" | "product" | "shop" | "category" | "missing"; id: string; query: URLSearchParams };
 
 function parseRoute(): Route {
   const raw = window.location.hash.replace(/^#/, "") || "/";
@@ -18,6 +19,7 @@ function parseRoute(): Route {
   if (parts[0] === "r") return { page: "results", id: "", query };
   if (parts[0] === "p" && parts[1]) return { page: "product", id: decodeURIComponent(parts[1]), query };
   if (parts[0] === "b" && parts[1]) return { page: "shop", id: decodeURIComponent(parts[1]), query };
+  if (parts[0] === "c" && parts[1]) return { page: "category", id: parts.slice(1).map(decodeURIComponent).join("/"), query };
   return { page: "missing", id: "", query };
 }
 
@@ -214,7 +216,7 @@ function HomePage() {
           <h2>Catégories</h2>
           <div className="chips">
             {h.categories.map((c) => (
-              <a key={c.category} className="chip" href={searchHash({ pays: country, ville: remembered("ville"), cat: c.category })}>
+              <a key={c.code ?? c.category} className="chip" href={c.code ? `#/c/${c.code}` : searchHash({ pays: country, ville: remembered("ville"), cat: c.category })}>
                 {c.category} <small>{c.products}</small>
               </a>
             ))}
@@ -332,12 +334,20 @@ function ProductView({ id }: { id: string }) {
   }
   const link = window.location.href;
   const message = `Bonjour ${shop.name}, je souhaite commander : ${p.name} (${price(p)}), vu sur Sugu Eden : ${link}`;
+  const gallery = p.photos && p.photos.length ? p.photos : p.photo ? [p.photo] : [];
   return (
     <Layout>
+      {p.code && <Breadcrumb code={p.code} />}
       <article className="product">
-        <Photo path={p.photo} alt={p.name} big />
+        <Gallery photos={gallery} alt={p.name} />
         <div className="product-info">
           <h1>{p.name}</h1>
+          {(p.condition && p.condition !== "new") || p.audience ? (
+            <div className="tags">
+              {p.condition && p.condition !== "new" && <span className="tag">{CONDITIONS[p.condition]}</span>}
+              {p.audience && <span className="tag">{AUDIENCES[p.audience]}</span>}
+            </div>
+          ) : null}
           <div className="price big">{price(p)}{p.unit && p.unit !== "pce" ? <small> / {p.unit}</small> : null}</div>
           <p className={p.in_stock ? "stock in" : "stock out"}>
             {p.in_stock ? (p.stock !== null ? `En stock : ${p.stock}` : "En stock") : "Épuisé pour le moment"}
@@ -361,6 +371,103 @@ function ProductView({ id }: { id: string }) {
           <Grid items={more} />
         </section>
       )}
+    </Layout>
+  );
+}
+
+/** Photos du produit : la grande, puis les petites à toucher pour la changer. */
+function Gallery({ photos, alt }: { photos: string[]; alt: string }) {
+  const [index, setIndex] = useState(0);
+  if (photos.length === 0) return <Photo path={null} alt={alt} big />;
+  return (
+    <div className="gallery">
+      <Photo path={photos[Math.min(index, photos.length - 1)]} alt={alt} big />
+      {photos.length > 1 && (
+        <div className="thumbs">
+          {photos.map((ph, i) => (
+            <button key={ph} type="button" className={i === index ? "active" : ""} onClick={() => setIndex(i)} aria-label={`Photo ${i + 1}`}>
+              <Photo path={ph} alt="" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** « Femmes › Vêtements › Robes », chaque niveau cliquable. */
+function Breadcrumb({ code }: { code: string }) {
+  const tax = useLoad(() => api.taxonomy(), []);
+  const nodes = tax.data ?? [];
+  const chain: TaxNode[] = [];
+  let at: string | null = code;
+  while (at) {
+    const node: TaxNode | undefined = nodes.find((n) => n.code === at);
+    if (!node) break;
+    chain.unshift(node);
+    at = node.parent;
+  }
+  if (chain.length === 0) return null;
+  return (
+    <nav className="crumbs">
+      <a href="#/">Accueil</a>
+      {chain.map((n) => (
+        <span key={n.code}> › <a href={`#/c/${n.code}`}>{n.name}</a></span>
+      ))}
+    </nav>
+  );
+}
+
+// ───────────────────────────── Catégorie, section, sous-catégorie ─────────────────────────────
+
+function CategoryPage({ code }: { code: string }) {
+  const country = remembered("pays");
+  const tax = useLoad(() => api.taxonomy(), []);
+  const counts = useLoad(() => api.counts(country), [country]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fetchPage = (offset: number) => {
+    setBusy(true);
+    api
+      .search({ code, country, offset })
+      .then((r) => {
+        setItems((old) => (offset === 0 ? r.items : [...old, ...r.items]));
+        setTotal(r.total);
+      })
+      .catch(() => setTotal(0))
+      .finally(() => setBusy(false));
+  };
+  useEffect(() => {
+    setItems([]);
+    setTotal(null);
+    fetchPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, country]);
+  const nodes = tax.data ?? [];
+  const node = nodes.find((n) => n.code === code);
+  const children = nodes.filter((n) => n.parent === code && (counts.data?.[n.code] ?? 0) > 0);
+  if (tax.data && !node) return <Layout><Message>Rayon introuvable. <a href="#/">Retour à l'accueil</a></Message></Layout>;
+  return (
+    <Layout>
+      <Breadcrumb code={code} />
+      <section>
+        <h1 className="results-title">{node?.name ?? "…"} {total !== null && <small className="muted">· {total} produit(s)</small>}</h1>
+        {children.length > 0 && (
+          <div className="chips">
+            {children.map((c) => (
+              <a key={c.code} className="chip" href={`#/c/${c.code}`}>
+                {c.name} <small>{counts.data?.[c.code]}</small>
+              </a>
+            ))}
+          </div>
+        )}
+        {total === 0 && <Message>Pas encore de produits ici. <a href="#/">Voir les autres rayons</a></Message>}
+        <Grid items={items} />
+        {total !== null && items.length < total && (
+          <button className="more" disabled={busy} onClick={() => fetchPage(items.length)}>{busy ? "Chargement…" : "Voir plus"}</button>
+        )}
+      </section>
     </Layout>
   );
 }
@@ -407,6 +514,8 @@ export function App() {
       return <ProductView id={route.id} />;
     case "shop":
       return <ShopView slug={route.id} />;
+    case "category":
+      return <CategoryPage code={route.id} />;
     default:
       return (
         <Layout>

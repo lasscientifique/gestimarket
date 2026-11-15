@@ -1,5 +1,7 @@
 import { local, rpc, setToken } from "./lib/transport";
 import type {
+  SuguSuggestion,
+  SuguTaxonomy,
   SuguStatus,
   AccountLinkResult,
   AccountLoginResult,
@@ -174,6 +176,7 @@ export const api = {
   deleteCategory: (id: number, pin: string) => call<void>("delete_category", { id, pin }),
   listProducts: (filter: {
     search?: string;
+    sugu_incomplete?: boolean;
     category_id?: number | null;
     supplier_id?: number | null;
     location_id?: number | null;
@@ -341,7 +344,14 @@ export const api = {
   suguSettings: (p: { enabled?: boolean; accept?: boolean; whatsapp?: string; description?: string; stock_mode?: string; stock_margin?: number }) =>
     call<SuguStatus>("sugu_settings", p),
   suguPublish: (ids: number[], on: boolean) => call<number>("sugu_publish", { ids, on }),
-  suguProduct: (id: number, on: boolean, price: number | null) => call<void>("sugu_product", { id, on, price }),
+  suguProduct: (
+    id: number,
+    p: { on: boolean; price: number | null; code: string | null; condition: string; audience: string | null; keywords: string | null },
+  ) => call<void>("sugu_product", { id, ...p }),
+  suguTaxonomy: () => call<SuguTaxonomy>("sugu_taxonomy"),
+  suguSuggest: (name: string, aisle: string, brand: string) => call<SuguSuggestion[]>("sugu_suggest", { name, aisle, brand }),
+  suguClassify: (ids: number[], code: string) => call<number>("sugu_classify", { ids, code }),
+  productPhotosSet: (id: number, photos: number[]) => call<Product>("product_photos_set", { id, photos }),
   suguSyncNow: () => call<void>("sugu_sync_now"),
   cashierStats: () => call<CashierStats>("cashier_stats"),
   closeCashSession: (input: { counted_amount: number; note: string | null }, pin: string) =>

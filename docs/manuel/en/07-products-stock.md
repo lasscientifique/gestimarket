@@ -13,7 +13,14 @@ With the **PRO** and **BUSINESS** plans, the shop shows the products it chooses 
 
 1. **Settings → Sugu Eden** (administrator): WhatsApp number for orders, shop introduction, stock shown (“In stock / Sold out” or the quantity, with a safety margin), then the agreement and **Publish my shop on Sugu Eden**. Name, country, city and address are those of the shop account; the logo is the one in Settings → Appearance.
 2. **Choose the products**: in the product form, tick **Publish on Sugu Eden** (optional Sugu Eden price: empty means the sale price); or select several products in the list, then **Publish on Sugu Eden**. A small bag icon marks the published products.
-3. The server PC (or the single station) sends what changed on its own, every 2 minutes: photo, name, price, category, availability. A sale at the till updates the availability.
+3. The server PC (or the single station) sends what changed on its own, every 2 minutes: photos, name, price, classification, availability. A sale at the till updates the availability.
+
+**Describing a product well for Sugu Eden** (product form):
+
+- **Photos**: a main photo and up to **7 more** (“Other photos”), in the order you want. Sugu Eden shows them all.
+- **Classification on Sugu Eden**: Category → Section → Subcategory (for example Women › Clothing › Dresses). GestiMarket **suggests** a classification from the name, the aisle and the brand; you can also search a word or browse the categories, those of your business type first. Your shop's aisles do not change.
+- **Condition** (new, used, refurbished), **For whom** (woman, man, child…) and **keywords** buyers type.
+- Product list: the **Sugu: to complete** filter shows published products without classification or photo; **Classify on Sugu Eden** classifies several selected products at once.
 
 **Remove the shop from Sugu Eden** (same tab) deletes the shop and its products from the website at once. When the PRO or BUSINESS subscription ends, the shop is no longer shown.
 

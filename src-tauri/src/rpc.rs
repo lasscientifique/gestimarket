@@ -854,8 +854,38 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }),
         // Fiche produit : publication et prix Sugu Eden.
         "sugu_product" => run(Manager, &|c, _| {
-            crate::sugu::set_product(c, arg(&a, "id")?, arg(&a, "on")?, arg(&a, "price")?).map_err(AppError::Validation)?;
+            let fields: crate::sugu::ProductFields = serde_json::from_value(a.clone())
+                .map_err(|e| AppError::Validation(format!("Paramètres invalides : {e}")))?;
+            crate::sugu::set_product(c, arg(&a, "id")?, &fields).map_err(AppError::Validation)?;
             out(())
+        }),
+        // Classement Sugu Eden : la liste complète, et les catégories du type de commerce de la boutique d'abord.
+        "sugu_taxonomy" => run(Any, &|c, _| {
+            let t = crate::sugu_tax::current();
+            let types = crate::sugu_tax::shop_types(c);
+            let mut favored: Vec<&str> = types.iter().flat_map(|s| crate::sugu_tax::priorities(s).iter().copied()).collect();
+            favored.dedup();
+            out(json!({ "version": t.version, "items": &t.items, "favored": favored }))
+        }),
+        // Classements proposés pour un produit (nom, rayon, marque) ou pour un texte tapé.
+        "sugu_suggest" => run(Any, &|c, _| {
+            let name: String = arg::<Option<String>>(&a, "name")?.unwrap_or_default();
+            let aisle: String = arg::<Option<String>>(&a, "aisle")?.unwrap_or_default();
+            let brand: String = arg::<Option<String>>(&a, "brand")?.unwrap_or_default();
+            let types = crate::sugu_tax::shop_types(c);
+            out(crate::sugu_tax::suggest(&name, &aisle, &brand, &types, 6))
+        }),
+        "sugu_classify" => run(Manager, &|c, _| {
+            let ids: Vec<i64> = arg(&a, "ids")?;
+            let code: String = arg(&a, "code")?;
+            out(crate::sugu::classify(c, &ids, &code).map_err(AppError::Validation)?)
+        }),
+        // Photos en plus de la photo principale (7 au plus), dans l'ordre.
+        "product_photos_set" => run(Manager, &|c, u| {
+            let photos: Vec<i64> = arg(&a, "photos")?;
+            catalog::set_photos(c, u, arg(&a, "id")?, &photos)?;
+            crate::sugu::wake();
+            out(catalog::get_product(c, arg(&a, "id")?)?)
         }),
         "sugu_sync_now" => {
             state.require(origin, Admin)?;

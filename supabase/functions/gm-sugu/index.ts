@@ -6,7 +6,10 @@
 //   - "shop"     : { shop: { description, whatsapp, phone, currency, decimals, logo_key, logo? } } — fiche de la
 //                  boutique ; nom, pays, ville et adresse viennent du compte Eden Dev (gm_stores).
 //   - "products" : { upsert: [{ local_id, name, description, category, brand, unit, price, in_stock, stock,
-//                  photo_key, photo? }], remove: [local_id…] } — 100 produits et 20 photos au plus par appel.
+//                  code, condition, audience, keywords, photos: [{ key, photo? }] }], remove: [local_id…] } —
+//                  100 produits et 20 photos au plus par appel. code : sous-catégorie du classement Sugu Eden
+//                  (sugu_taxonomy) ; condition : new, used, refurbished ; audience : women, men, unisex, kids.
+//                  Sans « photos » (GestiMarket 0.30) : photo_key et photo? pour une seule photo.
 //   - "off"      : la boutique et ses produits quittent Sugu Eden (photos effacées).
 // Photo : { mime: "image/jpeg" | "image/png" | "image/webp", data: base64 } (700 Ko au plus), déposée dans le
 // bucket public « sugu ». photo_key change quand la photo change ; absente, la photo déjà publiée reste.
@@ -22,6 +25,10 @@ const MAX_PHOTOS = 20;
 const MAX_PHOTO_BYTES = 700 * 1024;
 const MAX_PRODUCTS = 5000;
 const MIMES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+const MAX_PRODUCT_PHOTOS = 8;
+const CONDITIONS = ["new", "used", "refurbished"];
+const AUDIENCES = ["women", "men", "unisex", "kids"];
+type Photo = { key: string; path: string };
 
 function json(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -69,7 +76,7 @@ async function upload(path: string, photo: { bytes: Uint8Array; mime: string }) 
 }
 
 async function removeFiles(paths: (string | null | undefined)[]) {
-  const list = paths.filter((p): p is string => !!p);
+  const list = [...new Set(paths.filter((p): p is string => !!p))];
   for (let i = 0; i < list.length; i += 100) {
     await sb.storage.from("sugu").remove(list.slice(i, i + 100));
   }
@@ -160,9 +167,14 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
   let photos = 0;
   const localIds = upsert.map((u) => Number((u as Record<string, unknown>).local_id));
   const { data: existing } = localIds.length
-    ? await sb.from("sugu_products").select("local_id, photo_path, photo_key").eq("store_id", store.store_id).in("local_id", localIds)
-    : { data: [] as { local_id: number; photo_path: string | null; photo_key: string }[] };
-  const known = new Map((existing ?? []).map((e) => [Number(e.local_id), e]));
+    ? await sb.from("sugu_products").select("local_id, photo_path, photo_key, photos").eq("store_id", store.store_id).in("local_id", localIds)
+    : { data: [] as { local_id: number; photo_path: string | null; photo_key: string; photos: Photo[] }[] };
+  // Codes du classement reçus : seuls ceux qui existent sont gardés.
+  const wanted = [...new Set(upsert.map((u) => text((u as Record<string, unknown>).code, 200)).filter(Boolean))];
+  const { data: codes } = wanted.length ? await sb.from("sugu_taxonomy").select("code").in("code", wanted) : { data: [] as { code: string }[] };
+  const validCodes = new Set(((codes ?? []) as { code: string }[]).map((c) => c.code));
+  type Known = { local_id: number; photo_path: string | null; photo_key: string; photos: Photo[] | null };
+  const known = new Map(((existing ?? []) as Known[]).map((e) => [Number(e.local_id), e]));
   const rows: Record<string, unknown>[] = [];
   const stale: string[] = [];
   for (const raw of upsert) {
@@ -174,19 +186,49 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
       throw new UserError(`Produit invalide : ${name || localId}.`);
     }
     const before = known.get(localId);
-    const photoKey = text(u.photo_key, 40);
+    let photoKey = text(u.photo_key, 40);
     let photoPath: string | null = before?.photo_path ?? null;
-    if (u.photo) {
-      photos += 1;
-      if (photos > MAX_PHOTOS) throw new UserError("Trop de photos en un seul envoi.");
-      const photo = decodePhoto(u.photo);
-      photoPath = `p/${shop.slug}/${localId}-${photoKey || "1"}.${photo.ext}`;
-      await upload(photoPath, photo);
-      if (before?.photo_path && before.photo_path !== photoPath) stale.push(before.photo_path);
-    } else if (!photoKey) {
-      if (before?.photo_path) stale.push(before.photo_path);
-      photoPath = null;
+    const previous: Photo[] =
+      Array.isArray(before?.photos) && before.photos.length ? before.photos : before?.photo_path ? [{ key: before.photo_key, path: before.photo_path }] : [];
+    let gallery: Photo[];
+    if (Array.isArray(u.photos)) {
+      // Photos du produit, dans l'ordre (la première est la principale) : nouvelles déposées, anciennes gardées.
+      gallery = [];
+      for (const raw of (u.photos as Record<string, unknown>[]).slice(0, MAX_PRODUCT_PHOTOS)) {
+        const key = text(raw?.key, 40);
+        if (!key || gallery.some((g) => g.key === key)) continue;
+        if (raw.photo) {
+          photos += 1;
+          if (photos > MAX_PHOTOS) throw new UserError("Trop de photos en un seul envoi.");
+          const photo = decodePhoto(raw.photo);
+          const path = `p/${shop.slug}/${localId}-${key}.${photo.ext}`;
+          await upload(path, photo);
+          gallery.push({ key, path });
+        } else {
+          const kept = previous.find((p) => p.key === key);
+          if (kept) gallery.push(kept);
+        }
+      }
+      stale.push(...previous.filter((p) => !gallery.some((g) => g.path === p.path)).map((p) => p.path));
+      photoPath = gallery[0]?.path ?? null;
+      photoKey = gallery[0]?.key ?? "";
+    } else {
+      if (u.photo) {
+        photos += 1;
+        if (photos > MAX_PHOTOS) throw new UserError("Trop de photos en un seul envoi.");
+        const photo = decodePhoto(u.photo);
+        photoPath = `p/${shop.slug}/${localId}-${photoKey || "1"}.${photo.ext}`;
+        await upload(photoPath, photo);
+        if (before?.photo_path && before.photo_path !== photoPath) stale.push(before.photo_path);
+      } else if (!photoKey) {
+        if (before?.photo_path) stale.push(before.photo_path);
+        photoPath = null;
+      }
+      gallery = photoPath ? [{ key: photoKey, path: photoPath }] : [];
     }
+    const code = text(u.code, 200);
+    const condition = text(u.condition, 20);
+    const audience = text(u.audience, 20);
     const stock = u.stock === null || u.stock === undefined || u.stock === "" ? null : Number(u.stock);
     rows.push({
       store_id: store.store_id,
@@ -201,6 +243,11 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
       stock_shown: stock !== null && Number.isFinite(stock) ? Math.max(0, stock) : null,
       photo_path: photoPath,
       photo_key: photoPath ? photoKey : "",
+      photos: gallery,
+      code: validCodes.has(code) ? code : null,
+      condition: CONDITIONS.includes(condition) ? condition : "new",
+      audience: AUDIENCES.includes(audience) ? audience : null,
+      keywords: text(u.keywords, 200),
     });
   }
   if (rows.length) {
@@ -208,8 +255,10 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
     if (error) throw error;
   }
   if (remove.length) {
-    const { data: gone } = await sb.from("sugu_products").select("photo_path").eq("store_id", store.store_id).in("local_id", remove);
-    stale.push(...(gone ?? []).map((g) => g.photo_path as string));
+    const { data: gone } = await sb.from("sugu_products").select("photo_path, photos").eq("store_id", store.store_id).in("local_id", remove);
+    for (const g of gone ?? []) {
+      stale.push(g.photo_path as string, ...((Array.isArray(g.photos) ? g.photos : []) as Photo[]).map((p) => p.path));
+    }
     const { error } = await sb.from("sugu_products").delete().eq("store_id", store.store_id).in("local_id", remove);
     if (error) throw error;
   }
@@ -220,8 +269,9 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
 async function off(store: Store) {
   const shop = await current(store.store_id);
   if (!shop) return;
-  const { data: all } = await sb.from("sugu_products").select("photo_path").eq("store_id", store.store_id);
-  await removeFiles([...(all ?? []).map((p) => p.photo_path as string), shop.logo_path]);
+  const { data: all } = await sb.from("sugu_products").select("photo_path, photos").eq("store_id", store.store_id);
+  const files = (all ?? []).flatMap((p) => [p.photo_path as string, ...((Array.isArray(p.photos) ? p.photos : []) as Photo[]).map((x) => x.path)]);
+  await removeFiles([...files, shop.logo_path]);
   const { error } = await sb.from("sugu_shops").delete().eq("store_id", store.store_id);
   if (error) throw error;
 }

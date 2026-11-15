@@ -15,6 +15,8 @@ import { csvMoney, currencySymbol, dateOnly, daysUntil, minorToInput, money, par
 import type { Category, Location, Packaging, Product, Supplier } from "../types";
 import { tl } from "../lib/i18n";
 import { useLicense } from "../lib/license";
+import { SuguPicker } from "../components/SuguPicker";
+import { ProductPhotos } from "../components/ProductPhotos";
 
 export default function ProductsPage() {
   const { toast, confirm, askPin } = useApp();
@@ -27,7 +29,8 @@ export default function ProductsPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [filter, setFilter] = useState<"" | "low" | "unplaced" | "nocat" | "archived">("");
+  const [filter, setFilter] = useState<"" | "low" | "unplaced" | "nocat" | "archived" | "sugu">("");
+  const [classify, setClassify] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [modal, setModal] = useState<null | "new" | "import" | "labels" | Product>(null);
   const shown = useShowMore(products, `${search}|${categoryId}|${filter}`);
@@ -41,6 +44,7 @@ export default function ProductsPage() {
         without_location: filter === "unplaced",
         without_category: filter === "nocat",
         include_inactive: filter === "archived",
+        sugu_incomplete: filter === "sugu",
         limit: 5000,
       })
       .then(setProducts)
@@ -153,6 +157,11 @@ export default function ProductsPage() {
           <button className={filter === "unplaced" ? "active" : ""} onClick={() => setFilter("unplaced")}>{tl("Non rangés")}</button>
           <button className={filter === "nocat" ? "active" : ""} onClick={() => setFilter("nocat")}>{tl("Sans catégorie")}</button>
           <button className={filter === "archived" ? "active" : ""} onClick={() => setFilter("archived")}>{tl("+ Archivés")}</button>
+          {suguAllowed && (
+            <button className={filter === "sugu" ? "active" : ""} onClick={() => setFilter("sugu")} title={tl("Produits publiés sur Sugu Eden sans classement ou sans photo")}>
+              <ShoppingBag size={13} />  {tl("Sugu : à compléter")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -179,6 +188,7 @@ export default function ProductsPage() {
             <>
               <button className="btn btn-sm" onClick={() => suguPublish(true)}><ShoppingBag size={14} />  {tl("Publier sur Sugu Eden")}</button>
               <button className="btn btn-sm" onClick={() => suguPublish(false)}>{tl("Retirer de Sugu Eden")}</button>
+              <button className="btn btn-sm" onClick={() => setClassify(true)}>{tl("Classer sur Sugu Eden")}</button>
             </>
           )}
           <button className="btn btn-sm" onClick={() => setSelected(new Set())}>{tl("Désélectionner")}</button>
@@ -282,7 +292,47 @@ export default function ProductsPage() {
       )}
       {modal === "import" && <ImportModal onClose={() => setModal(null)} onDone={() => { load(); loadRefs(); }} />}
       {modal === "labels" && <LabelsModal products={selectedProducts} onClose={() => setModal(null)} />}
+      {classify && (
+        <ClassifyModal
+          products={selectedProducts}
+          onClose={() => setClassify(false)}
+          onDone={() => {
+            setClassify(false);
+            load();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/** Même classement Sugu Eden pour les produits choisis (suggestions d'après le premier). */
+function ClassifyModal({ products, onClose, onDone }: { products: Product[]; onClose: () => void; onDone: () => void }) {
+  const { toast } = useApp();
+  const [code, setCode] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const first = products[0];
+  const apply = async () => {
+    if (!code) return;
+    setBusy(true);
+    try {
+      const n = await api.suguClassify(products.map((p) => p.id), code);
+      toast.success(tl("{0} produit(s) classé(s) sur Sugu Eden.", [n]));
+      onDone();
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={tl("Classer sur Sugu Eden ({0} produit(s))", [products.length])} onClose={onClose} width={620}>
+      <SuguPicker value={code} onChange={setCode} hint={first ? { name: first.name, aisle: categoryPath(first) ?? "", brand: first.brand ?? "" } : undefined} />
+      <div className="row-start" style={{ marginTop: 14 }}>
+        <button className="btn btn-primary" disabled={!code || busy} onClick={apply}>{tl("Appliquer")}</button>
+        <button className="btn" onClick={onClose}>{tl("Annuler")}</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -338,7 +388,12 @@ function ProductForm({
     wholesale_min_qty: product?.wholesale_min_qty ? String(product.wholesale_min_qty).replace(".", ",") : "",
     sugu_publish: product?.sugu_publish ?? false,
     sugu_price: product?.sugu_price ? minorToInput(product.sugu_price) : "",
+    sugu_code: product?.sugu_code ?? null,
+    sugu_condition: product?.sugu_condition ?? "new",
+    sugu_audience: product?.sugu_audience ?? "",
+    sugu_keywords: product?.sugu_keywords ?? "",
   });
+  const [photos, setPhotos] = useState<number[]>(product?.photos ?? []);
   const [packs, setPacks] = useState<
     (Omit<Packaging, "sale_price" | "quantity" | "wholesale_price" | "wholesale_min_qty"> & { price: string; qty: string; wprice: string; wqty: string })[]
   >(
@@ -428,9 +483,25 @@ function ProductForm({
       }, pin);
       // Sugu Eden : publication et prix propre (vide : le prix de vente).
       const suguPrice = f.sugu_price.trim() ? toMinor(f.sugu_price) : null;
-      if (f.sugu_publish !== (product?.sugu_publish ?? false) || suguPrice !== (product?.sugu_price ?? null)) {
-        await api.suguProduct(saved.id, f.sugu_publish, suguPrice);
-      }
+      const sugu = {
+        on: f.sugu_publish,
+        price: suguPrice,
+        code: f.sugu_code,
+        condition: f.sugu_condition,
+        audience: f.sugu_audience || null,
+        keywords: f.sugu_keywords.trim() || null,
+      };
+      const before = {
+        on: product?.sugu_publish ?? false,
+        price: product?.sugu_price ?? null,
+        code: product?.sugu_code ?? null,
+        condition: product?.sugu_condition ?? "new",
+        audience: product?.sugu_audience ?? null,
+        keywords: product?.sugu_keywords ?? null,
+      };
+      if (JSON.stringify(sugu) !== JSON.stringify(before)) await api.suguProduct(saved.id, sugu);
+      // Autres photos (Sugu Eden les montre toutes).
+      if (JSON.stringify(photos) !== JSON.stringify(product?.photos ?? [])) await api.productPhotosSet(saved.id, photos);
       toast.success(product ? tl("Produit modifié.") : tl("Produit créé."));
       onSaved();
     } catch (e) {
@@ -463,7 +534,8 @@ function ProductForm({
       )}
       <div className="product-form">
         <div className="product-form-side">
-          <ImageField value={f.image_id} onChange={(id) => set("image_id", id)} size={180} />
+          <ImageField value={f.image_id} onChange={(id) => set("image_id", id)} size={180} maxSize={1000} label={tl("Photo principale")} />
+          <ProductPhotos value={photos} onChange={setPhotos} />
           <div className="side-box">
             <span className="field-label"><MapPin size={14} />  {tl("Emplacement en magasin")}</span>
             <LocationSelect locations={locations} value={f.location_id} onChange={(id) => set("location_id", id)} />
@@ -627,9 +699,44 @@ function ProductForm({
                 <ShoppingBag size={15} />  {tl("Publier sur Sugu Eden (la place de marché d'Eden Dev)")}
               </label>
               {f.sugu_publish && (
-                <Field label={tl("Prix sur Sugu Eden")} hint={tl("Vide : le prix de vente ({0}). Photo, nom, catégorie et disponibilité sont publiés avec.", [money(price)])}>
-                  <input inputMode="decimal" className="num" value={f.sugu_price} onChange={(e) => set("sugu_price", e.target.value)} placeholder={minorToInput(price)} />
-                </Field>
+                <>
+                  <Field label={tl("Prix sur Sugu Eden")} hint={tl("Vide : le prix de vente ({0}). Photo, nom, catégorie et disponibilité sont publiés avec.", [money(price)])}>
+                    <input inputMode="decimal" className="num" value={f.sugu_price} onChange={(e) => set("sugu_price", e.target.value)} placeholder={minorToInput(price)} />
+                  </Field>
+                  <Field label={tl("État")}>
+                    <select value={f.sugu_condition} onChange={(e) => set("sugu_condition", e.target.value as typeof f.sugu_condition)}>
+                      <option value="new">{tl("Neuf")}</option>
+                      <option value="used">{tl("Occasion")}</option>
+                      <option value="refurbished">{tl("Reconditionné")}</option>
+                    </select>
+                  </Field>
+                  <Field label={tl("Pour qui")}>
+                    <select value={f.sugu_audience ?? ""} onChange={(e) => set("sugu_audience", e.target.value as typeof f.sugu_audience)}>
+                      <option value="">{tl("Tout le monde")}</option>
+                      <option value="women">{tl("Femme")}</option>
+                      <option value="men">{tl("Homme")}</option>
+                      <option value="unisex">{tl("Homme et femme")}</option>
+                      <option value="kids">{tl("Enfant")}</option>
+                    </select>
+                  </Field>
+                  <div className="span-2 sugu-classement">
+                    <span className="field-label">{tl("Classement sur Sugu Eden")}</span>
+                    <SuguPicker
+                      value={f.sugu_code}
+                      onChange={(code) => {
+                        set("sugu_code", code);
+                        // Public proposé d'après la catégorie (Femmes, Hommes, Enfants), s'il n'est pas choisi.
+                        const top = code?.split("/")[0];
+                        const guess = top === "femmes" ? "women" : top === "hommes" ? "men" : top === "enfants" ? "kids" : "";
+                        if (guess && !f.sugu_audience) set("sugu_audience", guess as typeof f.sugu_audience);
+                      }}
+                      hint={{ name: f.name, aisle: categories.find((c) => c.id === f.category_id)?.path ?? "", brand: f.brand }}
+                    />
+                  </div>
+                  <Field label={tl("Mots-clés de recherche")} span={2} hint={tl("Mots que les acheteurs tapent : « iphone, apple, 128 go ». Séparés par des virgules.")}>
+                    <input value={f.sugu_keywords} maxLength={200} onChange={(e) => set("sugu_keywords", e.target.value)} />
+                  </Field>
+                </>
               )}
             </div>
           )}

@@ -148,6 +148,18 @@ main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 16px 
 .btn.wa { background: var(--wa); color: #fff; flex: 1 1 220px; }
 .btn.call { background: var(--surface); color: var(--text); border: 1px solid var(--line); flex: 1 1 160px; }
 
+/* Galerie, étiquettes, fil d'Ariane */
+.gallery { display: flex; flex-direction: column; gap: 8px; }
+.thumbs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.thumbs button { flex: none; padding: 0; border: 2px solid transparent; border-radius: 10px; background: none; cursor: pointer; }
+.thumbs button.active { border-color: var(--brand); }
+.thumbs .photo { width: 58px; height: 58px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { padding: 2px 9px; border-radius: 999px; background: var(--chip); font-size: 13px; }
+.crumbs { padding-top: 14px; font-size: 13px; color: var(--muted); }
+.crumbs a { color: var(--muted); }
+.results-title small { font-size: 14px; font-weight: 400; }
+
 /* Recherche */
 .results-title { font-size: 20px; margin: 18px 0 10px; }
 .results-title + .chips { margin-bottom: 14px; }

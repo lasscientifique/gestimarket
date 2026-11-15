@@ -18,6 +18,12 @@ export interface Item {
   unit: string;
   brand: string;
   category: string;
+  /** Classement Sugu Eden (sous-catégorie) ; état ; public visé. */
+  code?: string | null;
+  condition?: "new" | "used" | "refurbished";
+  audience?: "women" | "men" | "unisex" | "kids" | null;
+  /** Toutes les photos, la principale d'abord. */
+  photos?: string[];
   in_stock: boolean;
   stock: number | null;
   photo: string | null;
@@ -39,10 +45,18 @@ export interface Shop extends ShopRef {
   since?: string;
 }
 
+/** Classement Sugu Eden : Catégorie (1) → Section (2) → Sous-catégorie (3). */
+export interface TaxNode {
+  code: string;
+  parent: string | null;
+  level: number;
+  name: string;
+}
+
 export interface Home {
   countries: { code: string; shops: number }[];
   cities: { city: string; shops: number }[];
-  categories: { category: string; products: number }[];
+  categories: { code?: string; category: string; products: number }[];
   shops: (ShopRef & { logo: string | null; products: number; shop_type: string })[];
 }
 
@@ -73,15 +87,29 @@ async function rpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
   return (await res.json()) as T;
 }
 
+let taxonomy: Promise<TaxNode[]> | null = null;
+
 export const api = {
   home: (country: string) => rpc<Home>("sugu_home", { p_country: country || null }),
-  search: (p: { q?: string; country?: string; city?: string; category?: string; shop?: string; offset?: number; limit?: number }) =>
+  /** Classement complet (lu une fois). */
+  taxonomy: () =>
+    (taxonomy ??= rpc<{ items: TaxNode[] }>("sugu_taxonomy", {}).then(
+      (r) => r.items,
+      (e) => {
+        taxonomy = null;
+        throw e;
+      },
+    )),
+  /** Nombre de produits par ligne du classement. */
+  counts: (country: string) => rpc<Record<string, number>>("sugu_counts", { p_country: country || null }),
+  search: (p: { q?: string; country?: string; city?: string; category?: string; shop?: string; code?: string; offset?: number; limit?: number }) =>
     rpc<Results>("sugu_search", {
       p_q: p.q || null,
       p_country: p.country || null,
       p_city: p.city || null,
       p_category: p.category || null,
       p_shop: p.shop || null,
+      p_code: p.code || null,
       p_limit: p.limit ?? 24,
       p_offset: p.offset ?? 0,
     }),
@@ -123,6 +151,9 @@ export function countryName(code: string): string {
   }
   return (regions && regions.of(code)) || code;
 }
+
+export const CONDITIONS: Record<string, string> = { new: "Neuf", used: "Occasion", refurbished: "Reconditionné" };
+export const AUDIENCES: Record<string, string> = { women: "Femme", men: "Homme", unisex: "Homme et femme", kids: "Enfant" };
 
 /** Lien WhatsApp vers la boutique, avec le message de commande déjà écrit. */
 export function whatsappLink(number: string, message: string): string | null {

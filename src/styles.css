@@ -1213,6 +1213,25 @@ input, select, textarea { border-radius: 10px; }
 .sugu-mark { color: #e8590c; display: inline-flex; vertical-align: -2px; margin-left: 4px; }
 .sugu-product { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 16px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, #e8590c 45%, transparent); border-radius: var(--radius-sm); }
 .sugu-product .field { min-width: 180px; }
+/* Sugu Eden : classement et photos du produit */
+.sugu-picker { display: flex; flex-direction: column; gap: 8px; }
+.sugu-chosen { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: var(--radius-sm); background: color-mix(in srgb, #e8590c 10%, transparent); }
+.sugu-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chip-btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.chip-btn.active { border-color: #e8590c; color: #e8590c; }
+.sugu-search { max-width: 100%; }
+.sugu-results { display: flex; flex-direction: column; max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.sugu-results button { text-align: left; border: 0; border-bottom: 1px solid var(--border); background: var(--surface); padding: 7px 10px; cursor: pointer; color: var(--text); }
+.sugu-results button:hover, .sugu-results button.active { background: var(--surface-3); }
+.sugu-browse { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 640px) { .sugu-browse { grid-template-columns: 1fr; } }
+.sugu-classement { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.product-photos { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.product-photos-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.product-photo { position: relative; width: 84px; display: flex; flex-direction: column; gap: 2px; }
+.product-photo img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.product-photo-actions { display: flex; justify-content: space-between; }
+.product-photo-add { width: 84px; height: 84px; }
 .client-join .segmented { max-width: 460px; }
 .client-join .segmented button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 .client-code { margin: 8px 0 0; }

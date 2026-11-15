@@ -16,6 +16,7 @@ mod rpc;
 mod services;
 mod state;
 mod sugu;
+mod sugu_tax;
 mod tunnel;
 
 use std::time::Duration;
