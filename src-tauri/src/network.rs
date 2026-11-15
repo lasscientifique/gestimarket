@@ -349,6 +349,8 @@ async fn tls_config(app: &AppHandle) -> Option<axum_server::tls_rustls::RustlsCo
 
 /// Adresse et route d'un appareil. Le tunnel (cloudflared) tourne sur ce PC : ses requêtes arrivent
 /// depuis 127.0.0.1 avec les en-têtes Cloudflare. Ces en-têtes ne sont crus que depuis cette boucle locale.
+/// Toute autre adresse qui n'est pas celle d'un réseau privé (port de la box ouvert vers ce PC, adresse
+/// fixe…) vient d'Internet : appareil autorisé, droit « Internet » et formule exigés, comme par le tunnel.
 fn client_route(addr: &std::net::SocketAddr, headers: &HeaderMap) -> (String, &'static str) {
     let peer = addr.ip().to_canonical();
     let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
@@ -359,8 +361,21 @@ fn client_route(addr: &std::net::SocketAddr, headers: &HeaderMap) -> (String, &'
         if headers.contains_key("cf-ray") {
             return (peer.to_string(), "internet");
         }
+        return (peer.to_string(), "local");
     }
-    (peer.to_string(), "local")
+    (peer.to_string(), if private_network(peer) { "local" } else { "internet" })
+}
+
+/// Adresse d'un réseau du magasin : 10.x, 172.16–31.x, 192.168.x, 169.254.x ; en IPv6 fc00::/7 et fe80::/10.
+/// 100.64.0.0/10 (réseau partagé des opérateurs) n'en fait pas partie : d'autres abonnés peuvent s'y trouver.
+fn private_network(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+        std::net::IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            v6.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+    }
 }
 
 /// Origines autorisées à appeler ce serveur depuis une autre adresse : les postes clients (application de
@@ -687,6 +702,23 @@ mod tests {
         // IPv4 vue en IPv6 (::ffff:192.168.1.30) : même adresse.
         let mapped: SocketAddr = "[::ffff:192.168.1.30]:50000".parse().unwrap();
         assert_eq!(client_route(&mapped, &HeaderMap::new()), ("192.168.1.30".to_string(), "local"));
+        for local in ["10.161.4.7:1", "172.16.5.4:1", "172.31.255.1:1", "169.254.3.9:1", "[fe80::1]:1", "[fd12::5]:1"] {
+            let a: SocketAddr = local.parse().unwrap();
+            assert_eq!(client_route(&a, &HeaderMap::new()).1, "local", "{local}");
+        }
+    }
+
+    #[test]
+    fn route_internet_sans_tunnel() {
+        // Port de la box ouvert vers ce PC : l'appareil vient d'Internet, même sans Cloudflare.
+        let public: SocketAddr = "41.73.10.20:50000".parse().unwrap();
+        assert_eq!(client_route(&public, &HeaderMap::new()), ("41.73.10.20".to_string(), "internet"));
+        // En-têtes forgés depuis Internet : ignorés, l'adresse réelle reste.
+        assert_eq!(client_route(&public, &headers(&[("cf-connecting-ip", "192.168.1.2"), ("cf-ray", "x")])), ("41.73.10.20".to_string(), "internet"));
+        for far in ["172.32.0.1:1", "100.64.1.2:1", "8.8.8.8:1", "[2001:db8::1]:1", "[::ffff:41.73.10.20]:1"] {
+            let a: SocketAddr = far.parse().unwrap();
+            assert_eq!(client_route(&a, &HeaderMap::new()).1, "internet", "{far}");
+        }
     }
 
     #[test]
