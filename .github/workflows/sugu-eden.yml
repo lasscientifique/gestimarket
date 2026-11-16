@@ -1,4 +1,5 @@
-# Site Sugu Eden (place de marché d'Eden Dev) : fabriqué à chaque changement de sugu/ et publié sur GitHub Pages.
+# Site Sugu Eden (place de marché d'Eden Dev) : fabriqué à chaque changement de sugu/ (ou de la palette des couleurs,
+# commune avec GestiMarket) et publié sur GitHub Pages.
 #
 # Une seule fois, dans GitHub : Settings → Pages → Build and deployment → Source : « GitHub Actions ».
 # Adresse : https://lasscientifique.github.io/gestimarket/ (gm_config.sugu_site_url chez Eden Dev), ou le nom de
@@ -8,7 +9,7 @@ name: Sugu Eden (site)
 on:
   push:
     branches: [main]
-    paths: ["sugu/**", "vite.sugu.config.ts", ".github/workflows/sugu-eden.yml"]
+    paths: ["sugu/**", "src/lib/variants.ts", "src-tauri/data/couleurs.txt", "vite.sugu.config.ts", ".github/workflows/sugu-eden.yml"]
   workflow_dispatch:
 
 permissions:
