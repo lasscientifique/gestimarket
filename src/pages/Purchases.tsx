@@ -6,8 +6,10 @@ import { HelpTip } from "../components/Help";
 import { Empty, Field, Modal, PageHeader } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
 import { addDays, currencySymbol, dateTime, isoDate, minorToInput, money, parseNumber, qty, toMinor } from "../lib/format";
-import type { Product, Purchase, Supplier } from "../types";
-import { tl } from "../lib/i18n";
+import type { Product, Purchase, Supplier, Variant } from "../types";
+import { getLang, tl } from "../lib/i18n";
+import { sellable } from "../components/Variants";
+import { swatchStyle, variantLabel } from "../lib/variants";
 
 export default function PurchasesPage() {
   const { toast } = useApp();
@@ -94,6 +96,8 @@ export default function PurchasesPage() {
 
 interface Line {
   product: Product;
+  /** Couleur ou taille reçue. */
+  variant: Variant | null;
   quantity: string;
   cost: string;
   price: string;
@@ -110,22 +114,37 @@ function PurchaseForm({ suppliers, onClose, onSaved }: { suppliers: Supplier[]; 
 
   const add = (p: Product) => {
     if (lines.some((l) => l.product.id === p.id)) return toast.info(tl("Ce produit est déjà dans la liste."));
-    setLines((ls) => [...ls, { product: p, quantity: "1", cost: minorToInput(p.purchase_price), price: minorToInput(p.sale_price), expiry: "" }]);
+    const base = { product: p, cost: minorToInput(p.purchase_price), price: minorToInput(p.sale_price), expiry: "" };
+    // Couleurs et tailles : une ligne pour chacune, quantité à taper (les lignes à 0 sont ignorées).
+    const variants = sellable(p);
+    setLines((ls) => [...ls, ...(variants.length ? variants.map((v) => ({ ...base, variant: v, quantity: "" })) : [{ ...base, variant: null, quantity: "1" }])]);
   };
+  /** Le prix de vente est celui du produit : une seule saisie (première ligne du produit). */
+  const firstOf = (i: number) => lines.findIndex((l) => l.product.id === lines[i].product.id) === i;
   const update = (i: number, patch: Partial<Line>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const lineTotal = (l: Line) => Math.round((parseNumber(l.quantity) || 0) * toMinor(l.cost || "0"));
   const total = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const received = lines.filter((l) => (parseNumber(l.quantity) || 0) > 0);
 
   const submit = async () => {
-    if (!(await confirm({ title: tl("Valider la réception"), message: tl("Le stock de {0} produit(s) sera augmenté. Montant : {1}.", [lines.length, money(total)]), confirmLabel: tl("Valider") }))) return;
+    if (!received.length) return toast.error(tl("Tapez la quantité reçue d'au moins un produit."));
+    if (!(await confirm({ title: tl("Valider la réception"), message: tl("Le stock de {0} produit(s) sera augmenté. Montant : {1}.", [received.length, money(total)]), confirmLabel: tl("Valider") }))) return;
     setBusy(true);
     try {
       await api.createPurchase({
         supplier_id: supplierId,
-        items: lines.map((l) => ({ product_id: l.product.id, quantity: parseNumber(l.quantity), unit_cost: toMinor(l.cost || "0"), expiry_date: l.expiry || null })),
+        items: received.map((l) => ({
+          product_id: l.product.id,
+          quantity: parseNumber(l.quantity),
+          unit_cost: toMinor(l.cost || "0"),
+          expiry_date: l.expiry || null,
+          variant_id: l.variant?.id ?? null,
+        })),
         note: note.trim() || null,
         update_costs: updateCosts,
-        new_sale_prices: lines.filter((l) => toMinor(l.price || "0") !== l.product.sale_price).map((l) => [l.product.id, toMinor(l.price || "0")] as [number, number]),
+        new_sale_prices: lines
+          .filter((l, i) => firstOf(i) && toMinor(l.price || "0") !== l.product.sale_price)
+          .map((l) => [l.product.id, toMinor(l.price || "0")] as [number, number]),
       });
       toast.success(tl("Réception enregistrée, stock mis à jour."));
       onSaved();
@@ -172,12 +191,19 @@ function PurchaseForm({ suppliers, onClose, onSaved }: { suppliers: Supplier[]; 
           </thead>
           <tbody>
             {lines.map((l, i) => (
-              <tr key={l.product.id}>
-                <td><strong>{l.product.name}</strong></td>
-                <td className="num">{qty(l.product.stock)} {l.product.unit}</td>
-                <td><input inputMode="decimal" value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} /></td>
+              <tr key={`${l.product.id}-${l.variant?.id ?? 0}`}>
+                <td>
+                  <strong>{l.product.name}</strong>
+                  {l.variant && (
+                    <div className="small">
+                      {l.variant.color && <span className="swatch" style={swatchStyle(l.variant.color)} />} {variantLabel(l.variant, getLang())}
+                    </div>
+                  )}
+                </td>
+                <td className="num">{qty(l.variant ? l.variant.stock : l.product.stock)} {l.product.unit}</td>
+                <td><input inputMode="decimal" value={l.quantity} placeholder="0" onChange={(e) => update(i, { quantity: e.target.value })} /></td>
                 <td><input inputMode="decimal" value={l.cost} onChange={(e) => update(i, { cost: e.target.value })} /></td>
-                <td><input inputMode="decimal" value={l.price} onChange={(e) => update(i, { price: e.target.value })} /></td>
+                <td>{firstOf(i) ? <input inputMode="decimal" value={l.price} onChange={(e) => update(i, { price: e.target.value })} /> : <span className="muted">—</span>}</td>
                 <td><input type="date" value={l.expiry} onChange={(e) => update(i, { expiry: e.target.value })} /></td>
                 <td className="num">{money(lineTotal(l))}</td>
                 <td><button className="icon-btn danger" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}><Trash2 size={15} /></button></td>

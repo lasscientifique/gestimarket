@@ -116,6 +116,38 @@ export interface Packaging {
 export interface ScanResult {
   product: Product;
   packaging: Packaging | null;
+  /** Code-barres d'une couleur ou taille. */
+  variant: Variant | null;
+}
+
+/** Couleur et/ou taille d'un produit, avec son stock (compris dans celui du produit). */
+export interface Variant {
+  id: number;
+  product_id: number;
+  /** Code de la palette (« rouge »). */
+  color: string | null;
+  /** Valeur du second axe (« M », « 42 », « 128 Go »). */
+  size: string | null;
+  barcode: string | null;
+  /** Prix propre (null : prix du produit). */
+  price: number | null;
+  stock: number;
+  /** Une des photos du produit. */
+  photo_id: number | null;
+  active: boolean;
+  /** « Rouge, M » (français). */
+  label: string;
+}
+
+export interface VariantInput {
+  id: number | null;
+  color: string | null;
+  size: string | null;
+  barcode: string | null;
+  price: number | null;
+  stock: number;
+  photo_id: number | null;
+  active: boolean;
 }
 
 export interface BusinessProfile {
@@ -423,6 +455,11 @@ export interface Product {
   sugu_keywords: string | null;
   /** Photos en plus de la principale (image_id), dans l'ordre. */
   photos: number[];
+  /** Couleurs et tailles (vide : aucune) et type du second axe (size, shoe, age, storage, volume, model). */
+  variants: Variant[];
+  variant_axis: string | null;
+  /** Liens de vidéos (TikTok, YouTube, Facebook, Instagram). */
+  video_links: string[];
   created_at: string;
   updated_at: string;
 }
@@ -491,6 +528,7 @@ export interface ProductInput {
   initial_stock?: number;
   wholesale_price?: number;
   wholesale_min_qty?: number;
+  video_links?: string[];
 }
 
 export interface ImportRow {
@@ -619,6 +657,8 @@ export interface SaleItem {
   regular_price: number | null;
   /** Quantité déjà retournée. */
   returned_quantity: number;
+  /** Couleur ou taille vendue. */
+  variant_id: number | null;
 }
 
 export type PriceKind = "retail" | "wholesale" | "promo";
@@ -627,6 +667,7 @@ export type PriceKind = "retail" | "wholesale" | "promo";
 export interface QuoteLine {
   product_id: number;
   packaging_id: number | null;
+  variant_id: number | null;
   unit_price: number;
   regular_price: number;
   kind: PriceKind;
@@ -803,7 +844,7 @@ export interface Sale {
 }
 
 export interface SaleInput {
-  items: { product_id: number; quantity: number; discount?: number; packaging_id?: number | null }[];
+  items: { product_id: number; quantity: number; discount?: number; packaging_id?: number | null; variant_id?: number | null }[];
   customer_id: number | null;
   discount: number;
   payments: PaymentInput[];
@@ -822,6 +863,7 @@ export interface PurchaseItem {
   unit_cost: number;
   total: number;
   expiry_date: string | null;
+  variant_id: number | null;
 }
 
 export interface Purchase {
@@ -1054,6 +1096,7 @@ export interface PosteInfo {
 export interface LiveCartLine {
   product_id: number;
   packaging_id: number | null;
+  variant_id?: number | null;
   name: string;
   unit: string;
   quantity: number;

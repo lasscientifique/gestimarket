@@ -75,6 +75,7 @@ import type {
   PromotionInput,
   ZData,
   ZReport,
+  VariantInput,
 } from "./types";
 import { getDeviceToken, setDeviceToken } from "./lib/device";
 
@@ -244,7 +245,7 @@ export const api = {
   planSetPrimary: (product_id: number, location_id: number) => call<Place[]>("plan_set_primary", { product_id, location_id }),
 
   // Stock
-  adjustStock: (input: { product_id: number; mode: "set" | "add" | "remove"; quantity: number; kind: string; note: string | null }, pin: string) =>
+  adjustStock: (input: { product_id: number; mode: "set" | "add" | "remove"; quantity: number; kind: string; note: string | null; variant_id?: number | null }, pin: string) =>
     call<number>("adjust_stock", { input, pin }),
   listStockMovements: (filter: { product_id?: number; kind?: string; from?: string; to?: string; limit?: number } = {}) =>
     call<StockMovement[]>("list_stock_movements", { filter }),
@@ -289,7 +290,7 @@ export const api = {
   } = {}) => call<Sale[]>("list_sales", { filter }),
   getSale: (id: number) => call<Sale>("get_sale", { id }),
   cancelSale: (id: number, reason: string, pin: string) => call<Sale>("cancel_sale", { id, reason, pin }),
-  saleQuote: (items: { product_id: number; quantity: number; packaging_id: number | null }[], customer_id: number | null) =>
+  saleQuote: (items: { product_id: number; quantity: number; packaging_id: number | null; variant_id: number | null }[], customer_id: number | null) =>
     call<QuoteLine[]>("sale_quote", { items, customer_id }),
   // Retours et avoirs (validés par le PIN d'un gestionnaire ou de l'administrateur)
   createReturn: (input: ReturnInput, pin: string) => call<SaleReturn>("create_return", { input, pin }),
@@ -310,7 +311,7 @@ export const api = {
   // Achats
   createPurchase: (input: {
     supplier_id: number | null;
-    items: { product_id: number; quantity: number; unit_cost: number; expiry_date: string | null }[];
+    items: { product_id: number; quantity: number; unit_cost: number; expiry_date: string | null; variant_id?: number | null }[];
     note: string | null;
     update_costs: boolean;
     new_sale_prices: [number, number][];
@@ -352,6 +353,9 @@ export const api = {
   suguSuggest: (name: string, aisle: string, brand: string) => call<SuguSuggestion[]>("sugu_suggest", { name, aisle, brand }),
   suguClassify: (ids: number[], code: string) => call<number>("sugu_classify", { ids, code }),
   productPhotosSet: (id: number, photos: number[]) => call<Product>("product_photos_set", { id, photos }),
+  /** Couleurs et tailles : le PIN d'un responsable est demandé si le stock ou le prix d'une déclinaison change. */
+  productVariantsSet: (id: number, axis: string | null, variants: VariantInput[], pin?: string) =>
+    call<Product>("product_variants_set", { id, axis, variants, pin }),
   suguSyncNow: () => call<void>("sugu_sync_now"),
   cashierStats: () => call<CashierStats>("cashier_stats"),
   closeCashSession: (input: { counted_amount: number; note: string | null }, pin: string) =>

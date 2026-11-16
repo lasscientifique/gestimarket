@@ -4,6 +4,9 @@
 
 - **Add**: Products → New product: name, category, purchase and sale price, stock, alert threshold, photo. A barcode is created automatically if the product has none.
 - **Packagings** (carton, pack) and **wholesale prices** by quantity or for wholesale customers.
+- **Colours and sizes** (product form): choose the colours from the palette, then the kind of size (size, shoe size, age, storage, volume or model) and the sizes. Each combination (for example Red, M) has **its own stock** and, if needed, **its own barcode** and **price**. The product stock becomes the total. Changing the stock or price of a combination already saved asks for a manager's PIN.
+  - **At the till**, tapping the product asks for the colour and size (sold-out ones are greyed out); scanning a combination's barcode adds it directly.
+  - **Deliveries**: one line per combination, type only the quantities received. **Inventory** (Stock → Adjust): choose the colour or size counted. **Returns** and **cancellations** put the stock back on the right combination.
 - **Import** a catalogue from Excel (CSV): Products → Import.
 - **Labels** for shelves and products with barcodes: select the products, then Labels.
 
@@ -20,6 +23,8 @@ With the **PRO** and **BUSINESS** plans, the shop shows the products it chooses 
 - **Photos**: a main photo and up to **7 more** (“Other photos”), in the order you want. Sugu Eden shows them all.
 - **Classification on Sugu Eden**: Category → Section → Subcategory (for example Women › Clothing › Dresses). GestiMarket **suggests** a classification from the name, the aisle and the brand; you can also search a word or browse the categories, those of your business type first. Your shop's aisles do not change.
 - **Condition** (new, used, refurbished), **For whom** (woman, man, child…) and **keywords** buyers type.
+- **Colours and sizes**: Sugu Eden shows the colour swatches, the available sizes (sold-out ones are crossed out) and the price of each; the photo chosen for a colour appears when the buyer taps it, and the WhatsApp message gives the colour and size wanted. Buyers can filter an aisle by colour.
+- **Videos**: up to 3 TikTok, YouTube, Facebook or Instagram video links, shown under the description.
 - Product list: the **Sugu: to complete** filter shows published products without classification or photo; **Classify on Sugu Eden** classifies several selected products at once.
 
 **Remove the shop from Sugu Eden** (same tab) deletes the shop and its products from the website at once. When the PRO or BUSINESS subscription ends, the shop is no longer shown.

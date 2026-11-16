@@ -19,6 +19,7 @@ pub mod stock;
 pub mod templates;
 pub mod terms;
 pub mod users;
+pub mod variants;
 pub mod zreport;
 
 #[cfg(test)]

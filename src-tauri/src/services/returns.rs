@@ -152,6 +152,7 @@ fn credit_note_code(number: &str) -> String {
 struct Line {
     sale_item_id: i64,
     product_id: i64,
+    variant_id: Option<i64>,
     name: String,
     quantity: f64,
     base_quantity: f64,
@@ -212,6 +213,8 @@ pub fn create_return(conn: &mut Connection, user: &SessionUser, approver: &Sessi
         lines.push(Line {
             sale_item_id: si.id,
             product_id: si.product_id,
+            // Couleur ou taille retirée depuis la vente : le stock revient au produit seulement.
+            variant_id: si.variant_id.filter(|v| crate::services::variants::of(&*conn, si.product_id, *v).is_ok()),
             name: si.product_name.clone(),
             quantity: q,
             base_quantity,
@@ -278,14 +281,14 @@ pub fn create_return(conn: &mut Connection, user: &SessionUser, approver: &Sessi
     let return_id = tx.last_insert_rowid();
     for l in &lines {
         tx.execute(
-            "INSERT INTO return_items (return_id, sale_item_id, product_id, product_name, quantity, base_quantity, total, tax, cost, restock)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![return_id, l.sale_item_id, l.product_id, l.name, l.quantity, l.base_quantity, l.total, l.tax, l.cost, l.restock],
+            "INSERT INTO return_items (return_id, sale_item_id, product_id, product_name, quantity, base_quantity, total, tax, cost, restock, variant_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![return_id, l.sale_item_id, l.product_id, l.name, l.quantity, l.base_quantity, l.total, l.tax, l.cost, l.restock, l.variant_id],
         )?;
         let track: bool = tx.query_row("SELECT track_stock FROM products WHERE id = ?1", [l.product_id], |r| r.get(0))?;
         if track && l.restock {
             let unit_cost = if l.base_quantity > 0.0 { (l.cost as f64 / l.base_quantity).round() as i64 } else { 0 };
-            stock::apply_change(&tx, l.product_id, l.base_quantity, "return", Some(unit_cost), Some(&number), Some(&reason), user.id)?;
+            stock::apply_change_v(&tx, l.product_id, l.variant_id, l.base_quantity, "return", Some(unit_cost), Some(&number), Some(&reason), user.id)?;
         }
     }
     match method.as_str() {

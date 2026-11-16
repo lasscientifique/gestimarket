@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use crate::error::{invalid, AppError, AppResult};
 use crate::services::{
     audit, auth, backup, cash, catalog, devices, locations, loyalty, media, partners, plan, promotions, purchases, reports, returns, sales,
-    settings, stock, templates, terms, users, zreport,
+    settings, stock, templates, terms, users, variants, zreport,
 };
 use crate::state::{Access, AppState, Origin};
 
@@ -879,6 +879,19 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             let ids: Vec<i64> = arg(&a, "ids")?;
             let code: String = arg(&a, "code")?;
             out(crate::sugu::classify(c, &ids, &code).map_err(AppError::Validation)?)
+        }),
+        // Couleurs et tailles (stock, code-barres, prix, photo). Toucher au stock ou au prix d'une déclinaison
+        // existante demande le PIN d'un responsable, comme un ajustement de stock ou un changement de prix.
+        "product_variants_set" => run(Manager, &|c, u| {
+            let id: i64 = arg(&a, "id")?;
+            let list: Vec<variants::VariantInput> = arg(&a, "variants")?;
+            if variants::needs_pin(c, id, &list)? {
+                let name = catalog::get_product(c, id)?.name;
+                confirm_pin(state, c, u, &a, 2, &format!("Couleurs et tailles : {name}"))?;
+            }
+            variants::set_variants(c, u, id, arg(&a, "axis")?, &list)?;
+            crate::sugu::wake();
+            out(catalog::get_product(c, id)?)
         }),
         // Photos en plus de la photo principale (7 au plus), dans l'ordre.
         "product_photos_set" => run(Manager, &|c, u| {

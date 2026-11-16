@@ -1,0 +1,35 @@
+# Couleurs des déclinaisons de produits (GestiMarket et Sugu Eden).
+# Une ligne par couleur : code;nom;name;#rrggbb
+# Le code ne change jamais : il est enregistré dans les produits et envoyé à Sugu Eden.
+# Sans couleur : motif dessiné à l'écran (multicolore, imprimé, transparent).
+noir;Noir;Black;#1a1a1a
+blanc;Blanc;White;#ffffff
+gris;Gris;Grey;#9e9e9e
+anthracite;Anthracite;Charcoal;#3c4043
+argent;Argenté;Silver;#c0c0c0
+or;Doré;Gold;#d4af37
+beige;Beige;Beige;#e3d3b3
+creme;Crème;Cream;#f5f0e1
+marron;Marron;Brown;#6d4c41
+camel;Camel;Camel;#c19a6b
+kaki;Kaki;Khaki;#78866b
+olive;Vert olive;Olive;#708238
+vert;Vert;Green;#2e7d32
+vert-clair;Vert clair;Light green;#8bc34a
+turquoise;Turquoise;Turquoise;#1abc9c
+bleu-ciel;Bleu ciel;Sky blue;#87ceeb
+bleu;Bleu;Blue;#1e63d6
+bleu-marine;Bleu marine;Navy blue;#1b2a4a
+violet;Violet;Purple;#7b1fa2
+lilas;Lilas;Lilac;#c8a2c8
+rose;Rose;Pink;#f48fb1
+fuchsia;Fuchsia;Fuchsia;#d81b60
+rouge;Rouge;Red;#d32f2f
+bordeaux;Bordeaux;Burgundy;#7b1e2b
+corail;Corail;Coral;#ff7f50
+orange;Orange;Orange;#f57c00
+jaune;Jaune;Yellow;#fbc02d
+moutarde;Moutarde;Mustard;#c9a227
+multicolore;Multicolore;Multicolour;
+imprime;Imprimé (wax, motifs);Print (wax, patterns);
+transparent;Transparent;Clear;

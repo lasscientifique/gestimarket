@@ -24,6 +24,13 @@ export interface Item {
   audience?: "women" | "men" | "unisex" | "kids" | null;
   /** Toutes les photos, la principale d'abord. */
   photos?: string[];
+  /** Couleurs proposées (codes de la palette) et nombre de couleurs/tailles. */
+  colors?: string[];
+  variants_count?: number;
+  /** Fiche complète : type de taille, couleurs et tailles, liens de vidéos. */
+  axis?: string | null;
+  variants?: Variant[];
+  videos?: string[];
   in_stock: boolean;
   stock: number | null;
   photo: string | null;
@@ -31,6 +38,18 @@ export interface Item {
   decimals: number;
   shop: ShopRef;
   description?: string;
+}
+
+/** Une couleur et/ou une taille d'un produit. */
+export interface Variant {
+  color: string | null;
+  size: string | null;
+  /** Prix propre (null : prix du produit). */
+  price: number | null;
+  in_stock: boolean;
+  stock: number | null;
+  /** Photo de cette couleur (chemin dans le bucket). */
+  photo: string | null;
 }
 
 export interface Shop extends ShopRef {
@@ -63,6 +82,8 @@ export interface Home {
 export interface Results {
   total: number;
   items: Item[];
+  /** Couleurs présentes dans les résultats (filtre). */
+  colors?: string[];
 }
 
 export interface ProductPage {
@@ -102,7 +123,7 @@ export const api = {
     )),
   /** Nombre de produits par ligne du classement. */
   counts: (country: string) => rpc<Record<string, number>>("sugu_counts", { p_country: country || null }),
-  search: (p: { q?: string; country?: string; city?: string; category?: string; shop?: string; code?: string; offset?: number; limit?: number }) =>
+  search: (p: { q?: string; country?: string; city?: string; category?: string; shop?: string; code?: string; color?: string; offset?: number; limit?: number }) =>
     rpc<Results>("sugu_search", {
       p_q: p.q || null,
       p_country: p.country || null,
@@ -112,6 +133,8 @@ export const api = {
       p_code: p.code || null,
       p_limit: p.limit ?? 24,
       p_offset: p.offset ?? 0,
+      // Seulement s'il sert : la recherche marche aussi avec une base d'avant la 0.32.
+      ...(p.color ? { p_color: p.color } : {}),
     }),
   // Identifiant mal recopié : « introuvable », sans appel.
   product: (id: string) =>
@@ -154,6 +177,22 @@ export function countryName(code: string): string {
 
 export const CONDITIONS: Record<string, string> = { new: "Neuf", used: "Occasion", refurbished: "Reconditionné" };
 export const AUDIENCES: Record<string, string> = { women: "Femme", men: "Homme", unisex: "Homme et femme", kids: "Enfant" };
+
+/** Vidéo d'un produit : site (« TikTok ») et image d'aperçu quand elle existe (YouTube). */
+export function videoInfo(link: string): { site: string; preview: string | null } {
+  let host: string;
+  let id: string | null = null;
+  try {
+    const u = new URL(link);
+    host = u.hostname.toLowerCase().replace(/^(www|m|vm|web)\./, "");
+    if (host === "youtu.be") id = u.pathname.slice(1).split("/")[0] || null;
+    else if (host.endsWith("youtube.com")) id = u.searchParams.get("v") ?? (u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]+)/)?.[1] ?? null);
+  } catch {
+    return { site: "Vidéo", preview: null };
+  }
+  const site = host.includes("tiktok") ? "TikTok" : host.includes("youtu") ? "YouTube" : host.includes("instagram") ? "Instagram" : host.includes("facebook") || host === "fb.watch" ? "Facebook" : "Vidéo";
+  return { site, preview: id && /^[\w-]{6,20}$/.test(id) ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : null };
+}
 
 /** Lien WhatsApp vers la boutique, avec le message de commande déjà écrit. */
 export function whatsappLink(number: string, message: string): string | null {

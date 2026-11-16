@@ -252,6 +252,7 @@ export const FEATURE_LABELS: Record<string, { label: string; hint: string }> = {
   brand: { label: tl("Marques"), hint: tl("Champ « Marque » sur les produits, recherche par marque.") },
   sku: { label: tl("Référence interne"), hint: tl("Code article interne (ex. RIZ-001), en plus du code-barres.") },
   packagings: { label: tl("Conditionnements"), hint: tl("Vente au carton, au sac, au pack… avec conversion automatique (1 carton = 12 bouteilles).") },
+  variants: { label: tl("Couleurs et tailles"), hint: tl("Vêtements, chaussures, téléphones : stock par couleur et par taille (pointure, âge, capacité…).") },
   decimal: { label: tl("Quantités décimales"), hint: tl("Vente au poids ou au mètre (0,5 kg, 2,75 m).") },
   services: { label: tl("Services / plats"), hint: tl("Articles sans stock : réparations, plats, prestations.") },
 };

@@ -7,7 +7,8 @@ import { ProductPicker } from "../components/ProductPicker";
 import { exportCsv } from "../lib/files";
 import { addDays, dateOnly, dateTime, daysUntil, isoDate, money, MOVEMENT_LABELS, parseNumber, qty, toCsv } from "../lib/format";
 import type { Product, StockMovement, StockSummary } from "../types";
-import { tl } from "../lib/i18n";
+import { getLang, tl } from "../lib/i18n";
+import { variantLabel } from "../lib/variants";
 
 export default function StockPage() {
   const { toast, settings } = useApp();
@@ -192,6 +193,10 @@ const KINDS = [
 function AdjustModal({ product: initial, onClose, onDone }: { product: Product | null; onClose: () => void; onDone: () => void }) {
   const { toast, askPin } = useApp();
   const [product, setProduct] = useState<Product | null>(initial);
+  // Produit à couleurs ou tailles : on compte chacune (le stock du produit suit).
+  const [variantId, setVariantId] = useState<number | null>(null);
+  const variant = product?.variants.find((v) => v.id === variantId) ?? null;
+  const current = variant ? variant.stock : product?.stock ?? 0;
   const [kind, setKind] = useState("adjustment");
   const [mode, setMode] = useState<"set" | "add" | "remove">("set");
   const [quantity, setQuantity] = useState("");
@@ -204,15 +209,16 @@ function AdjustModal({ product: initial, onClose, onDone }: { product: Product |
   }, [kind, mode, modes]);
 
   const q = parseNumber(quantity);
-  const newStock = product && Number.isFinite(q) ? (mode === "set" ? q : mode === "add" ? product.stock + q : product.stock - q) : null;
+  const newStock = product && Number.isFinite(q) ? (mode === "set" ? q : mode === "add" ? current + q : current - q) : null;
+  const what = product ? (variant ? `${product.name} (${variantLabel(variant, getLang())})` : product.name) : "";
 
   const submit = async () => {
     if (!product) return;
     setBusy(true);
     try {
-      const pin = await askPin({ title: tl("Ajustement de stock"), level: "manager", message: <>{product.name}  {tl(": nouveau stock")} <strong>{qty(newStock ?? 0)} {product.unit}</strong>{tl(". Confirmez avec votre code PIN.")}</> });
+      const pin = await askPin({ title: tl("Ajustement de stock"), level: "manager", message: <>{what}  {tl(": nouveau stock")} <strong>{qty(newStock ?? 0)} {product.unit}</strong>{tl(". Confirmez avec votre code PIN.")}</> });
       if (!pin) return;
-      await api.adjustStock({ product_id: product.id, mode, quantity: q, kind, note: note.trim() || null }, pin);
+      await api.adjustStock({ product_id: product.id, mode, quantity: q, kind, note: note.trim() || null, variant_id: variantId }, pin);
       toast.success(tl("Stock mis à jour."));
       onDone();
     } catch (e) {
@@ -241,10 +247,20 @@ function AdjustModal({ product: initial, onClose, onDone }: { product: Product |
               <strong>{product.name}</strong>
               <div className="muted small">{tl("Stock actuel :")} {qty(product.stock)} {product.unit}</div>
             </div>
-            {!initial && <button className="btn btn-sm" onClick={() => setProduct(null)}>{tl("Changer")}</button>}
+            {!initial && <button className="btn btn-sm" onClick={() => { setProduct(null); setVariantId(null); }}>{tl("Changer")}</button>}
           </div>
         ) : (
           <ProductPicker onPick={setProduct} autoFocus />
+        )}
+        {product && product.variants.length > 0 && (
+          <Field label={tl("Couleur, taille")} hint={tl("Le stock du produit suit celui de ses couleurs et tailles.")}>
+            <select value={variantId ?? ""} onChange={(e) => setVariantId(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">{tl("Tout le produit ({0} {1})", [qty(product.stock), product.unit])}</option>
+              {product.variants.map((v) => (
+                <option key={v.id} value={v.id}>{variantLabel(v, getLang())} ({qty(v.stock)} {product.unit})</option>
+              ))}
+            </select>
+          </Field>
         )}
         <Field label={tl("Type de mouvement")}>
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -263,7 +279,7 @@ function AdjustModal({ product: initial, onClose, onDone }: { product: Product |
         </Field>
         {newStock !== null && product && (
           <div className="alert alert-info">
-            {tl("Nouveau stock :")} <strong>{qty(newStock)} {product.unit}</strong>  {tl("(écart")} {newStock - product.stock >= 0 ? "+" : ""}{qty(newStock - product.stock)})
+            {tl("Nouveau stock :")} <strong>{qty(newStock)} {product.unit}</strong>  {tl("(écart")} {newStock - current >= 0 ? "+" : ""}{qty(newStock - current)})
           </div>
         )}
         <Field label={tl("Motif / observation")}>

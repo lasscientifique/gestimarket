@@ -13,6 +13,9 @@ pub struct PurchaseItemInput {
     pub unit_cost: i64,
     /// Date de péremption du lot reçu (AAAA-MM-JJ).
     pub expiry_date: Option<String>,
+    /// Couleur ou taille reçue.
+    #[serde(default)]
+    pub variant_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +38,7 @@ pub struct PurchaseItem {
     pub unit_cost: i64,
     pub total: i64,
     pub expiry_date: Option<String>,
+    pub variant_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -75,7 +79,7 @@ fn purchase_from_row(r: &Row) -> rusqlite::Result<Purchase> {
 pub fn get_purchase(conn: &Connection, id: i64) -> AppResult<Purchase> {
     let mut p = conn.query_row(&format!("{PURCHASE_SELECT} WHERE pu.id = ?1"), [id], purchase_from_row)?;
     let mut stmt = conn.prepare(
-        "SELECT id, product_id, product_name, quantity, unit_cost, total, expiry_date FROM purchase_items WHERE purchase_id = ?1 ORDER BY id",
+        "SELECT id, product_id, product_name, quantity, unit_cost, total, expiry_date, variant_id FROM purchase_items WHERE purchase_id = ?1 ORDER BY id",
     )?;
     p.items = stmt
         .query_map([id], |r| {
@@ -87,6 +91,7 @@ pub fn get_purchase(conn: &Connection, id: i64) -> AppResult<Purchase> {
                 unit_cost: r.get(4)?,
                 total: r.get(5)?,
                 expiry_date: r.get(6)?,
+                variant_id: r.get(7)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -130,10 +135,15 @@ pub fn create_purchase(conn: &mut Connection, user: &SessionUser, input: Purchas
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
         let line_total = (qty * item.unit_cost as f64).round() as i64;
+        let variant = crate::services::variants::check_line(&tx, item.product_id, item.variant_id, false)?;
+        let name = match &variant {
+            Some(v) => format!("{name} ({})", v.label),
+            None => name,
+        };
         tx.execute(
-            "INSERT INTO purchase_items (purchase_id, product_id, product_name, quantity, unit_cost, total, expiry_date)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![purchase_id, item.product_id, name, qty, item.unit_cost, line_total, db::clean(&item.expiry_date)],
+            "INSERT INTO purchase_items (purchase_id, product_id, product_name, quantity, unit_cost, total, expiry_date, variant_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![purchase_id, item.product_id, name, qty, item.unit_cost, line_total, db::clean(&item.expiry_date), item.variant_id],
         )?;
         if let Some(expiry) = db::clean(&item.expiry_date) {
             // On garde la date la plus proche tant que l'ancien stock n'est pas écoulé.
@@ -145,7 +155,7 @@ pub fn create_purchase(conn: &mut Connection, user: &SessionUser, input: Purchas
                 params![old_stock, expiry, item.product_id],
             )?;
         }
-        stock::apply_change(&tx, item.product_id, qty, "purchase", Some(item.unit_cost), Some(&number), None, user.id)?;
+        stock::apply_change_v(&tx, item.product_id, item.variant_id, qty, "purchase", Some(item.unit_cost), Some(&number), None, user.id)?;
         if update_costs {
             // Coût moyen unitaire pondéré (CMUP).
             let new_cost = if old_stock > 0.0 {

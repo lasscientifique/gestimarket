@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Pencil, Archive, Tags, Download, Wand2, Trash2, Upload, Printer, MapPin, Package, Camera, ShoppingBag } from "lucide-react";
+import { Plus, Search, Pencil, Archive, Tags, Download, Wand2, Trash2, Upload, Printer, MapPin, Package, Camera, ShoppingBag, Palette } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../context/AppContext";
 import { Badge, Empty, Field, ImageField, LocationBadge, Modal, PageHeader, Thumb, useShowMore } from "../components/ui";
@@ -17,6 +17,7 @@ import { tl } from "../lib/i18n";
 import { useLicense } from "../lib/license";
 import { SuguPicker } from "../components/SuguPicker";
 import { ProductPhotos } from "../components/ProductPhotos";
+import { VariantsEditor, rowsFromVariants, rowsToInput, variantsNeedPin, type VariantRow } from "../components/Variants";
 
 export default function ProductsPage() {
   const { toast, confirm, askPin } = useApp();
@@ -236,6 +237,7 @@ export default function ProductsPage() {
                             {p.sku && <> · {p.sku}</>}
                             {p.brand && <> · {p.brand}</>}
                             {p.packagings.length > 0 && <Badge tone="info"><Package size={11} /> {p.packagings.map((k) => k.name).join(", ")}</Badge>}
+                            {p.variants.length > 0 && <Badge tone="info"><Palette size={11} /> {tl("{0} couleurs / tailles", [p.variants.length])}</Badge>}
                             {days !== null && days <= 30 && (
                               <Badge tone={days < 0 ? "danger" : "warning"}>{days < 0 ? tl("Périmé") : tl("Périme dans {0} j", [days])}</Badge>
                             )}
@@ -394,6 +396,11 @@ function ProductForm({
     sugu_keywords: product?.sugu_keywords ?? "",
   });
   const [photos, setPhotos] = useState<number[]>(product?.photos ?? []);
+  // Couleurs et tailles, type de taille (second axe) et liens de vidéos.
+  const [variantRows, setVariantRows] = useState<VariantRow[]>(() => rowsFromVariants(product?.variants ?? []));
+  const [axis, setAxis] = useState<string | null>(product?.variant_axis ?? null);
+  const [variantsOpen, setVariantsOpen] = useState(false);
+  const [videos, setVideos] = useState<string[]>(product?.video_links ?? []);
   const [packs, setPacks] = useState<
     (Omit<Packaging, "sale_price" | "quantity" | "wholesale_price" | "wholesale_min_qty"> & { price: string; qty: string; wprice: string; wqty: string })[]
   >(
@@ -409,6 +416,7 @@ function ProductForm({
   const [scan, setScan] = useState<null | "product" | number>(null);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const showPacks = hasFeature("packagings") || packs.length > 0;
+  const showVariants = hasFeature("variants") || variantRows.length > 0 || variantsOpen;
 
   // Nouveau produit : un code-barres interne est proposé d'emblée (remplaçable par un scan).
   useEffect(() => {
@@ -437,13 +445,18 @@ function ProductForm({
     if (!f.barcode.trim()) return toast.error(tl("Le code-barres est obligatoire : scannez le produit ou générez un code."));
     setBusy(true);
     try {
-      // Changer un prix ou désactiver un produit existant demande une confirmation par PIN.
+      // Changer un prix ou désactiver un produit existant demande une confirmation par PIN ; changer le stock ou le
+      // prix d'une couleur ou taille aussi (le même code sert aux deux).
       let pin: string | undefined;
-      if (product && (cost !== product.purchase_price || price !== product.sale_price || toMinor(f.wholesale_price || "0") !== product.wholesale_price || (product.active && !f.active))) {
+      const priceChange = !!product && (cost !== product.purchase_price || price !== product.sale_price || toMinor(f.wholesale_price || "0") !== product.wholesale_price || (product.active && !f.active));
+      const variantChange = !!product && variantsNeedPin(product.variants, variantRows);
+      if (priceChange || variantChange) {
         const p = await askPin({
-          title: tl("Modification de prix"),
+          title: priceChange ? tl("Modification de prix") : tl("Couleurs et tailles"),
           level: "manager",
-          message: <>{tl("Prix de vente :")} {money(product.sale_price)} → <strong>{money(price)}</strong>{tl(". Confirmez avec votre code PIN.")}</>,
+          message: priceChange && product
+            ? <>{tl("Prix de vente :")} {money(product.sale_price)} → <strong>{money(price)}</strong>{tl(". Confirmez avec votre code PIN.")}</>
+            : tl("Le stock ou le prix de couleurs ou tailles change. Confirmez avec votre code PIN."),
         });
         if (!p) return;
         pin = p;
@@ -466,7 +479,9 @@ function ProductForm({
         min_stock: parseNumber(f.min_stock) || 0,
         track_stock: f.track_stock,
         active: f.active,
-        initial_stock: product ? undefined : parseNumber(f.initial_stock) || 0,
+        // Avec des couleurs ou tailles, le stock est celui de chacune (enregistré ensuite).
+        initial_stock: product ? undefined : variantRows.length ? 0 : parseNumber(f.initial_stock) || 0,
+        video_links: videos.map((v) => v.trim()).filter(Boolean),
         wholesale_price: toMinor(f.wholesale_price || "0"),
         wholesale_min_qty: parseNumber(f.wholesale_min_qty) || 0,
         packagings: packs
@@ -502,6 +517,15 @@ function ProductForm({
       if (JSON.stringify(sugu) !== JSON.stringify(before)) await api.suguProduct(saved.id, sugu);
       // Autres photos (Sugu Eden les montre toutes).
       if (JSON.stringify(photos) !== JSON.stringify(product?.photos ?? [])) await api.productPhotosSet(saved.id, photos);
+      // Couleurs et tailles (après les photos : une couleur montre une des photos du produit).
+      const variantsInput = rowsToInput(variantRows);
+      const variantAxis = variantRows.length ? axis : null;
+      if (
+        JSON.stringify(variantsInput) !== JSON.stringify(rowsToInput(rowsFromVariants(product?.variants ?? []))) ||
+        variantAxis !== (product?.variant_axis ?? null)
+      ) {
+        await api.productVariantsSet(saved.id, variantAxis, variantsInput, pin);
+      }
       toast.success(product ? tl("Produit modifié.") : tl("Produit créé."));
       onSaved();
     } catch (e) {
@@ -626,7 +650,7 @@ function ProductForm({
               <input type="date" value={f.expiry_date} onChange={(e) => set("expiry_date", e.target.value)} />
             </Field>
           )}
-          {!product && f.track_stock && (
+          {!product && f.track_stock && variantRows.length === 0 && (
             <Field label={tl("Stock initial ({0})", [f.unit])} hint={tl("Ensuite : « Achats / réceptions »")}>
               <input inputMode="decimal" value={f.initial_stock} onChange={(e) => set("initial_stock", e.target.value)} placeholder="0" />
             </Field>
@@ -689,6 +713,23 @@ function ProductForm({
               )}
             </div>
           )}
+          {showVariants ? (
+            <VariantsEditor
+              rows={variantRows}
+              axis={axis}
+              onChange={setVariantRows}
+              onAxis={setAxis}
+              photos={[...(f.image_id ? [f.image_id] : []), ...photos]}
+              unit={f.unit}
+              price={price}
+              track={f.track_stock}
+            />
+          ) : (
+            <div className="span-2">
+              <button type="button" className="btn btn-sm" onClick={() => setVariantsOpen(true)}>
+                <Palette size={14} />  {tl("Ajouter des couleurs ou des tailles")}</button>
+            </div>
+          )}
           <Field label={tl("Description")} span={2}>
             <textarea rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} />
           </Field>
@@ -735,6 +776,24 @@ function ProductForm({
                   </div>
                   <Field label={tl("Mots-clés de recherche")} span={2} hint={tl("Mots que les acheteurs tapent : « iphone, apple, 128 go ». Séparés par des virgules.")}>
                     <input value={f.sugu_keywords} maxLength={200} onChange={(e) => set("sugu_keywords", e.target.value)} />
+                  </Field>
+                  <Field label={tl("Vidéos du produit (3 au plus)")} span={2} hint={tl("Copiez le lien d'une vidéo TikTok, YouTube, Facebook ou Instagram : Sugu Eden la montre avec les photos.")}>
+                    <div className="video-links">
+                      {[...videos, ""].slice(0, 3).map((v, i) => (
+                        <input
+                          key={i}
+                          value={v}
+                          maxLength={300}
+                          inputMode="url"
+                          placeholder="https://www.tiktok.com/@…"
+                          onChange={(e) => setVideos((l) => {
+                            const next = [...l];
+                            next[i] = e.target.value;
+                            return next.filter((x, j) => x.trim() || j < next.length - 1);
+                          })}
+                        />
+                      ))}
+                    </div>
                   </Field>
                 </>
               )}

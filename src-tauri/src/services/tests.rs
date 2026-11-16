@@ -69,6 +69,7 @@ fn product(conn: &mut Connection, user: &SessionUser, name: &str, cost: i64, pri
             packagings: None,
             wholesale_price: None,
             wholesale_min_qty: None,
+            video_links: None,
         },
     )
     .unwrap()
@@ -79,7 +80,7 @@ fn sale_input(items: Vec<(i64, f64)>, method: &str, paid: i64, customer: Option<
     sales::SaleInput {
         items: items
             .into_iter()
-            .map(|(product_id, quantity)| sales::SaleItemInput { product_id, quantity, discount: None, packaging_id: None })
+            .map(|(product_id, quantity)| sales::SaleItemInput { product_id, quantity, discount: None, packaging_id: None, variant_id: None })
             .collect(),
         customer_id: customer,
         discount: None,
@@ -232,7 +233,7 @@ fn purchase_increases_stock_with_weighted_average_cost() {
         &admin,
         purchases::PurchaseInput {
             supplier_id: Some(supplier),
-            items: vec![purchases::PurchaseItemInput { product_id: p, quantity: 10.0, unit_cost: 160, expiry_date: Some("2030-01-15".into()) }],
+            items: vec![purchases::PurchaseItemInput { product_id: p, quantity: 10.0, unit_cost: 160, expiry_date: Some("2030-01-15".into()), variant_id: None }],
             note: None,
             update_costs: Some(true),
             new_sale_prices: Some(vec![(p, 250)]),
@@ -255,14 +256,14 @@ fn stock_adjustment_and_movements() {
     let s = stock::adjust(
         &mut conn,
         &admin,
-        stock::AdjustInput { product_id: p, mode: "set".into(), quantity: 17.0, kind: "adjustment".into(), note: Some("Inventaire".into()) },
+        stock::AdjustInput { product_id: p, mode: "set".into(), quantity: 17.0, kind: "adjustment".into(), note: Some("Inventaire".into()), variant_id: None },
     )
     .unwrap();
     assert_eq!(s, 17.0);
     stock::adjust(
         &mut conn,
         &admin,
-        stock::AdjustInput { product_id: p, mode: "remove".into(), quantity: 2.0, kind: "loss".into(), note: None },
+        stock::AdjustInput { product_id: p, mode: "remove".into(), quantity: 2.0, kind: "loss".into(), note: None, variant_id: None },
     )
     .unwrap();
     let moves = stock::list_movements(&conn, &stock::MovementFilter { product_id: Some(p), ..Default::default() }).unwrap();
@@ -518,6 +519,7 @@ fn images_are_stored_and_cleaned_up() {
         packagings: None,
         wholesale_price: None,
         wholesale_min_qty: None,
+        video_links: None,
     };
     let prod = catalog::save_product(&mut conn, &admin, Some(p), edit(Some(a))).unwrap();
     assert_eq!(prod.image_id, Some(a));
@@ -548,7 +550,7 @@ fn migration_from_version_1_keeps_existing_data() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 14);
+    assert_eq!(count("PRAGMA user_version"), 15);
     assert_eq!(count("SELECT COUNT(*) FROM sales"), 3);
     assert_eq!(count("SELECT COUNT(*) FROM sale_items"), 2, "pas de suppression en cascade");
     assert_eq!(count("SELECT COUNT(*) FROM sale_payments"), 2);
@@ -594,6 +596,7 @@ fn subcategories_and_letter_blocs() {
         barcode: None, name: prod.name.clone(), description: None, category_id: Some(jus), supplier_id: None,
         unit: None, purchase_price: 500, sale_price: 800, tax_rate: None, min_stock: None, track_stock: Some(true),
         active: Some(true), image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None, wholesale_price: None, wholesale_min_qty: None,
+        video_links: None,
     };
     prod = catalog::save_product(&mut conn, &admin, Some(p), input).unwrap();
     assert_eq!(prod.parent_category_name.as_deref(), Some("Boissons"));
@@ -611,6 +614,7 @@ fn subcategories_and_letter_blocs() {
         barcode: None, name: "x".into(), description: None, category_id: Some(eaux), supplier_id: None, unit: None,
         purchase_price: 1, sale_price: 1, tax_rate: None, min_stock: None, track_stock: None, active: None,
         image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None, wholesale_price: None, wholesale_min_qty: None,
+        video_links: None,
     };
     assert!(catalog::save_product(&mut conn, &admin, None, input).is_err(), "la sous-catégorie n'existe plus");
 
@@ -734,6 +738,7 @@ fn barcode_is_mandatory_and_packagings_sell_in_base_units() {
         packagings: Some(vec![catalog::Packaging { id: None, name: "Carton de 12".into(), quantity: 12.0, barcode: Some("CART-EAU".into()), sale_price: 4500, wholesale_price: 0, wholesale_min_qty: 0.0 }]),
         wholesale_price: None,
         wholesale_min_qty: None,
+        video_links: None,
     };
     let saved = catalog::save_product(&mut conn, &admin, Some(eau), input).unwrap();
     assert_eq!(saved.packagings.len(), 1);
@@ -743,6 +748,7 @@ fn barcode_is_mandatory_and_packagings_sell_in_base_units() {
         barcode: Some("CART-EAU".into()), name: "Autre".into(), description: None, category_id: None, supplier_id: None,
         unit: None, purchase_price: 1, sale_price: 1, tax_rate: None, min_stock: None, track_stock: None, active: None,
         image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None, wholesale_price: None, wholesale_min_qty: None,
+        video_links: None,
     };
     assert!(catalog::save_product(&mut conn, &admin, None, dup).is_err());
     // Scan
@@ -1057,7 +1063,7 @@ fn migration_6_turns_blocs_into_plan_fixtures() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 14);
+    assert_eq!(count("PRAGMA user_version"), 15);
     assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
     assert_eq!(count("SELECT COUNT(*) FROM fixtures"), 2);
     // Bloc A : 2 étages × 2 cases (la case manquante de l'étage 2 est créée).
@@ -1336,7 +1342,7 @@ fn migration_to_pin_only_staff() {
     .unwrap();
     db::migrate_for_test(&conn).unwrap();
     let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
-    assert_eq!(count("PRAGMA user_version"), 14);
+    assert_eq!(count("PRAGMA user_version"), 15);
     // Plus de mot de passe, sauf pour l'administrateur qui n'a pas encore de PIN.
     assert_eq!(count("SELECT COUNT(*) FROM users WHERE password_hash <> ''"), 1);
     assert_eq!(count("SELECT internet_access FROM users WHERE id = 1"), 1);
@@ -1452,7 +1458,7 @@ fn wholesale_prices_promotions_and_quotes() {
     conn.execute("UPDATE products SET wholesale_price = 11000, wholesale_min_qty = 5 WHERE id = ?1", [riz]).unwrap();
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let quote = |conn: &Connection, qty: f64, customer: Option<i64>| {
-        sales::quote(conn, &[sales::QuoteItem { product_id: riz, quantity: qty, packaging_id: None }], customer).unwrap().remove(0).price
+        sales::quote(conn, &[sales::QuoteItem { product_id: riz, quantity: qty, packaging_id: None, variant_id: None }], customer).unwrap().remove(0).price
     };
 
     // Prix de gros à partir de 5 sacs ; tout de suite pour un client grossiste.
@@ -1470,6 +1476,7 @@ fn wholesale_prices_promotions_and_quotes() {
         purchase_price: 9000, sale_price: 12_000, tax_rate: None, min_stock: None, track_stock: Some(true), active: Some(true),
         image_id: None, location_id: None, expiry_date: None, initial_stock: None, brand: None, sku: None, packagings: None,
         wholesale_price: Some(13_000), wholesale_min_qty: Some(5.0),
+        video_links: None,
     };
     assert!(catalog::save_product(&mut conn, &admin, Some(riz), bad).is_err());
 
@@ -2093,4 +2100,171 @@ fn perf_grosse_boutique() {
         assert!(!partners::list_customers(&conn, &f).unwrap().is_empty());
     });
     assert!(slow.is_empty(), "écrans trop lents avec une grosse boutique : {}", slow.join(" ; "));
+}
+
+fn variant_stock(conn: &Connection, product: i64, id: i64) -> f64 {
+    variants::of(conn, product, id).unwrap().stock
+}
+
+fn variant_input(id: Option<i64>, color: &str, size: &str, stock: f64) -> variants::VariantInput {
+    variants::VariantInput {
+        id,
+        color: Some(color.into()),
+        size: Some(size.into()),
+        barcode: None,
+        price: None,
+        stock,
+        photo_id: None,
+        active: true,
+    }
+}
+
+#[test]
+fn couleurs_et_tailles_stock_ventes_retours_receptions() {
+    let (mut conn, admin) = setup();
+    let caisse = cashier(&conn, &admin);
+    let robe = product(&mut conn, &admin, "Robe wax", 8000, 12_000, 4.0);
+    let size = || Some("size".to_string());
+    let v = variant_input;
+    // Taille sans type de taille, couleur inconnue, doublon : refusés.
+    assert!(variants::set_variants(&mut conn, &admin, robe, None, &[v(None, "rouge", "M", 1.0)]).is_err());
+    assert!(variants::set_variants(&mut conn, &admin, robe, size(), &[v(None, "violet-fluo", "M", 1.0)]).is_err());
+    assert!(variants::set_variants(&mut conn, &admin, robe, size(), &[v(None, "rouge", "M", 1.0), v(None, "rouge", "m", 2.0)]).is_err());
+    assert!(variants::set_variants(&mut conn, &admin, robe, Some("couleur".into()), &[v(None, "rouge", "M", 1.0)]).is_err());
+
+    // Le stock du produit (4) devient celui des déclinaisons : 3 rouges M + 2 bleues L.
+    let mut bleu = v(None, "bleu", "L", 2.0);
+    bleu.barcode = Some("ROBE-BLEU-L".into());
+    bleu.price = Some(13_000);
+    let list = variants::set_variants(&mut conn, &admin, robe, size(), &[v(None, "rouge", "M", 3.0), bleu]).unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0].label, "Rouge, M");
+    assert_eq!(stock_of(&conn, robe), 5.0);
+    let (rouge, bleu) = (list[0].id, list[1].id);
+    let p = catalog::get_product(&conn, robe).unwrap();
+    assert_eq!((p.variants.len(), p.variant_axis.as_deref()), (2, Some("size")));
+
+    // Toucher au stock ou au prix d'une déclinaison existante demande le PIN ; en ajouter une, non.
+    let mut again: Vec<variants::VariantInput> = list
+        .iter()
+        .map(|x| variants::VariantInput {
+            id: Some(x.id),
+            color: x.color.clone(),
+            size: x.size.clone(),
+            barcode: x.barcode.clone(),
+            price: x.price,
+            stock: x.stock,
+            photo_id: None,
+            active: true,
+        })
+        .collect();
+    again.push(v(None, "noir", "XL", 1.0));
+    assert!(!variants::needs_pin(&conn, robe, &again).unwrap());
+    again[0].stock = 4.0;
+    assert!(variants::needs_pin(&conn, robe, &again).unwrap());
+
+    // Photo d'une couleur : seulement une des photos du produit.
+    conn.execute("INSERT INTO media (mime, data) VALUES ('image/png', x'00')", []).unwrap();
+    let photo = conn.last_insert_rowid();
+    let mut with_photo = v(Some(rouge), "rouge", "M", 3.0);
+    with_photo.photo_id = Some(photo);
+    assert!(variants::needs_pin(&conn, robe, &[with_photo.clone()]).unwrap(), "la bleue (2 en stock) serait retirée");
+    assert!(variants::set_variants(&mut conn, &admin, robe, size(), &[with_photo]).is_err());
+
+    // Code-barres déjà pris par une déclinaison d'un autre produit : refusé. Scanné : la déclinaison.
+    let pagne = product(&mut conn, &admin, "Pagne", 1000, 2000, 1.0);
+    let mut dup = v(None, "noir", "S", 0.0);
+    dup.barcode = Some("ROBE-BLEU-L".into());
+    assert!(variants::set_variants(&mut conn, &admin, pagne, size(), &[dup]).is_err());
+    let scan = catalog::scan(&conn, "ROBE-BLEU-L").unwrap().unwrap();
+    assert_eq!((scan.product.id, scan.variant.map(|x| x.id)), (robe, Some(bleu)));
+    assert_eq!(catalog::list_products(&conn, &catalog::ProductFilter { search: Some("ROBE-BLEU".into()), ..Default::default() }).unwrap().len(), 1);
+
+    // Vente : prix et stock de la déclinaison, et stock du produit.
+    cash::open(&conn, &caisse, 0).unwrap();
+    let mut input = sale_input(vec![(robe, 1.0), (robe, 2.0)], "cash", 50_000, None);
+    input.items[0].variant_id = Some(bleu);
+    input.items[1].variant_id = Some(rouge);
+    let quote = sales::quote(&conn, &[sales::QuoteItem { product_id: robe, quantity: 1.0, packaging_id: None, variant_id: Some(bleu) }], None).unwrap();
+    assert_eq!(quote[0].price.unit_price, 13_000);
+    let sale = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    assert_eq!(sale.total, 13_000 + 2 * 12_000);
+    assert_eq!(sale.items[0].product_name, "Robe wax (Bleu, L)");
+    assert_eq!(sale.items[0].variant_id, Some(bleu));
+    assert_eq!(stock_of(&conn, robe), 2.0);
+    assert_eq!((variant_stock(&conn, robe, rouge), variant_stock(&conn, robe, bleu)), (1.0, 1.0));
+    // Plus que le stock de la couleur : refusé, même si le produit en a. Déclinaison d'un autre produit : refusée.
+    let mut input = sale_input(vec![(robe, 2.0)], "cash", 50_000, None);
+    input.items[0].variant_id = Some(bleu);
+    assert!(sales::create_sale(&mut conn, &caisse, input).is_err());
+    let mut input = sale_input(vec![(pagne, 1.0)], "cash", 50_000, None);
+    input.items[0].variant_id = Some(bleu);
+    assert!(sales::create_sale(&mut conn, &caisse, input).is_err());
+
+    // Retour de la robe bleue, remise en rayon.
+    let back = returns::ReturnInput {
+        sale_id: sale.id,
+        items: vec![returns::ReturnItemInput { sale_item_id: sale.items[0].id, quantity: 1.0, restock: true }],
+        refund_method: "cash".into(),
+        refund_reference: None,
+        reason: "Taille".into(),
+    };
+    returns::create_return(&mut conn, &caisse, &admin, back).unwrap();
+    assert_eq!((variant_stock(&conn, robe, bleu), stock_of(&conn, robe)), (2.0, 3.0));
+
+    // Réception de 5 rouges M.
+    let reception = purchases::PurchaseInput {
+        supplier_id: None,
+        items: vec![purchases::PurchaseItemInput { product_id: robe, quantity: 5.0, unit_cost: 8000, expiry_date: None, variant_id: Some(rouge) }],
+        note: None,
+        update_costs: Some(false),
+        new_sale_prices: None,
+    };
+    let purchase = purchases::create_purchase(&mut conn, &admin, reception).unwrap();
+    assert_eq!(purchase.items[0].product_name, "Robe wax (Rouge, M)");
+    assert_eq!((variant_stock(&conn, robe, rouge), stock_of(&conn, robe)), (6.0, 8.0));
+
+    // Inventaire d'une couleur : 4 rouges comptées.
+    let count = stock::AdjustInput {
+        product_id: robe,
+        mode: "set".into(),
+        quantity: 4.0,
+        kind: "adjustment".into(),
+        note: None,
+        variant_id: Some(rouge),
+    };
+    stock::adjust(&mut conn, &admin, count).unwrap();
+    assert_eq!((variant_stock(&conn, robe, rouge), stock_of(&conn, robe)), (4.0, 6.0));
+    let moves = stock::list_movements(&conn, &stock::MovementFilter { product_id: Some(robe), ..Default::default() }).unwrap();
+    assert!(moves.iter().any(|m| m.product_name == "Robe wax (Rouge, M)" && m.quantity == -2.0));
+
+    // Vente annulée : la couleur retrouve son stock.
+    let mut input = sale_input(vec![(robe, 1.0)], "cash", 12_000, None);
+    input.items[0].variant_id = Some(rouge);
+    let s2 = sales::create_sale(&mut conn, &caisse, input).unwrap();
+    assert_eq!(variant_stock(&conn, robe, rouge), 3.0);
+    sales::cancel_sale(&mut conn, &admin, s2.id, "Erreur").unwrap();
+    assert_eq!(variant_stock(&conn, robe, rouge), 4.0);
+
+    // Plus de couleurs ni de tailles : le stock du produit reste, les ventes passées gardent leur libellé.
+    variants::set_variants(&mut conn, &admin, robe, None, &[]).unwrap();
+    let p = catalog::get_product(&conn, robe).unwrap();
+    assert!(p.variants.is_empty() && p.variant_axis.is_none());
+    assert_eq!(p.stock, 6.0);
+    let old = sales::get_sale(&conn, sale.id).unwrap();
+    assert_eq!((old.items[0].product_name.as_str(), old.items[0].variant_id), ("Robe wax (Bleu, L)", None));
+}
+
+#[test]
+fn liens_de_videos() {
+    let ok = |l: &[&str]| catalog::clean_video_links(&l.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    assert_eq!(
+        ok(&["https://www.youtube.com/watch?v=abc", " https://vm.tiktok.com/ZM123/ ", ""]).unwrap().as_deref(),
+        Some(r#"["https://www.youtube.com/watch?v=abc","https://vm.tiktok.com/ZM123/"]"#)
+    );
+    assert_eq!(ok(&[]).unwrap(), None);
+    assert!(ok(&["http://youtube.com/x"]).is_err(), "https seulement");
+    assert!(ok(&["https://evil.com/youtube.com"]).is_err());
+    assert!(ok(&["https://notyoutube.com/x"]).is_err());
+    assert!(ok(&["https://youtu.be/a", "https://youtu.be/b", "https://youtu.be/c", "https://youtu.be/d"]).is_err(), "3 au plus");
 }

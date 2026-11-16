@@ -247,6 +247,8 @@ export const TIPS: Record<string, string> = {
   sku: tl("Code article interne de votre magasin (ex. RIZ-001). Il complète le code-barres et se cherche partout."),
   packagings:
     tl("Le même produit vendu en plusieurs formats : « Carton de 12 » contient 12 bouteilles. Scanner le code du carton ajoute 1 carton au ticket et retire 12 bouteilles du stock."),
+  variants:
+    tl("Une robe en 3 couleurs et 5 tailles : chaque combinaison (Rouge, M…) a son stock, et au besoin son code-barres et son prix. En caisse, toucher le produit demande la couleur et la taille ; scanner le code d'une combinaison l'ajoute directement. Le stock du produit est le total."),
   business_type:
     tl("Le logiciel s'adapte à votre commerce : catégories proposées, fonctions affichées (péremption, marques, conditionnements, quantités décimales, services) et plan de départ. Une boutique peut combiner jusqu'à 3 activités : la première touchée est la principale. Vous pouvez changer à tout moment."),
   camera_scan:

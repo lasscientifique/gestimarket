@@ -307,10 +307,25 @@ pub fn published_rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {
         let (pid, media) = row?;
         extra.entry(pid).or_default().push(media);
     }
+    // Couleurs et tailles en vente : (couleur, taille, prix, stock, photo).
+    type VariantRow = (Option<String>, Option<String>, Option<i64>, f64, Option<i64>);
+    let mut variants: std::collections::HashMap<i64, Vec<VariantRow>> = std::collections::HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT v.product_id, v.color, v.size, v.price, v.stock, v.photo_id FROM product_variants v JOIN products p ON p.id = v.product_id
+         WHERE p.sugu_publish = 1 AND v.active = 1 ORDER BY v.product_id, v.position, v.id",
+    )?;
+    for row in stmt.query_map([], |r| {
+        let v: VariantRow = (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?);
+        Ok((r.get::<_, i64>(0)?, v))
+    })? {
+        let (pid, v) = row?;
+        variants.entry(pid).or_default().push(v);
+    }
     let mut stmt = conn.prepare(
         "SELECT p.id, p.name, COALESCE(p.description, ''), COALESCE(pc.name, c.name, ''), COALESCE(p.brand, ''), p.unit,
                 COALESCE(NULLIF(p.sugu_price, 0), p.sale_price), p.track_stock, p.stock, p.image_id,
-                COALESCE(p.sugu_code, ''), p.sugu_condition, COALESCE(p.sugu_audience, ''), COALESCE(p.sugu_keywords, '')
+                COALESCE(p.sugu_code, ''), p.sugu_condition, COALESCE(p.sugu_audience, ''), COALESCE(p.sugu_keywords, ''),
+                COALESCE(p.variant_axis, ''), p.video_links
          FROM products p
          LEFT JOIN categories c ON c.id = p.category_id
          LEFT JOIN categories pc ON pc.id = c.parent_id
@@ -327,7 +342,28 @@ pub fn published_rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {
                 photos.push(m);
             }
         }
-        let item = json!({
+        let track: bool = r.get(7)?;
+        // Chaque couleur ou taille : son prix (sinon celui du produit), sa disponibilité et sa photo si elle est
+        // parmi les photos envoyées.
+        let vs: Vec<Value> = variants
+            .get(&id)
+            .map(|list| {
+                list.iter()
+                    .map(|(color, size, price, stock, photo)| {
+                        let (in_stock, shown) = availability(track, *stock, margin, &mode);
+                        json!({
+                            "color": color, "size": size, "price": price, "in_stock": in_stock, "stock": shown,
+                            "photo": photo.filter(|m| photos.contains(m)).map(|m| m.to_string()),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let videos: Vec<String> = r
+            .get::<_, Option<String>>(15)?
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default();
+        let mut item = json!({
             "local_id": id, "name": r.get::<_, String>(1)?, "description": r.get::<_, String>(2)?,
             "category": r.get::<_, String>(3)?, "brand": r.get::<_, String>(4)?, "unit": r.get::<_, String>(5)?,
             "price": r.get::<_, i64>(6)?, "in_stock": in_stock, "stock": stock,
@@ -335,6 +371,14 @@ pub fn published_rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {
             "keywords": r.get::<_, String>(13)?,
             "photos": photos.iter().map(|m| json!({ "key": m.to_string() })).collect::<Vec<_>>(),
         });
+        // Produit sans couleur, taille ni vidéo : même empreinte qu'avant la 0.32 (rien à renvoyer).
+        if !vs.is_empty() {
+            item["axis"] = json!(r.get::<_, String>(14)?);
+            item["variants"] = Value::Array(vs);
+        }
+        if !videos.is_empty() {
+            item["videos"] = json!(videos);
+        }
         Ok(Row { id, hash: hash_of(&item), item, photos })
     })?;
     rows.collect()
@@ -659,5 +703,33 @@ mod tests {
         let audience: Option<String> = c.query_row("SELECT sugu_audience FROM products WHERE id = 2", [], |r| r.get(0)).unwrap();
         assert_eq!(audience.as_deref(), Some("women"));
         assert!(classify(&c, &[1], "inconnu").is_err());
+    }
+
+    #[test]
+    fn couleurs_tailles_et_videos_publiees() {
+        let c = conn();
+        c.execute(
+            "INSERT INTO products (name, sale_price, stock, track_stock, sugu_publish, variant_axis, video_links)
+             VALUES ('Robe wax', 12000, 5, 1, 1, 'size', '[\"https://www.tiktok.com/@boutique/video/1\"]')",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO products (name, sale_price, stock, track_stock, sugu_publish) VALUES ('Sucre', 800, 5, 1, 1)", []).unwrap();
+        c.execute("INSERT INTO product_variants (product_id, color, size, stock, position) VALUES (1, 'rouge', 'M', 3, 0)", []).unwrap();
+        c.execute("INSERT INTO product_variants (product_id, color, size, price, stock, position) VALUES (1, 'bleu', 'XL', 13000, 1, 1)", [])
+            .unwrap();
+        c.execute("INSERT INTO product_variants (product_id, color, size, stock, active, position) VALUES (1, 'noir', 'S', 2, 0, 2)", []).unwrap();
+        let rows = published_rows(&c).unwrap();
+        let robe = &rows[0].item;
+        assert_eq!(robe["axis"], json!("size"));
+        assert_eq!(robe["variants"].as_array().unwrap().len(), 2, "pas les déclinaisons retirées de la vente");
+        assert_eq!(robe["variants"][0]["color"], json!("rouge"));
+        assert_eq!(robe["variants"][0]["in_stock"], json!(true));
+        assert_eq!(robe["variants"][0]["price"], Value::Null);
+        assert_eq!(robe["variants"][1]["price"], json!(13000));
+        assert_eq!(robe["variants"][1]["in_stock"], json!(false), "marge de sécurité de 1");
+        assert_eq!(robe["videos"][0], json!("https://www.tiktok.com/@boutique/video/1"));
+        // Produit simple : pas de champ en plus (même empreinte qu'en 0.31).
+        assert!(rows[1].item.get("variants").is_none() && rows[1].item.get("videos").is_none());
     }
 }

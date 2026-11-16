@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{self, Query};
 use crate::error::{invalid, AppResult};
-use crate::services::{audit, cash, settings, stock};
+use crate::services::{audit, cash, settings, stock, variants};
 use crate::state::SessionUser;
 
 /// Moyens de paiement réels (le crédit est le reste non payé, il n'est pas un « paiement »).
@@ -98,6 +98,9 @@ pub struct SaleItemInput {
     pub discount: Option<i64>,
     /// Vente par conditionnement (carton, sac…) : `quantity` est alors un nombre de conditionnements.
     pub packaging_id: Option<i64>,
+    /// Couleur ou taille vendue (stock et prix propres).
+    #[serde(default)]
+    pub variant_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,6 +151,8 @@ pub struct SaleItem {
     pub regular_price: Option<i64>,
     /// Quantité déjà retournée (unités de vente).
     pub returned_quantity: f64,
+    /// Couleur ou taille vendue.
+    pub variant_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,7 +253,7 @@ pub fn get_sale(conn: &Connection, id: i64) -> AppResult<Sale> {
     let mut stmt = conn.prepare(
         "SELECT si.id, si.product_id, si.product_name, si.unit, si.quantity, si.unit_price, si.discount, si.tax_rate, si.total,
                 COALESCE(si.base_quantity, si.quantity), si.packaging_id, si.price_kind, si.regular_price,
-                (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri WHERE ri.sale_item_id = si.id)
+                (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri WHERE ri.sale_item_id = si.id), si.variant_id
          FROM sale_items si WHERE si.sale_id = ?1 ORDER BY si.id",
     )?;
     sale.items = stmt
@@ -268,6 +273,7 @@ pub fn get_sale(conn: &Connection, id: i64) -> AppResult<Sale> {
                 price_kind: r.get(11)?,
                 regular_price: r.get(12)?,
                 returned_quantity: r.get(13)?,
+                variant_id: r.get(14)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -359,19 +365,30 @@ pub fn is_wholesale_customer(conn: &Connection, customer_id: Option<i64>) -> App
     Ok(flag == Some(1))
 }
 
+/// Une couleur ou taille qui a son propre prix le remplace pour la vente à l'unité.
+#[allow(clippy::too_many_arguments)]
 pub fn price_line(
     conn: &Connection,
     product_id: i64,
     packaging_id: Option<i64>,
+    variant_id: Option<i64>,
     qty: f64,
     wholesale_customer: bool,
     today: &str,
 ) -> AppResult<LinePrice> {
-    let (price, w_price, w_min, category_id): (i64, i64, f64, Option<i64>) = conn.query_row(
+    let (mut price, w_price, w_min, category_id): (i64, i64, f64, Option<i64>) = conn.query_row(
         "SELECT sale_price, wholesale_price, wholesale_min_qty, category_id FROM products WHERE id = ?1",
         [product_id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )?;
+    if let Some(v) = variant_id {
+        let own: Option<Option<i64>> = conn
+            .query_row("SELECT price FROM product_variants WHERE id = ?1 AND product_id = ?2", params![v, product_id], |r| r.get(0))
+            .optional()?;
+        if let Some(p) = own.flatten().filter(|p| *p > 0) {
+            price = p;
+        }
+    }
     let (regular, w_price, w_min, pack_name, pack_qty) = match packaging_id {
         Some(pack_id) => {
             let (name, quantity, sale_price, wp, wm): (String, f64, i64, i64, f64) = conn.query_row(
@@ -435,12 +452,15 @@ pub struct QuoteItem {
     pub product_id: i64,
     pub quantity: f64,
     pub packaging_id: Option<i64>,
+    #[serde(default)]
+    pub variant_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct QuoteLine {
     pub product_id: i64,
     pub packaging_id: Option<i64>,
+    pub variant_id: Option<i64>,
     #[serde(flatten)]
     pub price: LinePrice,
 }
@@ -455,7 +475,8 @@ pub fn quote(conn: &Connection, items: &[QuoteItem], customer_id: Option<i64>) -
             Ok(QuoteLine {
                 product_id: i.product_id,
                 packaging_id: i.packaging_id,
-                price: price_line(conn, i.product_id, i.packaging_id, db::round_qty(i.quantity.max(0.0)), wholesale_customer, &today)?,
+                variant_id: i.variant_id,
+                price: price_line(conn, i.product_id, i.packaging_id, i.variant_id, db::round_qty(i.quantity.max(0.0)), wholesale_customer, &today)?,
             })
         })
         .collect()
@@ -577,6 +598,7 @@ struct Line {
     price_kind: &'static str,
     regular_price: Option<i64>,
     promotion_id: Option<i64>,
+    variant_id: Option<i64>,
 }
 
 /// Enregistre une vente : contrôle des stocks, calcul des totaux, paiements (éventuellement multiples),
@@ -657,16 +679,28 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
         }
         // Prix normal, de gros ou promotion du jour (le plus bas), relu en base.
         // Conditionnement : prix du carton / sac, stock décompté en unités de base.
-        let priced = price_line(&tx, item.product_id, item.packaging_id, qty, wholesale_customer, &today)?;
+        let variant = variants::check_line(&tx, item.product_id, item.variant_id, true)?;
+        let priced = price_line(&tx, item.product_id, item.packaging_id, item.variant_id, qty, wholesale_customer, &today)?;
+        // « Robe wax (Rouge, M) — Lot de 3 »
+        let full = match &variant {
+            Some(v) => format!("{name} ({})", v.label),
+            None => name.clone(),
+        };
         let (line_name, line_unit) = match &priced.packaging_name {
-            Some(pname) => (format!("{name} — {pname}"), pname.clone()),
-            None => (name.clone(), unit.clone()),
+            Some(pname) => (format!("{full} — {pname}"), pname.clone()),
+            None => (full.clone(), unit.clone()),
         };
         let unit_price = priced.unit_price;
         let base_qty = db::round_qty(qty * priced.pack_quantity);
         let already: f64 = lines.iter().filter(|l| l.product_id == item.product_id).map(|l| l.base_quantity).sum();
         if track && !allow_negative && already + base_qty > stock_qty + 1e-9 {
             return invalid(format!("Stock insuffisant pour « {name} » (disponible : {stock_qty} {unit})."));
+        }
+        if let (Some(v), true) = (&variant, track && !allow_negative) {
+            let already_v: f64 = lines.iter().filter(|l| l.variant_id == Some(v.id)).map(|l| l.base_quantity).sum();
+            if already_v + base_qty > v.stock + 1e-9 {
+                return invalid(format!("Stock insuffisant pour « {full} » (disponible : {} {unit}).", v.stock));
+            }
         }
         let price = unit_price;
         let gross = (qty * price as f64).round() as i64;
@@ -691,6 +725,7 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
             price_kind: priced.kind,
             regular_price: (priced.kind != "retail").then_some(priced.regular_price),
             promotion_id: priced.promotion_id,
+            variant_id: item.variant_id,
         });
     }
 
@@ -920,13 +955,13 @@ pub fn create_sale_with(conn: &mut Connection, user: &SessionUser, input: SaleIn
     for l in &lines {
         tx.execute(
             "INSERT INTO sale_items (sale_id, product_id, product_name, unit, quantity, unit_price, unit_cost, discount, tax_rate, total,
-                                     base_quantity, packaging_id, price_kind, regular_price, promotion_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                                     base_quantity, packaging_id, price_kind, regular_price, promotion_id, variant_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![sale_id, l.product_id, l.name, l.unit, l.quantity, l.unit_price, l.unit_cost, l.discount, l.tax_rate, l.total,
-                    l.base_quantity, l.packaging_id, l.price_kind, l.regular_price, l.promotion_id],
+                    l.base_quantity, l.packaging_id, l.price_kind, l.regular_price, l.promotion_id, l.variant_id],
         )?;
         if l.track_stock {
-            stock::apply_change(&tx, l.product_id, -l.base_quantity, "sale", Some(l.unit_cost), Some(&number), None, user.id)?;
+            stock::apply_change_v(&tx, l.product_id, l.variant_id, -l.base_quantity, "sale", Some(l.unit_cost), Some(&number), None, user.id)?;
         }
     }
 
@@ -975,7 +1010,9 @@ pub fn cancel_sale(conn: &mut Connection, user: &SessionUser, id: i64, reason: &
     for item in &sale.items {
         let track: bool = tx.query_row("SELECT track_stock FROM products WHERE id = ?1", [item.product_id], |r| r.get(0))?;
         if track {
-            stock::apply_change(&tx, item.product_id, item.base_quantity, "sale_cancel", None, Some(&sale.number), Some(reason.trim()), user.id)?;
+            // Couleur ou taille retirée depuis la vente : le stock revient au produit seulement.
+            let variant = item.variant_id.filter(|v| variants::of(&tx, item.product_id, *v).is_ok());
+            stock::apply_change_v(&tx, item.product_id, variant, item.base_quantity, "sale_cancel", None, Some(&sale.number), Some(reason.trim()), user.id)?;
         }
     }
     if let Some(customer_id) = sale.customer_id {

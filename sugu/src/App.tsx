@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { AUDIENCES, CONDITIONS, api, countryName, photoUrl, price, whatsappLink, type Home, type Item, type ProductPage, type Shop, type TaxNode } from "./api";
+import { AUDIENCES, CONDITIONS, api, countryName, photoUrl, price, videoInfo, whatsappLink, type Home, type Item, type ProductPage, type Shop, type TaxNode, type Variant } from "./api";
+import { axisName, colorName, swatchStyle } from "../../src/lib/variants";
 
 // ───────────────────────────── Pages derrière « # » ─────────────────────────────
 // #/                         accueil
@@ -145,6 +146,12 @@ function Card({ item }: { item: Item }) {
         <div className="name">{item.name}</div>
         <div className="price">{price(item)}{item.unit && item.unit !== "pce" ? <small> / {item.unit}</small> : null}</div>
         <div className="where">{item.shop.name} · {item.shop.city}</div>
+        {item.colors && item.colors.length > 0 && (
+          <div className="dots" title={item.colors.map((c) => colorName(c)).join(", ")}>
+            {item.colors.slice(0, 6).map((c) => <span key={c} className="dot" style={swatchStyle(c)} />)}
+            {item.colors.length > 6 && <small>+{item.colors.length - 6}</small>}
+          </div>
+        )}
         {!item.in_stock && <span className="tag out">Épuisé</span>}
       </div>
     </a>
@@ -326,20 +333,41 @@ function ContactButtons({ shop, message }: { shop: Shop; message: string }) {
 
 function ProductView({ id }: { id: string }) {
   const page = useLoad<ProductPage>(() => api.product(id), [id]);
+  const [color, setColor] = useState<string | null>(null);
+  const [size, setSize] = useState<string | null>(null);
+  useEffect(() => {
+    setColor(null);
+    setSize(null);
+  }, [id]);
   if (page.error) return <Layout><Message>{page.error}</Message></Layout>;
   if (!page.data) return <Layout><Loading /></Layout>;
   const { product: p, shop, more } = page.data;
   if (!page.data.found || !p || !shop) {
     return <Layout><Message>Ce produit n'est plus sur Sugu Eden. <a href="#/">Voir les autres produits</a></Message></Layout>;
   }
+  // Couleurs et tailles : la couleur choisie (sinon la première disponible) montre sa photo et ses tailles.
+  const variants: Variant[] = p.variants ?? [];
+  const colors = [...new Set(variants.map((v) => v.color).filter((c): c is string => !!c))];
+  const shownColor = color ?? colors.find((c) => variants.some((v) => v.color === c && v.in_stock)) ?? colors[0] ?? null;
+  const ofColor = variants.filter((v) => (shownColor ? v.color === shownColor : true));
+  const sizes = ofColor.filter((v) => v.size);
+  const chosen: Variant | null =
+    variants.length === 0 ? null : sizes.length ? sizes.find((v) => v.size === size) ?? null : ofColor[0] ?? null;
+  const unitPrice = { ...p, price: chosen?.price ?? p.price };
+  const choice = [shownColor && colors.length ? `couleur ${colorName(shownColor)}` : null, chosen?.size ? `${axisName(p.axis).toLowerCase() || "taille"} ${chosen.size}` : null]
+    .filter(Boolean)
+    .join(", ");
   const link = window.location.href;
-  const message = `Bonjour ${shop.name}, je souhaite commander : ${p.name} (${price(p)}), vu sur Sugu Eden : ${link}`;
+  const message = `Bonjour ${shop.name}, je souhaite commander : ${p.name}${choice ? ` — ${choice}` : ""} (${price(unitPrice)}), vu sur Sugu Eden : ${link}`;
   const gallery = p.photos && p.photos.length ? p.photos : p.photo ? [p.photo] : [];
+  const colorPhoto = variants.find((v) => v.color === shownColor && v.photo)?.photo ?? null;
+  const inStock = chosen ? chosen.in_stock : p.in_stock;
+  const stockShown = chosen ? chosen.stock : p.stock;
   return (
     <Layout>
       {p.code && <Breadcrumb code={p.code} />}
       <article className="product">
-        <Gallery photos={gallery} alt={p.name} />
+        <Gallery photos={gallery} alt={p.name} focus={colorPhoto} />
         <div className="product-info">
           <h1>{p.name}</h1>
           {(p.condition && p.condition !== "new") || p.audience ? (
@@ -348,12 +376,68 @@ function ProductView({ id }: { id: string }) {
               {p.audience && <span className="tag">{AUDIENCES[p.audience]}</span>}
             </div>
           ) : null}
-          <div className="price big">{price(p)}{p.unit && p.unit !== "pce" ? <small> / {p.unit}</small> : null}</div>
-          <p className={p.in_stock ? "stock in" : "stock out"}>
-            {p.in_stock ? (p.stock !== null ? `En stock : ${p.stock}` : "En stock") : "Épuisé pour le moment"}
+          <div className="price big">{price(unitPrice)}{p.unit && p.unit !== "pce" ? <small> / {p.unit}</small> : null}</div>
+          {colors.length > 0 && (
+            <div className="choose">
+              <span className="choose-label">Couleur : <strong>{shownColor ? colorName(shownColor) : ""}</strong></span>
+              <div className="swatches">
+                {colors.map((c) => {
+                  const available = variants.some((v) => v.color === c && v.in_stock);
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`swatch-btn ${c === shownColor ? "active" : ""} ${available ? "" : "none"}`}
+                      title={colorName(c) + (available ? "" : " (épuisé)")}
+                      aria-label={colorName(c)}
+                      onClick={() => {
+                        setColor(c);
+                        setSize(null);
+                      }}
+                    >
+                      <span style={swatchStyle(c)} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {sizes.length > 0 && (
+            <div className="choose">
+              <span className="choose-label">{axisName(p.axis) || "Taille"} :{!chosen && <small> choisissez</small>}</span>
+              <div className="sizes">
+                {sizes.map((v) => (
+                  <button
+                    key={`${v.color}-${v.size}`}
+                    type="button"
+                    className={`size-btn ${chosen === v ? "active" : ""} ${v.in_stock ? "" : "none"}`}
+                    disabled={!v.in_stock}
+                    onClick={() => setSize(v.size)}
+                  >
+                    {v.size}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className={inStock ? "stock in" : "stock out"}>
+            {inStock ? (stockShown !== null ? `En stock : ${stockShown}` : "En stock") : "Épuisé pour le moment"}
           </p>
           {(p.brand || p.category) && <p className="muted">{[p.brand, p.category].filter(Boolean).join(" · ")}</p>}
           {p.description && <p className="desc">{p.description}</p>}
+          {p.videos && p.videos.length > 0 && (
+            <div className="videos">
+              {p.videos.map((v) => {
+                const info = videoInfo(v);
+                return (
+                  <a key={v} className="video" href={v} target="_blank" rel="noopener noreferrer">
+                    {info.preview ? <img src={info.preview} alt="" loading="lazy" /> : <span className="video-icon" aria-hidden>▶</span>}
+                    <span>Voir la vidéo sur {info.site}</span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
           <a className="shop-line" href={`#/b/${shop.slug}`}>
             <Photo path={shop.logo} alt={shop.name} />
             <span>
@@ -375,9 +459,13 @@ function ProductView({ id }: { id: string }) {
   );
 }
 
-/** Photos du produit : la grande, puis les petites à toucher pour la changer. */
-function Gallery({ photos, alt }: { photos: string[]; alt: string }) {
+/** Photos du produit : la grande, puis les petites à toucher pour la changer. `focus` : photo de la couleur choisie. */
+function Gallery({ photos, alt, focus }: { photos: string[]; alt: string; focus?: string | null }) {
   const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const i = focus ? photos.indexOf(focus) : -1;
+    if (i >= 0) setIndex(i);
+  }, [focus, photos]);
   if (photos.length === 0) return <Photo path={null} alt={alt} big />;
   return (
     <div className="gallery">
@@ -427,23 +515,28 @@ function CategoryPage({ code }: { code: string }) {
   const [items, setItems] = useState<Item[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  // Filtre par couleur : les couleurs présentes dans ce rayon.
+  const [color, setColor] = useState("");
+  const [colors, setColors] = useState<string[]>([]);
   const fetchPage = (offset: number) => {
     setBusy(true);
     api
-      .search({ code, country, offset })
+      .search({ code, country, offset, color })
       .then((r) => {
         setItems((old) => (offset === 0 ? r.items : [...old, ...r.items]));
         setTotal(r.total);
+        if (offset === 0) setColors(r.colors ?? []);
       })
       .catch(() => setTotal(0))
       .finally(() => setBusy(false));
   };
+  useEffect(() => setColor(""), [code]);
   useEffect(() => {
     setItems([]);
     setTotal(null);
     fetchPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, country]);
+  }, [code, country, color]);
   const nodes = tax.data ?? [];
   const node = nodes.find((n) => n.code === code);
   const children = nodes.filter((n) => n.parent === code && (counts.data?.[n.code] ?? 0) > 0);
@@ -460,6 +553,16 @@ function CategoryPage({ code }: { code: string }) {
                 {c.name} <small>{counts.data?.[c.code]}</small>
               </a>
             ))}
+          </div>
+        )}
+        {colors.length > 1 && (
+          <div className="chips colors">
+            {colors.map((c) => (
+              <button key={c} type="button" className={`chip ${c === color ? "on" : ""}`} onClick={() => setColor(c === color ? "" : c)}>
+                <span className="dot" style={swatchStyle(c)} /> {colorName(c)}
+              </button>
+            ))}
+            {color && <button type="button" className="chip clear" onClick={() => setColor("")}>Toutes les couleurs</button>}
           </div>
         )}
         {total === 0 && <Message>Pas encore de produits ici. <a href="#/">Voir les autres rayons</a></Message>}

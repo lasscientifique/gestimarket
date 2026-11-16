@@ -50,14 +50,18 @@ import { printReceipt } from "../lib/receipt";
 import { afterSalePrint } from "../lib/printer";
 import { IDLE_DISPLAY, publishDisplay, type DisplayLine } from "../lib/display";
 import { isMobileApp, isTauri, posteName } from "../lib/transport";
-import type { CashSession, Category, CreditNote, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, QuoteLine, Sale } from "../types";
-import { locale, tl } from "../lib/i18n";
+import type { CashSession, Category, CreditNote, Customer, LiveCart, LiveCartContent, Packaging, PaymentInput, PaymentMethod, Product, QuoteLine, Sale, Variant } from "../types";
+import { getLang, locale, tl } from "../lib/i18n";
+import { VariantChoice, sellable } from "../components/Variants";
+import { swatchStyle, variantLabel } from "../lib/variants";
 import { every } from "../lib/visibility";
 
 interface CartLine {
   product: Product;
   /** Conditionnement vendu (carton, sac…) ; null = unité de base. */
   packaging: Packaging | null;
+  /** Couleur ou taille vendue. */
+  variant: Variant | null;
   quantity: number;
   discount: number;
   /** Prix calculé par le serveur : gros (quantité, client grossiste) ou promotion du jour. */
@@ -68,18 +72,21 @@ interface CartLine {
 const CREDIT_NOTE_EXAMPLE = "AV20261103-0001-K7QM";
 
 /** Prix, libellé et nombre d'unités de base d'une ligne (produit à l'unité ou conditionnement). */
-const linePrice = (l: { product: Product; packaging: Packaging | null; quoted?: QuoteLine | null }) =>
-  l.quoted?.unit_price ?? l.packaging?.sale_price ?? l.product.sale_price;
+const linePrice = (l: { product: Product; packaging: Packaging | null; variant: Variant | null; quoted?: QuoteLine | null }) =>
+  l.quoted?.unit_price ?? l.packaging?.sale_price ?? l.variant?.price ?? l.product.sale_price;
 const lineUnit = (l: { product: Product; packaging: Packaging | null }) => l.packaging?.name ?? l.product.unit;
 const lineFactor = (l: { packaging: Packaging | null }) => l.packaging?.quantity ?? 1;
-const lineName = (l: { product: Product; packaging: Packaging | null }) => (l.packaging ? `${l.product.name} — ${l.packaging.name}` : l.product.name);
-const sameLine = (l: CartLine, p: Product, k: Packaging | null) => l.product.id === p.id && (l.packaging?.id ?? null) === (k?.id ?? null);
+/** « Robe wax (Rouge, M) — Lot de 3 » */
+const lineName = (l: { product: Product; packaging: Packaging | null; variant: Variant | null }) =>
+  `${l.product.name}${l.variant ? ` (${variantLabel(l.variant, getLang())})` : ""}${l.packaging ? ` — ${l.packaging.name}` : ""}`;
+const sameLine = (l: CartLine, p: Product, k: Packaging | null, v: Variant | null) =>
+  l.product.id === p.id && (l.packaging?.id ?? null) === (k?.id ?? null) && (l.variant?.id ?? null) === (v?.id ?? null);
 
 interface HeldTicket {
   id: number;
   at: string;
   label: string;
-  lines: { product_id: number; packaging_id?: number | null; quantity: number; discount: number }[];
+  lines: { product_id: number; packaging_id?: number | null; variant_id?: number | null; quantity: number; discount: number }[];
   customer: Customer | null;
   discount: number;
   total: number;
@@ -175,6 +182,10 @@ export default function PosPage() {
   const stripParent = current && children.length === 0 ? current.parent_id : current?.id ?? null;
   const strip = children.length ? children : visible.filter((c) => c.parent_id === stripParent);
   const [packChoice, setPackChoice] = useState<Product | null>(null);
+  /** Couleur ou taille choisie avant le format (produit qui a les deux). */
+  const [packVariant, setPackVariant] = useState<Variant | null>(null);
+  /** Produit à couleurs ou tailles touché ou scanné : quelle déclinaison ? */
+  const [variantChoice, setVariantChoice] = useState<{ product: Product; quantity: number } | null>(null);
   const [codeOpen, setCodeOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   /** Téléphone : le ticket s'ouvre en plein écran par-dessus les produits. */
@@ -184,6 +195,9 @@ export default function PosPage() {
   /** Unités de base déjà au panier pour ce produit (toutes lignes confondues). */
   const baseInCart = (productId: number, except = -1) =>
     cart.reduce((s, l, i) => (l.product.id === productId && i !== except ? s + l.quantity * lineFactor(l) : s), 0);
+  /** Unités de base déjà au panier pour une couleur ou taille. */
+  const variantInCart = (variantId: number, except = -1) =>
+    cart.reduce((s, l, i) => (l.variant?.id === variantId && i !== except ? s + l.quantity * lineFactor(l) : s), 0);
   const [displayOpen, setDisplayOpen] = useState(false);
 
   // ───── Écran client : le panier est envoyé à chaque modification ─────
@@ -220,6 +234,7 @@ export default function PosPage() {
       lines: cart.map((l) => ({
         product_id: l.product.id,
         packaging_id: l.packaging?.id ?? null,
+        variant_id: l.variant?.id ?? null,
         name: lineName(l),
         unit: lineUnit(l),
         quantity: l.quantity,
@@ -234,10 +249,10 @@ export default function PosPage() {
     }),
     [cart, customer, discount, subtotal, total, itemsCount],
   );
-  const quoteKey = JSON.stringify([customer?.id ?? null, cart.map((l) => [l.product.id, l.packaging?.id ?? null, l.quantity])]);
+  const quoteKey = JSON.stringify([customer?.id ?? null, cart.map((l) => [l.product.id, l.packaging?.id ?? null, l.variant?.id ?? null, l.quantity])]);
   useEffect(() => {
     if (!cart.length) return;
-    const items = cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, quantity: l.quantity }));
+    const items = cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, variant_id: l.variant?.id ?? null, quantity: l.quantity }));
     const t = setTimeout(() => {
       api
         .saleQuote(items, customer?.id ?? null)
@@ -245,7 +260,9 @@ export default function PosPage() {
           setCart((c) =>
             c.map((l, i) => {
               const q = quotes[i];
-              return q && q.product_id === l.product.id && (q.packaging_id ?? null) === (l.packaging?.id ?? null) ? { ...l, quoted: q } : l;
+              return q && q.product_id === l.product.id && (q.packaging_id ?? null) === (l.packaging?.id ?? null) && (q.variant_id ?? null) === (l.variant?.id ?? null)
+                ? { ...l, quoted: q }
+                : l;
             }),
           ),
         )
@@ -299,7 +316,8 @@ export default function PosPage() {
       for (const l of taken.cart.lines) {
         const product = await api.getProduct(l.product_id);
         const packaging = l.packaging_id ? product.packagings.find((k) => k.id === l.packaging_id) ?? null : null;
-        lines.push({ product, packaging, quantity: l.quantity, discount: l.discount });
+        const variant = l.variant_id ? product.variants.find((v) => v.id === l.variant_id) ?? null : null;
+        lines.push({ product, packaging, variant, quantity: l.quantity, discount: l.discount });
       }
       if (cart.length) holdCurrent();
       setCart(lines);
@@ -375,27 +393,44 @@ export default function PosPage() {
   }, [cart.length]);
 
   // ───── Panier ─────
-  const addToCart = (p: Product, quantity = 1, packaging: Packaging | null = null) => {
+  const addToCart = (p: Product, quantity = 1, packaging: Packaging | null = null, variant: Variant | null = null) => {
     const need = baseInCart(p.id) + quantity * (packaging?.quantity ?? 1);
     if (p.track_stock && !allowNegative && need > p.stock + 1e-9) {
       toast.error(tl("Stock insuffisant pour « {0} » (disponible : {1} {2}).", [p.name, qty(p.stock), p.unit]));
       return;
     }
+    if (variant && p.track_stock && !allowNegative && variantInCart(variant.id) + quantity * (packaging?.quantity ?? 1) > variant.stock + 1e-9) {
+      const name = `${p.name} (${variantLabel(variant, getLang())})`;
+      toast.error(tl("Stock insuffisant pour « {0} » (disponible : {1} {2}).", [name, qty(variant.stock), p.unit]));
+      return;
+    }
     setCart((c) => {
-      const i = c.findIndex((l) => sameLine(l, p, packaging));
+      const i = c.findIndex((l) => sameLine(l, p, packaging, variant));
       if (i >= 0) {
         const copy = [...c];
         copy[i] = { ...copy[i], quantity: +(copy[i].quantity + quantity).toFixed(3) };
         return copy;
       }
-      return [...c, { product: p, packaging, quantity, discount: 0 }];
+      return [...c, { product: p, packaging, variant, quantity, discount: 0 }];
     });
   };
 
-  /** Toucher une vignette : si le produit a des conditionnements, on demande lequel. */
-  const onTile = (p: Product) => {
-    if (p.packagings.length > 0) setPackChoice(p);
-    else addToCart(p);
+  /** Toucher une vignette : couleur ou taille d'abord, puis format (conditionnement) s'il y en a. */
+  const onTile = (p: Product, quantity = 1) => {
+    if (sellable(p).length > 0) setVariantChoice({ product: p, quantity });
+    else if (p.packagings.length > 0) {
+      setPackVariant(null);
+      setPackChoice(p);
+    } else addToCart(p, quantity);
+  };
+  const onVariant = (v: Variant) => {
+    if (!variantChoice) return;
+    const { product, quantity } = variantChoice;
+    setVariantChoice(null);
+    if (product.packagings.length > 0) {
+      setPackVariant(v);
+      setPackChoice(product);
+    } else addToCart(product, quantity, null, v);
   };
 
   const setLineQty = async (index: number, q: number) => {
@@ -404,6 +439,11 @@ export default function PosPage() {
     if (q < cart[index].quantity && !(await guard("void", tl("Diminuer la quantité"), tl("Diminution de quantité : {0} ({1} → {2})", [lineName(cart[index]), qty(cart[index].quantity), qty(q)])))) return;
     if (p.track_stock && !allowNegative && baseInCart(p.id, index) + q * lineFactor(cart[index]) > p.stock + 1e-9) {
       toast.error(tl("Stock insuffisant (disponible : {0} {1}).", [qty(p.stock), p.unit]));
+      return;
+    }
+    const v = cart[index].variant;
+    if (v && p.track_stock && !allowNegative && variantInCart(v.id, index) + q * lineFactor(cart[index]) > v.stock + 1e-9) {
+      toast.error(tl("Stock insuffisant (disponible : {0} {1}).", [qty(v.stock), p.unit]));
       return;
     }
     setCart((c) => c.map((l, i) => (i === index ? { ...l, quantity: +q.toFixed(3) } : l)));
@@ -432,7 +472,7 @@ export default function PosPage() {
       id: Date.now(),
       at: new Date().toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }),
       label: customer?.name ?? tl("Ticket {0}", [held.length + 1]),
-      lines: cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, quantity: l.quantity, discount: l.discount })),
+      lines: cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, variant_id: l.variant?.id ?? null, quantity: l.quantity, discount: l.discount })),
       customer,
       discount,
       total,
@@ -448,7 +488,8 @@ export default function PosPage() {
       for (const l of t.lines) {
         const product = await api.getProduct(l.product_id);
         const packaging = l.packaging_id ? product.packagings.find((k) => k.id === l.packaging_id) ?? null : null;
-        lines.push({ product, packaging, quantity: l.quantity, discount: l.discount });
+        const variant = l.variant_id ? product.variants.find((v) => v.id === l.variant_id) ?? null : null;
+        lines.push({ product, packaging, variant, quantity: l.quantity, discount: l.discount });
       }
       if (cart.length) holdCurrent();
       setHeld((h) => h.filter((x) => x.id !== t.id));
@@ -488,7 +529,9 @@ export default function PosPage() {
       }
       const r = await api.scanCode(code);
       if (r) {
-        addToCart(r.product, quantity, r.packaging);
+        // Code du produit (pas d'une couleur ou taille) d'un produit qui en a : on demande laquelle.
+        if (!r.variant && !r.packaging && sellable(r.product).length > 0) onTile(r.product, quantity);
+        else addToCart(r.product, quantity, r.packaging, r.variant);
         return true;
       }
       if (input === search && products.length === 1) {
@@ -607,6 +650,14 @@ export default function PosPage() {
                   {p.packagings.length > 0 && (
                     <span className="tile-pack"><Package size={10} /> {p.packagings.length + 1} formats</span>
                   )}
+                  {sellable(p).length > 0 && (
+                    <span className="tile-variants">
+                      {[...new Set(sellable(p).map((v) => v.color).filter(Boolean))].slice(0, 5).map((c) => (
+                        <span key={c} className="swatch" style={swatchStyle(c)} />
+                      ))}
+                      {sellable(p).length} {tl("choix")}
+                    </span>
+                  )}
                 </div>
                 <div className="tile-body">
                   <span className="tile-name">{p.name}</span>
@@ -689,11 +740,16 @@ export default function PosPage() {
             </div>
           )}
           {cart.map((l, i) => (
-            <div key={`${l.product.id}-${l.packaging?.id ?? 0}`} className="line">
-              <Thumb imageId={l.product.image_id} name={l.product.name} color={l.product.category_color} size={38} />
+            <div key={`${l.product.id}-${l.packaging?.id ?? 0}-${l.variant?.id ?? 0}`} className="line">
+              <Thumb imageId={l.variant?.photo_id ?? l.product.image_id} name={l.product.name} color={l.product.category_color} size={38} />
               <button className="line-info" onClick={() => setModal({ line: i })} title={tl("Modifier la ligne")}>
                 <span className="line-name">{l.product.name}</span>
                 <span className="line-sub">
+                  {l.variant && (
+                    <Badge tone="info">
+                      {l.variant.color && <span className="swatch" style={swatchStyle(l.variant.color)} />} {variantLabel(l.variant, getLang())}
+                    </Badge>
+                  )}
                   {l.packaging && <Badge tone="info"><Package size={11} /> {l.packaging.name}</Badge>}
                   {l.quoted?.kind === "promo" && <Badge tone="success">{l.quoted.promotion_name ?? tl("Promo")}</Badge>}
                   {l.quoted?.kind === "wholesale" && <Badge tone="info">{tl("Gros")}</Badge>}
@@ -782,6 +838,15 @@ export default function PosPage() {
           }}
         />
       )}
+      {variantChoice && (
+        <VariantChoice
+          product={variantChoice.product}
+          allowNegative={allowNegative}
+          inCart={(id) => variantInCart(id)}
+          onPick={onVariant}
+          onClose={() => setVariantChoice(null)}
+        />
+      )}
       {packChoice && (
         <Modal title={<>{tl("Quel format ?")} <HelpTip k="packagings" /></>} onClose={() => setPackChoice(null)} width={480}>
           <div className="pick-list">
@@ -790,8 +855,9 @@ export default function PosPage() {
                 key={k?.id ?? 0}
                 className="pick-item pack-pick"
                 onClick={() => {
-                  addToCart(packChoice, 1, k);
+                  addToCart(packChoice, 1, k, packVariant);
                   setPackChoice(null);
+                  setPackVariant(null);
                 }}
               >
                 <Package size={20} className="muted" />
@@ -911,7 +977,7 @@ export default function PosPage() {
                 setDiscountPin({ pin, upTo: allDiscount });
               }
               const sale = await api.createSale({
-                items: cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, quantity: l.quantity, discount: l.discount })),
+                items: cart.map((l) => ({ product_id: l.product.id, packaging_id: l.packaging?.id ?? null, variant_id: l.variant?.id ?? null, quantity: l.quantity, discount: l.discount })),
                 customer_id: customer?.id ?? null,
                 discount: Math.min(discount, subtotal),
                 payments,

@@ -10,6 +10,9 @@
 //                  100 produits et 20 photos au plus par appel. code : sous-catégorie du classement Sugu Eden
 //                  (sugu_taxonomy) ; condition : new, used, refurbished ; audience : women, men, unisex, kids.
 //                  Sans « photos » (GestiMarket 0.30) : photo_key et photo? pour une seule photo.
+//                  0.32 : axis (size, shoe, age, storage, volume, model), variants: [{ color, size, price, in_stock,
+//                  stock, photo }] (120 au plus ; photo = clé d'une des photos du produit) et videos: [liens https
+//                  TikTok, YouTube, Facebook, Instagram] (3 au plus). Absents : aucun.
 //   - "off"      : la boutique et ses produits quittent Sugu Eden (photos effacées).
 // Photo : { mime: "image/jpeg" | "image/png" | "image/webp", data: base64 } (700 Ko au plus), déposée dans le
 // bucket public « sugu ». photo_key change quand la photo change ; absente, la photo déjà publiée reste.
@@ -28,7 +31,56 @@ const MIMES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png",
 const MAX_PRODUCT_PHOTOS = 8;
 const CONDITIONS = ["new", "used", "refurbished"];
 const AUDIENCES = ["women", "men", "unisex", "kids"];
+const AXES = ["size", "shoe", "age", "storage", "volume", "model"];
+const MAX_VARIANTS = 120;
+const VIDEO_HOSTS = ["youtube.com", "youtu.be", "tiktok.com", "facebook.com", "fb.watch", "instagram.com"];
 type Photo = { key: string; path: string };
+type Variant = { color: string | null; size: string | null; price: number | null; in_stock: boolean; stock: number | null; photo: string | null };
+
+/** Couleurs et tailles reçues : codes de couleur, tailles courtes, prix entiers ; la photo devient son chemin. */
+function variantsOf(raw: unknown, gallery: Photo[]): Variant[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Variant[] = [];
+  for (const r of raw.slice(0, MAX_VARIANTS) as Record<string, unknown>[]) {
+    const color = text(r?.color, 30).toLowerCase();
+    const size = text(r?.size, 40);
+    if (color && !/^[a-z][a-z-]{1,29}$/.test(color)) continue;
+    if (!color && !size) continue;
+    const price = r.price === null || r.price === undefined ? null : Number(r.price);
+    const stock = r.stock === null || r.stock === undefined || r.stock === "" ? null : Number(r.stock);
+    const photo = text(r.photo, 40);
+    out.push({
+      color: color || null,
+      size: size || null,
+      price: price !== null && Number.isSafeInteger(price) && price > 0 ? price : null,
+      in_stock: r.in_stock !== false,
+      stock: stock !== null && Number.isFinite(stock) ? Math.max(0, stock) : null,
+      photo: gallery.find((g) => g.key === photo)?.path ?? null,
+    });
+  }
+  return out;
+}
+
+/** Liens de vidéos : https, sites acceptés, 3 au plus. */
+function videosOf(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    const link = String(v ?? "").trim();
+    if (link.length > 300 || /[\s"<>]/.test(link)) continue;
+    let host = "";
+    try {
+      const u = new URL(link);
+      if (u.protocol !== "https:") continue;
+      host = u.hostname.toLowerCase();
+    } catch {
+      continue;
+    }
+    if (VIDEO_HOSTS.some((h) => host === h || host.endsWith(`.${h}`)) && !out.includes(link)) out.push(link);
+    if (out.length === 3) break;
+  }
+  return out;
+}
 
 function json(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -229,6 +281,8 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
     const code = text(u.code, 200);
     const condition = text(u.condition, 20);
     const audience = text(u.audience, 20);
+    const variants = variantsOf(u.variants, gallery);
+    const axis = text(u.axis, 20);
     const stock = u.stock === null || u.stock === undefined || u.stock === "" ? null : Number(u.stock);
     rows.push({
       store_id: store.store_id,
@@ -248,6 +302,9 @@ async function saveProducts(store: Store, body: Record<string, unknown>) {
       condition: CONDITIONS.includes(condition) ? condition : "new",
       audience: AUDIENCES.includes(audience) ? audience : null,
       keywords: text(u.keywords, 200),
+      variants,
+      axis: variants.length && AXES.includes(axis) ? axis : null,
+      videos: videosOf(u.videos),
     });
   }
   if (rows.length) {

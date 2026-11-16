@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::{self, Query};
 use crate::error::{invalid, AppResult};
+use crate::services::variants::{self, Variant};
 use crate::services::{audit, locations, media, settings, stock};
 use crate::state::SessionUser;
 
@@ -257,6 +258,11 @@ pub struct Product {
     pub sugu_keywords: Option<String>,
     /// Photos en plus de la photo principale (`image_id`), dans l'ordre.
     pub photos: Vec<i64>,
+    /// Couleurs et tailles (vide : produit sans déclinaison) et type du second axe (size, shoe, age…).
+    pub variants: Vec<Variant>,
+    pub variant_axis: Option<String>,
+    /// Liens de vidéos (TikTok, YouTube, Facebook, Instagram).
+    pub video_links: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -282,7 +288,7 @@ const PRODUCT_SELECT: &str = "SELECT p.id, p.barcode, p.name, p.description, p.c
         p.expiry_date, p.created_at, p.updated_at, p.brand, p.sku,
         l.fixture_id, fx.name, (SELECT COUNT(*) FROM product_locations pl WHERE pl.product_id = p.id),
         p.wholesale_price, p.wholesale_min_qty, p.sugu_publish, p.sugu_price,
-        p.sugu_code, p.sugu_condition, p.sugu_audience, p.sugu_keywords
+        p.sugu_code, p.sugu_condition, p.sugu_audience, p.sugu_keywords, p.variant_axis, p.video_links
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN categories pc ON pc.id = c.parent_id
@@ -336,6 +342,12 @@ fn product_from_row(r: &Row) -> rusqlite::Result<Product> {
         sugu_audience: r.get(39)?,
         sugu_keywords: r.get(40)?,
         photos: Vec::new(),
+        variants: Vec::new(),
+        variant_axis: r.get(41)?,
+        video_links: r
+            .get::<_, Option<String>>(42)?
+            .and_then(|j| serde_json::from_str::<Vec<String>>(&j).ok())
+            .unwrap_or_default(),
     })
 }
 
@@ -385,6 +397,9 @@ pub struct ProductInput {
     pub wholesale_min_qty: Option<f64>,
     /// Uniquement à la création.
     pub initial_stock: Option<f64>,
+    /// Liens de vidéos (remplace la liste si fournie).
+    #[serde(default)]
+    pub video_links: Option<Vec<String>>,
 }
 
 pub fn list_products(conn: &Connection, f: &ProductFilter) -> AppResult<Vec<Product>> {
@@ -398,8 +413,12 @@ pub fn list_products(conn: &Connection, f: &ProductFilter) -> AppResult<Vec<Prod
             let like = format!("%{word}%");
             q.and(
                 "(p.name LIKE ? OR p.barcode LIKE ? OR p.description LIKE ? OR c.name LIKE ? OR pc.name LIKE ? OR p.brand LIKE ? OR p.sku LIKE ?
-                  OR EXISTS (SELECT 1 FROM product_packagings pk WHERE pk.product_id = p.id AND pk.barcode LIKE ?))",
-                vec![db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like)],
+                  OR EXISTS (SELECT 1 FROM product_packagings pk WHERE pk.product_id = p.id AND pk.barcode LIKE ?)
+                  OR EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id AND (pv.barcode LIKE ? OR pv.size LIKE ?)))",
+                vec![
+                    db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like), db::text(&like),
+                    db::text(&like), db::text(&like), db::text(&like),
+                ],
             );
         }
     }
@@ -488,10 +507,17 @@ fn enrich(conn: &Connection, list: &mut [Product]) -> AppResult<()> {
         let (pid, media) = row?;
         photos.entry(pid).or_default().push(media);
     }
+    // Couleurs et tailles : un seul produit (fiche) ou toute la liste.
+    let mut vars: HashMap<i64, Vec<Variant>> = if list.len() == 1 {
+        HashMap::from([(list[0].id, variants::of_product(conn, list[0].id)?)])
+    } else {
+        variants::all(conn)?
+    };
     for p in list.iter_mut() {
         p.category_path = p.category_id.and_then(|c| paths.get(&c).cloned());
         p.packagings = packs.remove(&p.id).unwrap_or_default();
         p.photos = photos.remove(&p.id).unwrap_or_default();
+        p.variants = vars.remove(&p.id).unwrap_or_default();
     }
     Ok(())
 }
@@ -512,6 +538,8 @@ pub struct ScanResult {
     pub product: Product,
     /// Renseigné si le code scanné est celui d'un conditionnement (carton, sac…).
     pub packaging: Option<Packaging>,
+    /// Renseigné si le code scanné est celui d'une couleur ou taille.
+    pub variant: Option<Variant>,
 }
 
 /// Recherche par code scanné ou saisi : code du produit, puis code d'un conditionnement.
@@ -522,7 +550,7 @@ pub fn scan(conn: &Connection, code: &str) -> AppResult<Option<ScanResult>> {
     }
     let id: Option<i64> = conn.query_row("SELECT id FROM products WHERE barcode = ?1 AND active = 1", [code], |r| r.get(0)).optional()?;
     if let Some(id) = id {
-        return Ok(Some(ScanResult { product: get_product(conn, id)?, packaging: None }));
+        return Ok(Some(ScanResult { product: get_product(conn, id)?, packaging: None, variant: None }));
     }
     let pack: Option<(i64, i64)> = conn
         .query_row(
@@ -535,14 +563,24 @@ pub fn scan(conn: &Connection, code: &str) -> AppResult<Option<ScanResult>> {
         Some((pid, pack_id)) => {
             let product = get_product(conn, pid)?;
             let packaging = product.packagings.iter().find(|p| p.id == Some(pack_id)).cloned();
-            Ok(Some(ScanResult { product, packaging }))
+            Ok(Some(ScanResult { product, packaging, variant: None }))
         }
-        None => Ok(None),
+        None => match variants::by_barcode(conn, code)? {
+            Some(v) => Ok(Some(ScanResult { product: get_product(conn, v.product_id)?, packaging: None, variant: Some(v) })),
+            None => Ok(None),
+        },
     }
 }
 
-/// Vérifie qu'un code-barres n'est utilisé par aucun autre produit ni conditionnement.
-fn ensure_barcode_free(conn: &Connection, code: &str, product_id: Option<i64>, packaging_id: Option<i64>) -> AppResult<()> {
+/// Vérifie qu'un code-barres n'est utilisé par aucun autre produit, conditionnement ni déclinaison
+/// (`variants_of` : sauf les déclinaisons de ce produit, contrôlées à part car remplacées ensemble).
+pub(crate) fn ensure_barcode_free(
+    conn: &Connection,
+    code: &str,
+    product_id: Option<i64>,
+    packaging_id: Option<i64>,
+    variants_of: Option<i64>,
+) -> AppResult<()> {
     let product: Option<String> = conn
         .query_row("SELECT name FROM products WHERE barcode = ?1 AND id <> ?2", params![code, product_id.unwrap_or(0)], |r| r.get(0))
         .optional()?;
@@ -559,6 +597,18 @@ fn ensure_barcode_free(conn: &Connection, code: &str, product_id: Option<i64>, p
         .optional()?;
     if let Some(name) = pack {
         return invalid(format!("Le code-barres {code} est déjà utilisé par « {name} »."));
+    }
+    let variant: Option<(String, Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT p.name, v.color, v.size FROM product_variants v JOIN products p ON p.id = v.product_id
+             WHERE v.barcode = ?1 AND v.product_id <> ?2",
+            params![code, variants_of.unwrap_or(-1)],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    if let Some((name, color, size)) = variant {
+        let l = crate::services::variants::label(color.as_deref(), size.as_deref());
+        return invalid(format!("Le code-barres {code} est déjà utilisé par « {name} ({l}) »."));
     }
     Ok(())
 }
@@ -603,7 +653,7 @@ fn save_packagings(conn: &Connection, product_id: i64, packs: &[Packaging]) -> A
             Some(b) => b,
             None => generate_barcode(conn)?,
         };
-        ensure_barcode_free(conn, &barcode, Some(-1), p.id)?;
+        ensure_barcode_free(conn, &barcode, Some(-1), p.id, None)?;
         let product_code: Option<String> = conn.query_row("SELECT barcode FROM products WHERE id = ?1", [product_id], |r| r.get(0))?;
         if product_code.as_deref() == Some(barcode.as_str()) {
             return invalid("Un conditionnement doit avoir un code-barres différent de celui du produit.");
@@ -651,6 +701,40 @@ fn valid_date(d: &Option<String>) -> AppResult<Option<String>> {
     }
 }
 
+/// Sites de vidéos acceptés (liens montrés sur Sugu Eden).
+const VIDEO_HOSTS: [&str; 6] = ["youtube.com", "youtu.be", "tiktok.com", "facebook.com", "fb.watch", "instagram.com"];
+
+/// Liens de vidéos : 3 au plus, adresses https de TikTok, YouTube, Facebook ou Instagram. Rendus en JSON.
+pub fn clean_video_links(list: &[String]) -> AppResult<Option<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in list {
+        let link = raw.trim();
+        if link.is_empty() {
+            continue;
+        }
+        let ok = link.len() <= 300
+            && !link.chars().any(|c| c.is_whitespace() || c == '"' || c == '<' || c == '>')
+            && video_host(link).is_some();
+        if !ok {
+            return invalid("Lien de vidéo invalide : copiez l'adresse d'une vidéo TikTok, YouTube, Facebook ou Instagram (https://…).");
+        }
+        if !out.iter().any(|l| l == link) {
+            out.push(link.to_string());
+        }
+    }
+    if out.len() > 3 {
+        return invalid("3 liens de vidéos au plus.");
+    }
+    Ok((!out.is_empty()).then(|| serde_json::to_string(&out).unwrap_or_default()))
+}
+
+/// Site d'un lien de vidéo accepté (« youtube.com »).
+pub fn video_host(link: &str) -> Option<&'static str> {
+    let rest = link.strip_prefix("https://")?;
+    let host = rest.split(['/', '?', '#']).next()?.to_ascii_lowercase();
+    VIDEO_HOSTS.iter().copied().find(|h| host == *h || host.ends_with(&format!(".{h}")))
+}
+
 fn validate_product(input: &ProductInput) -> AppResult<()> {
     if input.name.trim().is_empty() {
         return invalid("Le nom du produit est obligatoire.");
@@ -684,7 +768,7 @@ pub fn save_product(conn: &mut Connection, user: &SessionUser, id: Option<i64>, 
         Some(b) => b,
         None => generate_barcode(&tx)?,
     };
-    ensure_barcode_free(&tx, &barcode, id, Some(-1))?;
+    ensure_barcode_free(&tx, &barcode, id, Some(-1), None)?;
 
     let product_id = match id {
         Some(id) => {
@@ -767,6 +851,9 @@ pub fn save_product(conn: &mut Connection, user: &SessionUser, id: Option<i64>, 
     )?;
     if let Some(packs) = &input.packagings {
         save_packagings(&tx, product_id, packs)?;
+    }
+    if let Some(links) = &input.video_links {
+        tx.execute("UPDATE products SET video_links = ?1 WHERE id = ?2", params![clean_video_links(links)?, product_id])?;
     }
     tx.commit()?;
     get_product(conn, product_id)

@@ -4,6 +4,9 @@
 
 - **Ajouter** : Produits → Nouveau produit : nom, catégorie, prix d'achat et de vente, stock, seuil d'alerte, photo. Le code-barres est créé tout seul si le produit n'en a pas.
 - **Formats** (carton, pack) et **prix de gros** par quantité ou pour les clients grossistes.
+- **Couleurs et tailles** (fiche produit) : choisissez les couleurs dans la palette, puis le type de taille (taille, pointure, âge, capacité, contenance ou modèle) et les tailles. Chaque combinaison (par exemple Rouge, M) a **son stock**, et au besoin **son code-barres** et **son prix**. Le stock du produit devient le total. Changer le stock ou le prix d'une combinaison déjà enregistrée demande le code PIN d'un responsable.
+  - **En caisse**, toucher le produit demande la couleur et la taille (celles épuisées sont grisées) ; scanner le code-barres d'une combinaison l'ajoute directement.
+  - **Réception** : une ligne par combinaison, tapez seulement les quantités reçues. **Inventaire** (Stock → Ajuster) : choisissez la couleur ou la taille comptée. Les **retours** et les **annulations** remettent le stock à la bonne combinaison.
 - **Importer** un catalogue depuis Excel (CSV) : Produits → Importer.
 - **Étiquettes** de rayon et de produits avec code-barres : sélectionnez les produits, puis Étiquettes.
 
@@ -20,6 +23,8 @@ Avec les formules **PRO** et **BUSINESS**, la boutique montre les produits de so
 - **Photos** : une photo principale et jusqu'à **7 autres** (« Autres photos »), dans l'ordre voulu. Sugu Eden les montre toutes.
 - **Classement sur Sugu Eden** : Catégorie → Section → Sous-catégorie (par exemple Femmes › Vêtements › Robes). GestiMarket **propose** un classement d'après le nom, le rayon et la marque ; vous pouvez aussi chercher un mot (« robe ») ou parcourir les catégories, celles de votre type de commerce en premier. Les rayons de votre boutique ne changent pas.
 - **État** (neuf, occasion, reconditionné), **Pour qui** (femme, homme, enfant…) et **mots-clés** que les acheteurs tapent.
+- **Couleurs et tailles** : Sugu Eden montre les pastilles de couleur, les tailles disponibles (les épuisées sont barrées) et le prix de chacune ; la photo choisie pour une couleur s'affiche quand l'acheteur la touche, et le message WhatsApp indique la couleur et la taille voulues. Les acheteurs peuvent filtrer un rayon par couleur.
+- **Vidéos** : jusqu'à 3 liens de vidéos TikTok, YouTube, Facebook ou Instagram, montrés sous la description.
 - Liste des produits : le filtre **Sugu : à compléter** montre les produits publiés sans classement ou sans photo ; **Classer sur Sugu Eden** classe plusieurs produits sélectionnés d'un coup.
 
 **Retirer la boutique de Sugu Eden** (même onglet) efface aussitôt la boutique et ses produits du site. À la fin de l'abonnement PRO ou BUSINESS, la boutique n'est plus montrée.
