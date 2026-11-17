@@ -6,7 +6,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "dist-sugu", "node_modules", "src-tauri", "e2e/out", "aide", "demo", "public/compat.js"] },
+  { ignores: ["dist", "dist-sugu", "node_modules", "src-tauri", "console", "e2e/out", "aide", "demo", "public/compat.js"] },
   {
     files: ["src/**/*.{ts,tsx}", "sugu/src/**/*.{ts,tsx}", "vite.config.ts", "vite.sugu.config.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

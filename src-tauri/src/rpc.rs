@@ -1087,7 +1087,10 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }
         "account_declare_orange_money" => {
             account_access(state, origin)?;
-            let r = crate::account::declare_orange_money(
+            // 0.33 : Orange Money (par défaut), Wave ou Moov Money.
+            let method = arg::<Option<String>>(&a, "method")?.unwrap_or_else(|| "orange_money".to_string());
+            let r = crate::account::declare_mobile_money(
+                &method,
                 &arg::<String>(&a, "plan")?,
                 arg(&a, "months")?,
                 &arg::<String>(&a, "reference")?,
@@ -1095,7 +1098,12 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             )
             .map_err(AppError::Validation)?;
             if let Some(u) = state.user(origin) {
-                let detail = format!("Orange Money — {} {} mois, {} FCFA", r["plan_label"].as_str().unwrap_or_default(), r["months"], r["amount"]);
+                let name = match method.as_str() {
+                    "wave" => "Wave",
+                    "moov_money" => "Moov Money",
+                    _ => "Orange Money",
+                };
+                let detail = format!("{name} — {} {} mois, {} FCFA", r["plan_label"].as_str().unwrap_or_default(), r["months"], r["amount"]);
                 audit::log(&state.conn(), &u, "Paiement d'abonnement déclaré", "settings", None, detail)?;
             }
             out(r)

@@ -14,3 +14,8 @@ scripts/i18n-messages.json
 
 # Manuels PDF rangés dans l'application à la fabrication (scripts/fetch-manuals.mjs)
 public/manuel/
+
+# Console Eden Dev (dossier console/)
+console/src-tauri/target/
+console/src-tauri/gen/
+console/out/

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "PC : mise à jour en un clic (signée par Eden Dev) et redémarrage après l'installation",
+  "platforms": ["windows", "linux", "macOS"],
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

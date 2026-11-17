@@ -354,7 +354,7 @@ function ShopsTab({ data, busy, reload, onSubscription }: { data: OwnerStores | 
 }
 
 const METHOD_LABEL = (m: string) =>
-  ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), carte_visa: tl("Carte Visa") } as Record<string, string>)[m] ?? m;
+  ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), wave: tl("Wave"), carte_visa: tl("Carte Visa") } as Record<string, string>)[m] ?? m;
 
 const STATUS = (p: OwnerPayment): [string, "success" | "warning" | "danger" | "default"] => {
   if (p.status === "validated") return [tl("Validé"), "success"];
@@ -465,11 +465,15 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
       )}
       {store && (
         <form className="card" onSubmit={declare}>
-          <h3 className="card-title"><Smartphone size={18} />  {tl("Orange Money ou Moov Money")}</h3>
+          <h3 className="card-title"><Smartphone size={18} />  {tl("Orange Money, Wave ou Moov Money")}</h3>
           <p className="muted small">
-            {options?.payment?.om_merchant_code
+            {om.method === "orange_money" && options?.payment?.om_merchant_code
               ? tl("Payez au code marchand {0} ({1}), puis saisissez la référence reçue par SMS.", [options.payment.om_merchant_code, options.payment.om_merchant_name])
-              : tl("Payez Eden Dev, puis saisissez la référence de la transaction reçue par SMS.")}
+              : om.method === "wave" && options?.payment?.wave_merchant_number
+                ? tl("Envoyez le paiement Wave au numéro marchand {0} ({1}), puis saisissez la référence reçue par SMS.", [options.payment.wave_merchant_number, options.payment.wave_merchant_name ?? ""])
+                : om.method === "moov_money" && options?.payment?.moov_merchant_number
+                  ? tl("Envoyez le paiement Moov Money au numéro marchand {0} ({1}), puis saisissez la référence reçue par SMS.", [options.payment.moov_merchant_number, options.payment.moov_merchant_name ?? ""])
+                  : tl("Payez Eden Dev, puis saisissez la référence de la transaction reçue par SMS.")}
           </p>
           <div className="form-grid">
             <Field label={tl("Formule")}>
@@ -485,6 +489,7 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
             <Field label={tl("Moyen de paiement")}>
               <select value={om.method} onChange={(e) => setOm({ ...om, method: e.target.value })}>
                 <option value="orange_money">{tl("Orange Money")}</option>
+                <option value="wave">{tl("Wave")}</option>
                 <option value="moov_money">{tl("Moov Money")}</option>
               </select>
             </Field>

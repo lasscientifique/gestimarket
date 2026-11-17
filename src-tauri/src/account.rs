@@ -598,13 +598,17 @@ pub fn redeem_voucher(state: &AppState, code: &str) -> Result<Value, String> {
     Ok(json!({ "voucher": v, "sync_error": synced.err() }))
 }
 
-/// Orange Money (Sarali) : l'ID de transaction est envoyé à Eden Dev, qui valide le paiement.
-pub fn declare_orange_money(plan: &str, months: i64, reference: &str, payer_phone: &str) -> Result<Value, String> {
+/// Orange Money (Sarali), Wave ou Moov Money : l'ID de transaction est envoyé à Eden Dev, qui valide le
+/// paiement dans la Console Eden Dev.
+pub fn declare_mobile_money(method: &str, plan: &str, months: i64, reference: &str, payer_phone: &str) -> Result<Value, String> {
+    if !matches!(method, "orange_money" | "wave" | "moov_money") {
+        return Err("Moyen de paiement inconnu.".into());
+    }
     let r = pc_rpc(
         "gm_pc_declare_payment",
         json!({
             "p_pc_id": license::pc_id(), "p_plan": plan, "p_months": months,
-            "p_reference": reference.trim(), "p_payer_phone": payer_phone.trim(),
+            "p_reference": reference.trim(), "p_payer_phone": payer_phone.trim(), "p_method": method,
         }),
     )?;
     sync_soon();
@@ -1056,7 +1060,11 @@ pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Va
 /// puis le fichier est téléchargé depuis le bucket public et vérifié ici.
 pub fn sync(state: &AppState) -> Result<String, String> {
     let result = (|| -> Result<String, String> {
-        let v = call(request("/functions/v1/gm-license", None), json!({ "pc_id": license::pc_id() }))?;
+        // Version de GestiMarket envoyée à chaque vérification (0.33) : vue par Eden Dev dans sa console.
+        let v = call(
+            request("/functions/v1/gm-license", None),
+            json!({ "pc_id": license::pc_id(), "version": env!("CARGO_PKG_VERSION") }),
+        )?;
         if let Some(t) = v["server_time"].as_str() {
             license::note_server_time(&state.conn(), t);
         }

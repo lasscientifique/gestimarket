@@ -49,7 +49,7 @@ async function signingKey(): Promise<{ kid: number; key: CryptoKey }> {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ status: "error", message: "Méthode POST attendue." }, 405);
-  let body: { pc_id?: unknown } = {};
+  let body: { pc_id?: unknown; version?: unknown } = {};
   try {
     body = await req.json();
   } catch {
@@ -57,10 +57,16 @@ Deno.serve(async (req) => {
   }
   const pc = String(body.pc_id ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
   if (!/^[0-9A-Z]{12}$/.test(pc)) return json({ status: "error", message: "Identifiant de PC invalide." }, 400);
+  // Version de GestiMarket sur l'appareil (0.33 et plus) : vue dans la Console Eden Dev.
+  const version = String(body.version ?? "").trim();
 
   try {
     const { data: t, error } = await sb.rpc("gm_license_target", { p_pc_id: pc });
     if (error) throw error;
+    if (t.status !== "unregistered" && /^[0-9][0-9A-Za-z.+-]{0,19}$/.test(version)) {
+      const up = await sb.from("gm_store_pcs").update({ app_version: version }).eq("pc_id", pc).neq("app_version", version);
+      if (up.error) console.error("Version non enregistrée", up.error.message);
+    }
     // Pays de la boutique : repris par le logiciel (un seul pays par boutique, celui du compte).
     const base = { server_time: t.server_time, revoked: t.revoked ?? [], country: t.country ?? null };
     if (t.status !== "ok") return json({ ...base, status: t.status, store_code: t.store_code ?? null });

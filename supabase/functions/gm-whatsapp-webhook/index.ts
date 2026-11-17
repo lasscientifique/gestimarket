@@ -5,7 +5,9 @@
 // message (erreur 131047 reçue ici, plus tard). Cette fonction :
 //   - note l'heure du dernier message reçu de chaque numéro (gm_whatsapp_inbound) : gm-whatsapp n'envoie un
 //     code que dans la fenêtre, sinon GestiMarket demande tout de suite d'écrire d'abord ;
-//   - note les messages non remis et leur code d'erreur (gm_whatsapp_failed, et journal de la fonction).
+//   - note les messages non remis et leur code d'erreur (gm_whatsapp_failed, et journal de la fonction) ;
+//   - cartes de bon vendues par WhatsApp (Console Eden Dev) : accusés « remis », « lu », « non remis »
+//     (gm_card_sale_wa_status), et envoi des cartes en attente dès que le client écrit (fonction gm-cartes).
 // Aucun texte de message n'est gardé : seulement le numéro et l'heure.
 //
 // Réglages :
@@ -58,7 +60,7 @@ const when = (v: unknown) => {
   return new Date(Number.isFinite(s) && s > 0 ? s * 1000 : Date.now()).toISOString();
 };
 
-type Status = { status?: string; recipient_id?: string; errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[] };
+type Status = { id?: string; status?: string; recipient_id?: string; errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[] };
 type Value = {
   metadata?: { phone_number_id?: string };
   messages?: { from?: string; timestamp?: string }[];
@@ -112,6 +114,7 @@ Deno.serve(async (req) => {
   if (event.object !== "whatsapp_business_account") return text("ok");
 
   const tasks: Promise<void>[] = [];
+  const writers = new Set<string>();
   for (const entry of event.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (change.field !== "messages" || !change.value) continue;
@@ -120,13 +123,20 @@ Deno.serve(async (req) => {
       if (PHONE_ID && v.metadata?.phone_number_id && v.metadata.phone_number_id !== PHONE_ID) continue;
       for (const m of v.messages ?? []) {
         const phone = digits(m.from);
-        if (phone.length >= 8 && phone.length <= 15) tasks.push(rpc("gm_whatsapp_inbound", { p_phone: phone, p_at: when(m.timestamp) }));
+        if (phone.length >= 8 && phone.length <= 15) {
+          tasks.push(rpc("gm_whatsapp_inbound", { p_phone: phone, p_at: when(m.timestamp) }));
+          writers.add(phone);
+        }
       }
       for (const s of v.statuses ?? []) {
-        if (s.status !== "failed") continue;
-        const phone = digits(s.recipient_id);
         const e: NonNullable<Status["errors"]>[number] = s.errors?.[0] ?? {};
         const why = String(e.error_data?.details ?? e.message ?? e.title ?? "").slice(0, 300);
+        // Carte de bon envoyée par la console : remise, lue, ou non remise (sans effet pour les autres messages).
+        if (s.id && (s.status === "delivered" || s.status === "read" || s.status === "failed")) {
+          tasks.push(rpc("gm_card_sale_wa_status", { p_message_id: s.id, p_status: s.status, p_code: Number(e.code ?? 0) || null, p_error: why }));
+        }
+        if (s.status !== "failed") continue;
+        const phone = digits(s.recipient_id);
         // Journal de la fonction (Supabase → Edge Functions → gm-whatsapp-webhook → Logs), sans le texte envoyé.
         console.error("WhatsApp non remis", `${phone.slice(0, 3)}…${phone.slice(-2)}`, e.code ?? 0, why);
         if (phone.length >= 8 && phone.length <= 15) tasks.push(rpc("gm_whatsapp_failed", { p_phone: phone, p_code: Number(e.code ?? 0), p_error: why }));
@@ -138,5 +148,16 @@ Deno.serve(async (req) => {
     console.error("Notification WhatsApp non enregistrée", String((failed[0] as PromiseRejectedResult).reason).slice(0, 300));
     return text("Erreur d'enregistrement.", 500); // Meta renvoie la notification plus tard.
   }
+  // Le client vient d'écrire : ses cartes en attente partent maintenant (fenêtre de 24 heures ouverte).
+  await Promise.allSettled(
+    [...writers].map((phone) =>
+      fetch(`${SUPABASE_URL}/functions/v1/gm-cartes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "flush", phone }),
+        signal: AbortSignal.timeout(8000),
+      }).then((r) => r.body?.cancel())
+    ),
+  );
   return text("ok");
 });

@@ -801,4 +801,8 @@ export const EN_MESSAGES: Record<string, string> = {
   "« {} » n'est plus en vente.": "“{}” is no longer for sale.",
   "Couleurs et tailles": "Colours and sizes",
   "Couleurs et tailles du produit": "Product colours and sizes",
+  "Cette carte est r\u00e9serv\u00e9e \u00e0 la boutique ": "This card is reserved for shop ",
+  "Saisissez l'ID de la transaction {} (re\u00e7u par SMS apr\u00e8s le paiement).": "Enter the {} transaction ID (received by SMS after payment).",
+  "{} \u2014 {} {} mois, {} FCFA": "{} \u2014 {} {} month(s), {} FCFA",
+  " : contactez Eden Dev si c'est une erreur.": ": contact Eden Dev if this is a mistake.",
 };

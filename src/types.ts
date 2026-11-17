@@ -1241,6 +1241,11 @@ export interface AccountOptions {
     om_merchant_code: string;
     om_merchant_name: string;
     om_qr_payload: string;
+    /** Numéros marchands Wave et Moov Money d'Eden Dev (0.33, réglés dans la Console Eden Dev ; vides : fermés). */
+    wave_merchant_number?: string;
+    wave_merchant_name?: string;
+    moov_merchant_number?: string;
+    moov_merchant_name?: string;
     card_enabled: boolean;
     /** Devise par défaut de la carte Visa, et devises acceptées par le profil Cybersource. */
     card_currency?: string;
@@ -1248,7 +1253,9 @@ export interface AccountOptions {
   };
 }
 
-export type SubscriptionMethod = "carte_bon" | "orange_money" | "carte_visa";
+export type SubscriptionMethod = "carte_bon" | "orange_money" | "wave" | "moov_money" | "carte_visa";
+/** Paiements mobiles déclarés par la boutique et validés par Eden Dev. */
+export type MobileMoneyMethod = "orange_money" | "wave" | "moov_money";
 
 /** Paiement de l'abonnement (gm_pc_payments). */
 export interface SubscriptionPayment {

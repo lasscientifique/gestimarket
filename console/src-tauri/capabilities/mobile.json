@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "Téléphone : écriture dans le fichier choisi par « Enregistrer sous » (CSV, licence)",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": [
+    "fs:allow-write-text-file",
+    "fs:allow-write-file"
+  ]
+}

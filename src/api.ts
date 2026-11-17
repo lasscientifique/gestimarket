@@ -421,7 +421,8 @@ export const api = {
   accountLink: (store_code: string) => call<AccountLinkResult>("account_link", { store_code }),
   accountPayments: () => call<SubscriptionPayment[]>("account_payments"),
   accountRedeemVoucher: (code: string) => call<VoucherResult>("account_redeem_voucher", { code }),
-  accountDeclareOrangeMoney: (input: { plan: string; months: number; reference: string; payer_phone: string }) =>
+  /** Orange Money, Wave ou Moov Money (0.33 : « method » ; sans lui, Orange Money). */
+  accountDeclareOrangeMoney: (input: { plan: string; months: number; reference: string; payer_phone: string; method?: string }) =>
     call<{ payment_id: string; amount: number; plan_label: string; months: number }>("account_declare_orange_money", input),
   accountCardStart: (plan: string, months: number) => call<CardStart>("account_card_start", { plan, months }),
 

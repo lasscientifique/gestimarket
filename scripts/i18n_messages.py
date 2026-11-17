@@ -85,7 +85,8 @@ def collect():
         found += [m.group(1) for m in re.finditer(r"'(Rez-de-chaussée)'", text)]
     sup = os.path.join(ROOT, "supabase")
     for f in os.listdir(sup):
-        if f.endswith(".sql"):
+        # console_*.sql : Console Eden Dev (en français seulement), messages jamais affichés par GestiMarket.
+        if f.endswith(".sql") and not f.startswith("console_"):
             found += sql_messages(os.path.join(sup, f))
     for base, _dirs, files in os.walk(os.path.join(sup, "functions")):
         for f in files:
