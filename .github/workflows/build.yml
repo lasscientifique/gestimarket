@@ -75,10 +75,12 @@ jobs:
       - run: npm ci
       - name: ESLint
         run: npx eslint . --max-warnings 20
+      # Modules livrés dans GestiMarket : aucune faille tolérée. Outils de fabrication : faille grave bloquante
+      # dès qu'une correction simple existe, simple avertissement tant qu'aucune n'est publiée.
       - name: Failles des modules web (npm audit)
         run: |
           npm audit --omit=dev --audit-level=moderate
-          npm audit --audit-level=high
+          node scripts/npm-audit-dev.mjs
       - name: clippy
         working-directory: src-tauri
         run: |
