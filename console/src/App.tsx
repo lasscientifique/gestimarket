@@ -3,7 +3,8 @@ import {
   BadgeCheck, Bell, CreditCard, FileKey2, FileSearch, LayoutDashboard, LogOut, Menu, ScrollText, Settings as SettingsIcon, ShieldAlert, Store, Ticket,
   Users, X, Download,
 } from "lucide-react";
-import { APP_VERSION, deviceLabel, deviceToken, errText, isDesktopApp, platform, rpc, sb } from "./lib/sb";
+import { APP_VERSION, deviceLabel, deviceToken, errText, isAndroid, isDesktopApp, platform, rpc, sb } from "./lib/sb";
+import { autoUpdate, checkUpdate, idleMs, installUpdate, type UpdateInfo } from "./lib/update";
 import { ROLE } from "./lib/fmt";
 import { DeviceWait, Login, Mfa, NotAdmin } from "./Auth";
 import { ErrorBox, Spinner, useToast } from "./ui";
@@ -49,6 +50,22 @@ const IDLE_MINUTES = 30;
 
 export default function App() {
   const [stage, setStage] = useState<Stage>({ kind: "loading" });
+  // PC, mise à jour automatique : au lancement, la nouvelle version s'installe avant tout travail.
+  const [startup, setStartup] = useState<{ version: string; progress: number | null } | null>(null);
+  useEffect(() => {
+    if (!isDesktopApp || !autoUpdate()) return;
+    let stop = false;
+    checkUpdate()
+      .then(async (u) => {
+        if (!u || stop) return;
+        setStartup({ version: u.version, progress: null });
+        await installUpdate((progress) => setStartup({ version: u.version, progress }));
+      })
+      .catch(() => setStartup(null));
+    return () => {
+      stop = true;
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -94,6 +111,22 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [stage.kind, signOut]);
+
+  if (startup) {
+    return (
+      <div className="auth">
+        <div className="auth-card stack">
+          <strong>Mise à jour de la console vers la version {startup.version}</strong>
+          <div className="progress">
+            <span style={{ width: `${startup.progress ?? 30}%` }} className={startup.progress === null ? "indeterminate" : undefined} />
+          </div>
+          <p className="muted small">
+            {startup.progress === 100 ? "Installation… la console redémarre toute seule." : "Téléchargement de la version signée par Eden Dev. Ne fermez pas la console."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   switch (stage.kind) {
     case "loading":
@@ -221,7 +254,7 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             </button>
           </div>
         )}
-        <UpdateBanner />
+        <UpdateBanner nav={nav} />
         <div className="content">
           {page === "dashboard" && <Dashboard me={me} nav={nav} />}
           {page === "alerts" && <Alerts me={me} nav={nav} />}
@@ -231,7 +264,7 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           {page === "cards" && <Cards me={me} nav={nav} tab={arg} />}
           {page === "licences" && <Licences me={me} nav={nav} />}
           {page === "team" && <Team me={me} />}
-          {page === "settings" && <Settings me={me} />}
+          {page === "settings" && <Settings me={me} tab={arg} />}
           {page === "journal" && <Journal me={me} />}
         </div>
       </main>
@@ -239,40 +272,70 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   );
 }
 
-/** PC : nouvelle version de la console (signée par Eden Dev), installée en un clic. */
-function UpdateBanner() {
+/**
+ * Nouvelle version de la console : vérifiée toutes les 6 heures. PC avec la mise à jour automatique : installée dès
+ * que la console n'a pas servi depuis 10 minutes ; sinon, ce bandeau propose de l'installer (Réglages → Mise à jour).
+ */
+function UpdateBanner({ nav }: { nav: Nav }) {
   const toast = useToast();
-  const [version, setVersion] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!isDesktopApp) return;
-    import("@tauri-apps/plugin-updater")
-      .then(({ check }) => check())
-      .then((u) => u && setVersion(u.version))
-      .catch(() => undefined);
-  }, []);
-  if (!version) return null;
-  const install = async () => {
-    setBusy(true);
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [progress, setProgress] = useState<number | null | undefined>(undefined);
+  const installing = useRef(false);
+
+  const install = useCallback(async () => {
+    if (installing.current) return;
+    installing.current = true;
+    setProgress(null);
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const u = await check();
-      if (!u) return setVersion("");
-      await u.downloadAndInstall();
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
+      await installUpdate(setProgress);
     } catch (e) {
       toast.fail(e);
-      setBusy(false);
+      setProgress(undefined);
+      installing.current = false;
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    if (!isDesktopApp && !isAndroid) return;
+    let stop = false;
+    const run = () =>
+      checkUpdate()
+        .then((u) => !stop && setInfo(u))
+        .catch(() => undefined);
+    const first = window.setTimeout(run, 20_000);
+    const every = window.setInterval(run, 6 * 3600_000);
+    return () => {
+      stop = true;
+      window.clearTimeout(first);
+      window.clearInterval(every);
+    };
+  }, []);
+
+  // Mise à jour automatique : attendre 10 minutes sans activité (jamais au milieu d'une action).
+  useEffect(() => {
+    if (!info || !isDesktopApp) return;
+    const t = window.setInterval(() => {
+      if (autoUpdate() && idleMs() >= 10 * 60_000) void install();
+    }, 60_000);
+    return () => window.clearInterval(t);
+  }, [info, install]);
+
+  if (!info) return null;
   return (
     <div className="update-banner">
       <Download size={18} />
-      <span>Nouvelle version de la console : {version}.</span>
-      <button className="btn btn-sm btn-primary" onClick={install} disabled={busy}>
-        {busy ? "Installation…" : "Installer et redémarrer"}
+      <span>
+        Nouvelle version de la console : {info.version}.
+        {progress !== undefined && ` ${progress === 100 ? "Installation…" : `Téléchargement${progress === null ? "…" : ` ${progress} %`}`}`}
+      </span>
+      <button className="btn btn-sm" onClick={() => nav("settings", "maj")}>
+        Nouveautés
       </button>
+      {isDesktopApp && (
+        <button className="btn btn-sm btn-primary" onClick={() => void install()} disabled={progress !== undefined}>
+          {progress !== undefined ? "Installation…" : "Installer et redémarrer"}
+        </button>
+      )}
     </div>
   );
 }

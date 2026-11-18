@@ -59,7 +59,7 @@ export function MfaHelp({ open: initial = false }: { open?: boolean }) {
         <li>
           <Smartphone size={14} className="inline" /> Téléphone perdu ? Un membre de la Direction réinitialise votre vérification (Équipe →
           Réinitialiser), puis vous scannez un nouveau code QR. Ajoutez dès maintenant un <strong>téléphone de secours</strong> (Réglages →
-          Vérification à 2 étapes).
+          Ma sécurité).
         </li>
       </ol>
       <button type="button" className="link-btn" onClick={() => setOpen(false)}>

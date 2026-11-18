@@ -282,3 +282,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 .mfa-drawing { width: 100%; max-width: 360px; align-self: center; height: auto; }
 @media (max-width: 860px) { .critical-banner { padding: 10px 12px; } }
 @media (prefers-reduced-motion: reduce) { .critical-banner { animation: none; } }
+
+/* Console 1.1 : mise à jour */
+.big-version { font-size: 28px; font-weight: 700; color: var(--accent-strong); }
+.update-notes { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; max-height: 260px; overflow: auto; }
+.progress { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.3s; }
+.progress > span.indeterminate { animation: gm-indeterminate 1.2s ease-in-out infinite; }
+@keyframes gm-indeterminate { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+.check { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+.check input { width: 18px; height: 18px; }

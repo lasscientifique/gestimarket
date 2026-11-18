@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil, RefreshCw } from "lucide-react";
 import type { Me } from "../App";
 import { rpc } from "../lib/sb";
 import { money } from "../lib/fmt";
-import { ActionModal, Badge, ErrorBox, Spinner, useLoad, useToast, type AskField } from "../ui";
+import { ActionModal, Badge, ErrorBox, Spinner, Tabs, useLoad, useToast, type AskField } from "../ui";
 import { MyFactors } from "./MyFactors";
+import { UpdateTab } from "./UpdateTab";
 
 type Cfg = {
   config: Record<string, string>;
@@ -49,7 +50,32 @@ const GROUPS: { title: string; hint: string; keys: [string, string, AskField["ty
 
 const yesNo = (v: string) => (v === "true" ? "ouvert" : "fermé");
 
-export function Settings({ me }: { me: Me }) {
+type SettingsTab = "eden" | "securite" | "maj";
+const tabOf = (t?: string): SettingsTab => (t === "maj" ? "maj" : t === "securite" ? "securite" : "eden");
+
+/** Réglages : ceux d'Eden Dev (Direction), ma vérification à 2 étapes, mise à jour de la console. */
+export function Settings({ me, tab }: { me: Me; tab?: string }) {
+  const [t, setT] = useState<SettingsTab>(tabOf(tab));
+  useEffect(() => setT(tabOf(tab)), [tab]);
+  return (
+    <div className="stack-lg">
+      <Tabs
+        value={t}
+        onChange={setT}
+        items={[
+          ["eden", "Réglages d'Eden Dev"],
+          ["securite", "Ma sécurité"],
+          ["maj", "Mise à jour"],
+        ]}
+      />
+      {t === "eden" && <EdenSettings me={me} />}
+      {t === "securite" && <MyFactors />}
+      {t === "maj" && <UpdateTab />}
+    </div>
+  );
+}
+
+function EdenSettings({ me }: { me: Me }) {
   const toast = useToast();
   const { data, error, busy, reload } = useLoad(() => rpc<Cfg>("gm_console_settings"), []);
   const [edit, setEdit] = useState<{ key: string; label: string; type?: AskField["type"] } | null>(null);
@@ -77,7 +103,6 @@ export function Settings({ me }: { me: Me }) {
           <RefreshCw size={15} />
         </button>
       </div>
-      <MyFactors />
       {data.cinetpay && data.cinetpay.orders > 0 && (
         <p className="muted small">
           CinetPay : {data.cinetpay.orders} paiement(s) commencé(s), {data.cinetpay.success} réussi(s)
