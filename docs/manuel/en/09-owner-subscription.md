@@ -30,7 +30,7 @@ Subscription & licence shows the plan, the end date and the stations in use. To 
 
 - **Voucher card**: code printed on the card bought from a reseller, the subscription is activated right away;
 - **Orange Money**: pay the merchant code, then enter the reference received by SMS; Eden Dev validates;
-- **Visa card**: secure payment page.
+- **Visa or Mastercard card**: secure payment page.
 
 Without an account, the shop runs for **14 days as a free trial** (PRO plan, 3 stations): Subscription & licence shows the days left and offers to create the account.
 

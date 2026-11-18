@@ -88,6 +88,18 @@ export async function flushCards(phone?: string): Promise<{ ok: boolean; sent?: 
   return r.json().catch(() => ({ ok: false, error: `Réponse ${r.status}` }));
 }
 
+/** Carte bancaire (fonction « gm-pay ») : clés Cybersource en place, et mode essai ou réel. Jamais la valeur des clés. */
+export async function cardStatus(): Promise<{ configured: boolean; mode: "test" | "live" }> {
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/gm-pay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "status" }),
+  });
+  const v = await r.json().catch(() => ({}));
+  if (v?.status !== "ok") throw new Error(v?.message ?? `Réponse ${r.status}`);
+  return { configured: !!v.configured, mode: v.mode === "live" ? "live" : "test" };
+}
+
 /** Lien de paiement CinetPay d'une carte vendue (fonction « gm-cinetpay », au nom de l'administrateur connecté). */
 export async function cinetpaySaleLink(saleId: string): Promise<{ payment_url: string; window_open: boolean }> {
   const { data } = await sb.auth.getSession();

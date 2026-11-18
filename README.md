@@ -203,7 +203,7 @@ Chaque boutique a un **compte Eden Dev** (Supabase Auth : e-mail + mot de passe)
 | **PRO** | 3 | + postes clients (PC, téléphones, tablettes), accès Internet, écran client, logo | 18 000 FCFA / mois |
 | **BUSINESS** | selon contrat | toutes les fonctions | 50 000 FCFA / mois |
 
-Durées : 1, 3, 6 ou **12 mois (2 mois offerts : 10 payés)**, par carte de bon, Orange Money ou carte Visa, sur le PC ou dans l'application mobile.
+Durées : 1, 3, 6 ou **12 mois (2 mois offerts : 10 payés)**, par carte de bon, Orange Money ou carte Visa ou Mastercard, sur le PC ou dans l'application mobile.
 
 Parcours :
 
@@ -212,7 +212,7 @@ Parcours :
 3. **Paiement** : menu *Abonnement & licence* → *Payer ou renouveler* → moyen de paiement (le PC est reconnu : pas de mot de passe à retaper) :
    - **Carte de bon** (carte prépayée Eden Dev, code de 16 caractères) : **activation immédiate**, licence téléchargée dans la foulée. Code utilisable une seule fois ; 5 codes faux bloquent la saisie une heure.
    - **Orange Money (Sarali)** : formule et durée, montant exact, **code marchand** d'Eden Dev (et son QR code), puis **ID de la transaction** reçu par SMS. Eden Dev vérifie et valide.
-   - **Carte Visa (Cybersource, Visa)** : formule et durée, la **page de paiement sécurisée de Visa** s'ouvre dans le navigateur (3-D Secure). Le résultat signé arrive à Supabase : **validation automatique**. Le numéro de carte ne passe jamais par GestiMarket ni par Eden Dev.
+   - **Carte Visa ou Mastercard (Cybersource, groupe Visa)** : formule et durée, la **page de paiement sécurisée de Cybersource** s'ouvre dans le navigateur (3-D Secure). Le résultat signé arrive à Supabase : **validation automatique**. Le numéro de carte ne passe jamais par GestiMarket ni par Eden Dev.
    - *Mes paiements* : état de chaque paiement (en attente, validé, refusé avec le motif).
 4. **Changement de formule** : une **formule supérieure s'applique tout de suite**, les jours restants des formules inférieures payées étant convertis en jours de la nouvelle au prorata du prix (l'essai gratuit ne compte pas) ; même formule ou formule inférieure : à la suite de la période en cours. Validation Orange Money par Eden Dev : tableau de bord Supabase → table `gm_payments` → `status` → `validated` (ou `refused`, avec un motif dans `note`) ; la vue `gm_paiements_a_valider` affiche les paiements avec la boutique. Après un paiement, la licence est vérifiée toutes les 2 minutes pendant 24 h.
 5. La fonction `gm-license` **signe la licence (Ed25519)** et la dépose dans le bucket public `licences/<identifiant du PC>.gml`. GestiMarket la télécharge toute seule (toutes les 30 minutes, ou bouton *Vérifier maintenant*). Sans Internet : *Importer un fichier* (licence reçue par WhatsApp ou clé USB).
@@ -233,13 +233,14 @@ Réglages d'Eden Dev (table `gm_config`) :
 |---|---|
 | `om_merchant_code`, `om_merchant_name` | Code marchand Sarali d'Eden Dev et nom affiché par Orange Money |
 | `om_qr_payload` | Contenu du QR code marchand (facultatif ; scanner l'autocollant avec un téléphone pour le lire) |
-| `card_enabled` | `true` pour ouvrir la carte Visa, une fois les clés Cybersource en place |
+| `card_enabled` | `true` pour ouvrir la carte bancaire (Visa, Mastercard) à toutes les boutiques, seulement avec le profil Cybersource réel (`CYBS_ENV` = `live`) |
+| `card_test_stores` | Boutiques d'essai de la carte (codes `GM-…`, séparés par des virgules ; Console → Réglages → Carte bancaire) : elles voient la carte même fermée. Non lisible publiquement |
 | `card_currency` | Devise par défaut des paiements par carte (`XOF`) |
 | `card_currencies` | Devises acceptées par le profil Cybersource (`XOF,EUR,USD`) : la carte est payée dans la devise de la boutique si elle y figure et a un prix dans `gm_plan_prices` |
 
 **Cartes de bon** : `select * from public.gm_voucher_batch('pro', 1, 20);` dans le SQL Editor (formule, mois, nombre de cartes, lot facultatif) → *Export → CSV* → `supabase/cartes_de_bon.html` (coller, afficher, imprimer : 10 cartes par page A4, format carte bancaire). Les codes ne sont visibles qu'à la création (gardés hachés en SHA-256). Suivi : vue `gm_cartes_de_bon` ; une carte perdue ou volée : `status` → `cancelled` dans `gm_vouchers`.
 
-**Carte Visa (Cybersource)** : contrat de paiement en ligne avec une banque partenaire de Visa au Mali (BMS S.A., Cybersource). Dans le *Business Center* Cybersource : profil *Secure Acceptance* « Hosted Checkout », clé d'accès et clé secrète. Dans Supabase (*Edge Functions → Secrets*) : `CYBS_PROFILE_ID`, `CYBS_ACCESS_KEY`, `CYBS_SECRET_KEY` et `CYBS_ENV` (`test` pour le bac à sable gratuit, `live` en production), puis `card_enabled` = `true`. La fonction `gm-pay` signe chaque demande (HMAC-SHA256), indique son adresse pour la notification (`override_backoffice_post_url`) et n'active l'abonnement que si la signature, le montant et la devise du résultat sont exacts ; un paiement « en vérification » chez Cybersource passe dans les paiements à valider.
+**Carte Visa ou Mastercard (Cybersource)** : contrat de paiement en ligne avec une banque partenaire au Mali (BMS S.A., Cybersource). Dans le *Business Center* Cybersource : profil *Secure Acceptance* « Hosted Checkout », clé d'accès et clé secrète. Dans Supabase (*Edge Functions → Secrets*) : `CYBS_PROFILE_ID`, `CYBS_ACCESS_KEY`, `CYBS_SECRET_KEY` et `CYBS_ENV` (`test` pour le compte d'essai gratuit, `live` en production). **Mode essai (0.34.1)** : avec `CYBS_ENV` = `test`, seules les boutiques de `card_test_stores` peuvent payer, avec les cartes de test (aucun argent) ; leurs paiements sont marqués « test » et restent hors des recettes ; `gm-pay` refuse toutes les autres boutiques, même si `card_enabled` = `true`. Une fois le profil réel en place (`live`) et un vrai paiement de 100 FCFA réussi : `card_enabled` = `true` et la liste d'essai vidée. Schéma : `supabase/gestimarket_0_34_1.sql` et `supabase/console_eden_dev_1_1_1.sql`. La fonction `gm-pay` signe chaque demande (HMAC-SHA256), indique son adresse pour la notification (`override_backoffice_post_url`) et n'active l'abonnement que si la signature, le montant et la devise du résultat sont exacts ; un paiement « en vérification » chez Cybersource passe dans les paiements à valider.
 ---
 
 ## Développement

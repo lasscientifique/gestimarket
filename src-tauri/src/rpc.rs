@@ -1023,7 +1023,9 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }
         "account_options" => {
             account_access(state, origin)?;
-            out(crate::account::options().map_err(AppError::Validation)?)
+            // Boutique de ce PC (licence, sinon compte relié) : boutique d'essai de la carte chez Eden Dev ?
+            let store = crate::license::status().store_code.filter(|c| !c.is_empty()).unwrap_or_else(|| crate::license::account().store_code);
+            out(crate::account::options(&store).map_err(AppError::Validation)?)
         }
         "account_signup" => {
             account_access(state, origin)?;

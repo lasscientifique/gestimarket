@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pencil, RefreshCw } from "lucide-react";
 import type { Me } from "../App";
-import { rpc } from "../lib/sb";
+import { cardStatus, rpc } from "../lib/sb";
 import { money } from "../lib/fmt";
 import { ActionModal, Badge, ErrorBox, Spinner, Tabs, useLoad, useToast, type AskField } from "../ui";
 import { MyFactors } from "./MyFactors";
@@ -12,6 +12,7 @@ type Cfg = {
   plans: { code: string; label: string; price_month: number; max_postes: number; active: boolean; description: string }[];
   whatsapp_ready: boolean;
   cinetpay?: { orders: number; success: number; last_error: string | null };
+  card?: { test_payments: number; test_accepted: number; real_accepted: number };
 };
 
 const GROUPS: { title: string; hint: string; keys: [string, string, AskField["type"]?][] }[] = [
@@ -36,12 +37,19 @@ const GROUPS: { title: string; hint: string; keys: [string, string, AskField["ty
     keys: [["cinetpay_enabled", "Paiement direct dans GestiMarket et lien de paiement des cartes", "select"]],
   },
   {
+    title: "Carte bancaire (Visa, Mastercard)",
+    hint: "Cybersource. Essai : les boutiques d'essai seulement, cartes de test, aucun argent. Ouvrir à toutes les boutiques seulement avec le profil réel (CYBS_ENV = live).",
+    keys: [
+      ["card_test_stores", "Boutiques d'essai (codes GM-…, séparés par des virgules)"],
+      ["card_enabled", "Ouverte à toutes les boutiques", "select"],
+    ],
+  },
+  {
     title: "Essai et services",
-    hint: "Essai offert aux nouvelles boutiques ; ouverture de Visa et des codes WhatsApp.",
+    hint: "Essai offert aux nouvelles boutiques ; ouverture des codes WhatsApp.",
     keys: [
       ["trial_days", "Durée de l'essai (jours)", "number"],
       ["trial_plan", "Formule de l'essai", "select"],
-      ["card_enabled", "Paiement par carte Visa", "select"],
       ["whatsapp_enabled", "Codes de connexion par WhatsApp", "select"],
       ["payment_instructions", "Texte d'aide au paiement", "textarea"],
     ],
@@ -78,6 +86,11 @@ export function Settings({ me, tab }: { me: Me; tab?: string }) {
 function EdenSettings({ me }: { me: Me }) {
   const toast = useToast();
   const { data, error, busy, reload } = useLoad(() => rpc<Cfg>("gm_console_settings"), []);
+  // État de la carte chez Cybersource (clés en place, essai ou réel) : lu dans « gm-pay », sans les clés.
+  const [card, setCard] = useState<{ configured: boolean; mode: "test" | "live" } | "erreur" | null>(null);
+  useEffect(() => {
+    cardStatus().then(setCard).catch(() => setCard("erreur"));
+  }, []);
   const [edit, setEdit] = useState<{ key: string; label: string; type?: AskField["type"] } | null>(null);
   const [plan, setPlan] = useState<Cfg["plans"][number] | null>(null);
   const isDir = me.role === "direction";
@@ -88,6 +101,7 @@ function EdenSettings({ me }: { me: Me }) {
     const v = c[key] ?? "";
     if (key === "card_enabled" || key === "whatsapp_enabled" || key === "cinetpay_enabled") return yesNo(v);
     if (key === "trial_plan") return v.toUpperCase();
+    if (key === "card_test_stores") return v ? v.split(",").join(", ") : <span className="muted">aucune</span>;
     return v || <span className="muted">non réglé</span>;
   };
   const options = (key: string): [string, string][] =>
@@ -114,6 +128,7 @@ function EdenSettings({ me }: { me: Me }) {
           <section key={g.title} className="card">
             <h3 className="card-title">{g.title}</h3>
             <p className="muted small">{g.hint}</p>
+            {g.keys.some(([k]) => k === "card_enabled") && <CardState card={card} open={c.card_enabled === "true"} stats={data.card} />}
             <dl className="kv">
               {g.keys.map(([k, label, type]) => (
                 <div key={k}>
@@ -172,6 +187,13 @@ function EdenSettings({ me }: { me: Me }) {
       {edit && (
         <ActionModal
           title={`Modifier : ${edit.label}`}
+          intro={
+            edit.key === "card_enabled" && card !== "erreur" && card?.mode === "test"
+              ? "Cybersource est en mode essai : même ouverte, la carte reste refusée aux boutiques hors de la liste d'essai. Ouvrez-la à toutes seulement avec le profil réel."
+              : edit.key === "card_test_stores"
+                ? "Vos boutiques d'essai (par exemple GM-000001). Elles voient la carte même fermée. Videz la liste après les essais."
+                : undefined
+          }
           fields={[{ key: "value", label: edit.label, type: edit.type === "select" ? "select" : edit.type, options: edit.type === "select" ? options(edit.key) : undefined, value: c[edit.key] ?? "" }]}
           confirm="Enregistrer"
           onClose={() => setEdit(null)}
@@ -198,6 +220,36 @@ function EdenSettings({ me }: { me: Me }) {
             reload();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/** Carte bancaire : clés Cybersource, mode essai ou réel, et paiements par carte déjà faits. */
+function CardState({
+  card,
+  open,
+  stats,
+}: {
+  card: { configured: boolean; mode: "test" | "live" } | "erreur" | null;
+  open: boolean;
+  stats?: Cfg["card"];
+}) {
+  if (card === null) return <p className="muted small">Cybersource : vérification…</p>;
+  if (card === "erreur") return <p className="muted small">Cybersource : état indisponible pour l'instant.</p>;
+  return (
+    <div className="stack">
+      <p className="small">
+        Cybersource :{" "}
+        {card.configured ? <Badge tone="success">clés en place</Badge> : <Badge tone="warning">clés absentes de Supabase</Badge>}{" "}
+        {card.mode === "live" ? <Badge tone="success">profil réel</Badge> : <Badge>mode essai</Badge>}
+        {stats && ` · ${stats.test_payments} paiement(s) d'essai, dont ${stats.test_accepted} accepté(s) ; ${stats.real_accepted} paiement(s) réel(s) accepté(s).`}
+      </p>
+      {open && card.mode === "test" && (
+        <p className="small">
+          <Badge tone="danger">attention</Badge> Carte ouverte à toutes les boutiques alors que Cybersource est en mode essai : les autres
+          boutiques sont refusées. Fermez-la, ou passez au profil réel.
+        </p>
       )}
     </div>
   );

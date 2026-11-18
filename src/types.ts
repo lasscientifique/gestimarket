@@ -1246,8 +1246,11 @@ export interface AccountOptions {
     wave_merchant_name?: string;
     moov_merchant_number?: string;
     moov_merchant_name?: string;
+    /** Carte bancaire (Visa, Mastercard, par Cybersource) ouverte pour cette boutique. */
     card_enabled: boolean;
-    /** Devise par défaut de la carte Visa, et devises acceptées par le profil Cybersource. */
+    /** Boutique d'essai de la carte chez Eden Dev (0.34.1) : carte ouverte pour elle seule. */
+    card_test?: boolean;
+    /** Devise par défaut de la carte bancaire, et devises acceptées par le profil Cybersource. */
     card_currency?: string;
     card_currencies?: string[];
     /** Paiement direct par CinetPay (0.34) : Orange Money, Moov Money, carte bancaire ; validé tout seul. */
@@ -1288,8 +1291,10 @@ export interface CardStart {
   currency: string;
   plan_label: string;
   months: number;
-  /** Paiement direct CinetPay : page de paiement à ouvrir (la carte Visa ouvre la sienne toute seule). */
+  /** Paiement direct CinetPay : page de paiement à ouvrir (la carte bancaire ouvre la sienne toute seule). */
   payment_url?: string;
+  /** Carte bancaire : Cybersource en mode essai chez Eden Dev (carte de test, aucun argent). */
+  test?: boolean;
 }
 
 export interface StoreInput {

@@ -1,4 +1,4 @@
-// GestiMarket — paiement des abonnements par carte Visa : Cybersource (Visa), page de paiement
+// GestiMarket — paiement des abonnements par carte bancaire (Visa, Mastercard) : Cybersource, page de paiement
 // hébergée « Secure Acceptance Hosted Checkout ». Le numéro de carte ne passe jamais par Eden Dev.
 //
 // 1. GestiMarket : POST JSON { "pc_id", "plan", "months" }
@@ -12,8 +12,13 @@
 //    → signature vérifiée → gm_card_result : ACCEPT au bon montant = abonnement activé ; REVIEW ou montant
 //      inattendu = à vérifier par Eden Dev ; DECLINE, CANCEL, ERROR = refusé.
 //
+// 3. Console Eden Dev : POST JSON { "action": "status" } → { configured, mode } (sans aucun secret).
+//
 // Secrets (Edge Functions → Secrets) : CYBS_PROFILE_ID, CYBS_ACCESS_KEY, CYBS_SECRET_KEY et CYBS_ENV
-// (« test » par défaut, « live » en production). Puis gm_config.card_enabled = 'true'.
+// (« test » par défaut, « live » en production).
+// Mode essai (0.34.1) : compte d'essai Cybersource, cartes de test, aucun argent. Seules les boutiques d'essai
+// (Console → Réglages → Carte bancaire) peuvent payer, et leurs paiements sont marqués « test » (p_test).
+// Ouverture à toutes les boutiques (gm_config.card_enabled = 'true') : seulement avec CYBS_ENV = live.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -31,8 +36,15 @@ const enc = new TextEncoder();
 const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// La console Eden Dev (application de bureau) lit l'état de la carte : appel depuis une autre origine.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
 function text(body: string, status = 200) {
@@ -60,15 +72,11 @@ function sameText(a: string, b: string): boolean {
 const clean = (s: unknown, max: number) =>
   String(s ?? "").replace(/[<>"&,;=]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
-async function start(req: Request): Promise<Response> {
+type StartBody = { action?: unknown; pc_id?: unknown; store_code?: unknown; plan?: unknown; months?: unknown };
+
+async function start(req: Request, body: StartBody): Promise<Response> {
   if (!PROFILE_ID || !ACCESS_KEY || !SECRET_KEY) {
-    return json({ status: "error", message: "Le paiement par carte Visa n'est pas encore configuré chez Eden Dev : utilisez une carte de bon ou Orange Money." }, 503);
-  }
-  let body: { pc_id?: unknown; store_code?: unknown; plan?: unknown; months?: unknown } = {};
-  try {
-    body = await req.json();
-  } catch {
-    // refusé ci-dessous
+    return json({ status: "error", message: "Le paiement par carte bancaire n'est pas encore configuré chez Eden Dev : utilisez un autre moyen de paiement." }, 503);
   }
   const plan = String(body.plan ?? "");
   const months = Number(body.months);
@@ -78,11 +86,11 @@ async function start(req: Request): Promise<Response> {
     const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     const { data: u } = jwt ? await sb.auth.getUser(jwt) : { data: { user: null } };
     if (!u?.user) return json({ status: "error", message: "Connectez-vous à votre compte boutique." }, 401);
-    started = await sb.rpc("gm_card_start_owner", { p_uid: u.user.id, p_store_code: String(body.store_code), p_plan: plan, p_months: months });
+    started = await sb.rpc("gm_card_start_owner", { p_uid: u.user.id, p_store_code: String(body.store_code), p_plan: plan, p_months: months, p_test: !LIVE });
   } else {
     const pc = String(body.pc_id ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
     if (!/^[0-9A-Z]{12}$/.test(pc)) return json({ status: "error", message: "Identifiant de PC invalide." }, 400);
-    started = await sb.rpc("gm_card_start", { p_pc_id: pc, p_plan: plan, p_months: months });
+    started = await sb.rpc("gm_card_start", { p_pc_id: pc, p_plan: plan, p_months: months, p_test: !LIVE });
   }
   const { data: s, error } = started;
   if (error) return json({ status: "error", message: error.message }, 400);
@@ -118,6 +126,8 @@ async function start(req: Request): Promise<Response> {
     currency: s.currency,
     plan_label: s.plan_label,
     months: s.months,
+    // Mode essai : GestiMarket rappelle d'utiliser une carte de test (aucun argent).
+    test: !LIVE,
     endpoint: ENDPOINT,
     fields,
     // Page prête à afficher (WebView native de l'application en mode HTML) : le formulaire signé part tout seul.
@@ -156,6 +166,7 @@ async function notify(req: Request): Promise<Response> {
     p_currency: f.req_currency,
     p_transaction_id: f.transaction_id ?? "",
     p_message: [f.reason_code, f.message].filter(Boolean).join(" — "),
+    p_test: !LIVE,
   });
   if (error) {
     console.error(error);
@@ -165,10 +176,20 @@ async function notify(req: Request): Promise<Response> {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ status: "error", message: "Méthode POST attendue." }, 405);
   const type = req.headers.get("content-type") ?? "";
   try {
-    return type.includes("application/x-www-form-urlencoded") || type.includes("multipart/form-data") ? await notify(req) : await start(req);
+    if (type.includes("application/x-www-form-urlencoded") || type.includes("multipart/form-data")) return await notify(req);
+    let body: StartBody = {};
+    try {
+      body = await req.json();
+    } catch {
+      // refusé plus loin (formule, PC)
+    }
+    // État pour la console : clés en place et mode, jamais leur valeur.
+    if (body.action === "status") return json({ status: "ok", configured: !!(PROFILE_ID && ACCESS_KEY && SECRET_KEY), mode: LIVE ? "live" : "test" });
+    return await start(req, body);
   } catch (e) {
     console.error(e);
     return json({ status: "error", message: "Service de paiement momentanément indisponible." }, 500);

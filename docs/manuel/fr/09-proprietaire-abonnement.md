@@ -30,7 +30,7 @@ Abonnement & licence montre la formule, la date de fin et les postes utilisés. 
 
 - **Carte de bon** : code imprimé sur la carte achetée chez un revendeur, l'abonnement est activé tout de suite ;
 - **Orange Money** : payez au code marchand, puis saisissez la référence reçue par SMS ; Eden Dev valide ;
-- **Carte Visa** : page de paiement sécurisée.
+- **Carte Visa ou Mastercard** : page de paiement sécurisée.
 
 Sans compte, la boutique fonctionne **14 jours en essai gratuit** (formule PRO, 3 postes) : Abonnement & licence montre les jours restants et propose de créer le compte.
 

@@ -13,7 +13,7 @@ import { isTauri } from "../lib/transport";
 export const METHOD_LABELS: Record<string, string> = {
   carte_bon: tl("Carte de bon"),
   orange_money: tl("Orange Money"),
-  carte_visa: tl("Carte Visa"),
+  carte_visa: tl("Carte Visa ou Mastercard"),
   moov_money: tl("Moov Money"),
   wave: tl("Wave"),
   cinetpay: tl("Paiement direct (CinetPay)"),
@@ -48,7 +48,7 @@ export async function openPaymentPage(url: string): Promise<void> {
 
 /**
  * Paiement de l'abonnement en 2 étapes : moyen de paiement, puis formule et instructions.
- * Carte de bon : activation immédiate. Orange Money : validé par Eden Dev. Carte Visa : automatique.
+ * Carte de bon : activation immédiate. Orange Money : validé par Eden Dev. Carte bancaire (Visa, Mastercard) : automatique.
  */
 export function SubscriptionPay({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
   const [method, setMethod] = useState<SubscriptionMethod | null>(null);
@@ -95,9 +95,11 @@ export function SubscriptionPay({ options, lic, onChange }: { options: AccountOp
             </button>
             <button type="button" className="pay-method" onClick={() => choose("carte_visa")} disabled={!pay?.card_enabled}>
               <CreditCard size={26} />
-              <strong>{tl("Carte Visa")}</strong>
+              <strong>{tl("Carte Visa ou Mastercard")}</strong>
               <span className="small muted">
-                {pay?.card_enabled ? tl("Page de paiement sécurisée de Visa. Activation automatique.") : tl("Bientôt disponible.")}
+                {pay?.card_test
+                  ? tl("Boutique d'essai d'Eden Dev : carte ouverte pour les essais.")
+                  : pay?.card_enabled ? tl("Page de paiement sécurisée de Cybersource. Activation automatique.") : tl("Bientôt disponible.")}
               </span>
             </button>
           </div>
@@ -399,7 +401,7 @@ function MobileMoneyForm({ method, options, lic, onChange }: { method: "wave" | 
   );
 }
 
-/** Page de paiement hébergée : carte Visa (Cybersource) ou, `direct`, CinetPay (Orange Money, Moov Money, carte). */
+/** Page de paiement hébergée : carte Visa ou Mastercard (Cybersource) ou, `direct`, CinetPay (Orange Money, Moov Money, carte). */
 function CardForm({ options, lic, onChange, direct = false }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void; direct?: boolean }) {
   const { toast, settings } = useApp();
   const shopCurrency = settings.currency_code ?? "XOF";
@@ -482,7 +484,11 @@ function CardForm({ options, lic, onChange, direct = false }: { options: Account
             {tl("Payez {0} ({1}, {2} mois) sur la page sécurisée de CinetPay, avec Orange Money, Moov Money ou une carte bancaire, puis revenez ici : la licence se met à jour dès que CinetPay confirme le paiement à Eden Dev.", [price(waiting.amount, waiting.currency), waiting.plan_label, waiting.months])}</p>
         ) : (
           <p className="muted">
-            {tl("Payez")} {price(waiting.amount, waiting.currency)} ({waiting.plan_label}, {waiting.months}  {tl("mois) sur la page sécurisée de Visa, puis revenez ici : la licence se met à jour dès que le paiement est accepté.")}</p>
+            {tl("Payez")} {price(waiting.amount, waiting.currency)} ({waiting.plan_label}, {waiting.months}  {tl("mois) sur la page sécurisée de Cybersource, puis revenez ici : la licence se met à jour dès que le paiement est accepté.")}</p>
+        )}
+        {!direct && waiting.test && (
+          <div className="alert alert-warning">
+            {tl("Mode essai d'Eden Dev : payez avec une carte de test de Cybersource (Visa 4111 1111 1111 1111, date future). Aucun argent n'est prélevé.")}</div>
         )}
         {waiting.payment_url && (
           <a className="btn" href={waiting.payment_url} target="_blank" rel="noreferrer"
@@ -500,13 +506,13 @@ function CardForm({ options, lic, onChange, direct = false }: { options: Account
       <p className="muted small">
         {direct
           ? tl("Le paiement se fait sur la page sécurisée de CinetPay dans votre navigateur : Orange Money, Moov Money ou carte bancaire. Eden Dev vérifie le paiement auprès de CinetPay, puis l'abonnement s'active tout seul. Votre code secret et votre numéro de carte ne passent jamais par GestiMarket.")
-          : tl("Le paiement se fait sur la page sécurisée de Visa (Cybersource) dans votre navigateur, avec la vérification de votre banque (code par SMS). Le numéro de carte ne passe jamais par GestiMarket.")}</p>
+          : tl("Le paiement se fait sur la page sécurisée de Cybersource (groupe Visa) dans votre navigateur, avec une carte Visa ou Mastercard et la vérification de votre banque (code par SMS). Le numéro de carte ne passe jamais par GestiMarket.")}</p>
       {error && <div className="alert alert-danger">{error}</div>}
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
         <button type="button" className="btn btn-primary" disabled={busy || choice.amount <= 0} onClick={start}>
           {direct ? <Zap size={16} /> : <CreditCard size={16} />}{" "}
-          {busy ? tl("Ouverture…") : direct ? tl("Payer {0}", [price(choice.amount, choice.currency)]) : tl("Payer {0} par carte Visa", [price(choice.amount, choice.currency)])}
+          {busy ? tl("Ouverture…") : direct ? tl("Payer {0}", [price(choice.amount, choice.currency)]) : tl("Payer {0} par carte", [price(choice.amount, choice.currency)])}
         </button>
       </div>
     </div>

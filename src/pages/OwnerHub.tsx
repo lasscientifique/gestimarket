@@ -355,7 +355,7 @@ function ShopsTab({ data, busy, reload, onSubscription }: { data: OwnerStores | 
 }
 
 const METHOD_LABEL = (m: string) =>
-  ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), wave: tl("Wave"), carte_visa: tl("Carte Visa"),
+  ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), wave: tl("Wave"), carte_visa: tl("Carte Visa ou Mastercard"),
      cinetpay: tl("Paiement direct (CinetPay)") } as Record<string, string>)[m] ?? m;
 
 const STATUS = (p: OwnerPayment): [string, "success" | "warning" | "danger" | "default"] => {
@@ -537,7 +537,7 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
             </Field>
           </div>
           <button className="btn btn-primary" disabled={busy || om.reference.trim().length < 4}>{tl("Déclarer le paiement")}</button>
-          <p className="muted small">{tl("Carte Visa : depuis le PC de la boutique (Abonnement & licence).")}</p>
+          <p className="muted small">{tl("Carte Visa ou Mastercard : depuis le PC de la boutique (Abonnement & licence).")}</p>
         </form>
       )}
     </>

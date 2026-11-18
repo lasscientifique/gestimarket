@@ -324,9 +324,12 @@ pub struct SignupInput {
     pub store: StoreInput,
 }
 
-/// Listes du formulaire (pays, types de boutique) et formules.
-pub fn options() -> Result<Value, String> {
-    call(request("/rest/v1/rpc/gm_public_options", None), json!({}))
+/// Listes du formulaire (pays, types de boutique) et formules. `store` (0.34.1) : code de la boutique de ce PC ;
+/// boutique d'essai de la carte bancaire chez Eden Dev : la carte lui est ouverte (« card_test »).
+pub fn options(store: &str) -> Result<Value, String> {
+    let store = store.trim();
+    let body = if store.is_empty() { json!({}) } else { json!({ "p_store": store }) };
+    call(request("/rest/v1/rpc/gm_public_options", None), body)
 }
 
 /// Création du compte (e-mail ou numéro WhatsApp), de la boutique (essai gratuit) et rattachement de ce PC.
@@ -694,8 +697,9 @@ fn open_in_browser(path: &std::path::Path) -> Result<(), String> {
     r.map(|_| ()).map_err(|e| format!("Impossible d'ouvrir le navigateur : {e}"))
 }
 
-/// Carte Visa : la fonction « gm-pay » signe la demande ; la page de paiement de Cybersource s'ouvre
-/// dans le navigateur. Le résultat arrive à Supabase ; l'application suit l'état du paiement.
+/// Carte bancaire (Visa, Mastercard) : la fonction « gm-pay » signe la demande ; la page de paiement de Cybersource
+/// s'ouvre dans le navigateur. Le résultat arrive à Supabase ; l'application suit l'état du paiement.
+/// `test` : Cybersource en mode essai chez Eden Dev (carte de test, aucun argent).
 pub fn card_start(plan: &str, months: i64) -> Result<Value, String> {
     let v = call(request("/functions/v1/gm-pay", None), json!({ "pc_id": license::pc_id(), "plan": plan, "months": months }))?;
     if v["status"].as_str() != Some("ok") {
@@ -710,7 +714,7 @@ pub fn card_start(plan: &str, months: i64) -> Result<Value, String> {
     sync_soon();
     Ok(json!({
         "payment_id": v["payment_id"], "amount": v["amount"], "currency": v["currency"],
-        "plan_label": v["plan_label"], "months": v["months"],
+        "plan_label": v["plan_label"], "months": v["months"], "test": v["test"].as_bool().unwrap_or(false),
     }))
 }
 
@@ -1128,7 +1132,7 @@ pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Va
             &text("phone"),
         ),
         "cinetpay" => owner_cinetpay(dir, &text("store_code"), &text("plan"), a.get("months").and_then(Value::as_i64).unwrap_or(1)),
-        "options" => options(),
+        "options" => options(&text("store_code")),
         "recover" => password_recover(&text("email")),
         "reset_password" => password_reset(
             dir,

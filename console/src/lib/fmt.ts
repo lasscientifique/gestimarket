@@ -32,7 +32,7 @@ export const METHOD: Record<string, string> = {
   orange_money: "Orange Money",
   wave: "Wave",
   moov_money: "Moov Money",
-  carte_visa: "Carte Visa",
+  carte_visa: "Carte Visa ou Mastercard",
   virement: "Virement",
   especes: "Espèces",
   offert: "Offerte",
