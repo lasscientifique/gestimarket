@@ -12,7 +12,7 @@ use crate::error::{invalid, AppResult};
 use crate::services::settings;
 
 /// Version des textes livrés avec cette version de GestiMarket (à changer avec les textes).
-pub const TERMS_VERSION: &str = "2026-11";
+pub const TERMS_VERSION: &str = "2026-11-18";
 
 #[derive(Debug, Serialize)]
 pub struct TermsStatus {

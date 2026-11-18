@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { Copy, KeyRound, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, ShieldAlert } from "lucide-react";
-import { errText, sb } from "./lib/sb";
+import { errText, reportAuthFailure, sb } from "./lib/sb";
+import { noteSent, resendState } from "./lib/resend";
 import { ErrorBox, Field } from "./ui";
 import { Logo } from "./Logo";
+import { MfaHelp } from "./MfaHelp";
 
 function Shell({ title, children, onSignOut }: { title: string; children: ReactNode; onSignOut?: () => void }) {
   return (
@@ -30,6 +32,25 @@ function Shell({ title, children, onSignOut }: { title: string; children: ReactN
 }
 
 const digits6 = (s: string) => s.replace(/\D/g, "").slice(0, 6);
+
+/** « Renvoyer le code » : 30 secondes entre deux envois, 5 renvois au plus, puis 1 heure. */
+function ResendCode({ login, disabled, onClick }: { login: string; disabled?: boolean; onClick: () => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const st = resendState(login, now);
+  return (
+    <button type="button" className="link-btn" disabled={disabled || st.wait > 0} onClick={onClick}>
+      {st.blocked
+        ? `Trop d'envois : réessayez dans ${Math.max(1, Math.ceil(st.wait / 60_000))} min`
+        : st.wait > 0
+          ? `Renvoyer le code (dans ${Math.ceil(st.wait / 1000)} s)`
+          : `Renvoyer le code${st.left < 5 ? ` (encore ${st.left})` : ""}`}
+    </button>
+  );
+}
 
 /** Connexion par e-mail et mot de passe ; création du compte et mot de passe oublié par code reçu par e-mail. */
 export function Login({ onDone }: { onDone: () => void }) {
@@ -68,9 +89,36 @@ export function Login({ onDone }: { onDone: () => void }) {
 
   const login = run(async () => {
     const { error } = await sb.auth.signInWithPassword({ email: mail, password });
-    if (error) throw error;
+    if (error) {
+      if (/Invalid login credentials/i.test(error.message)) reportAuthFailure(mail, "mot_de_passe_faux");
+      throw error;
+    }
     onDone();
   });
+
+  /** Code faux ou expiré : signalé (journal des comptes), puis l'erreur affichée. */
+  const verify = async (type: "signup" | "recovery") => {
+    const { error } = await sb.auth.verifyOtp({ email: mail, token: digits6(code), type });
+    if (error) {
+      if (/expired|invalid/i.test(error.message)) reportAuthFailure(mail, "code_faux");
+      throw error;
+    }
+  };
+
+  const resend = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const { error } = mode === "signup" ? await sb.auth.resend({ type: "signup", email: mail }) : await sb.auth.resetPasswordForEmail(mail);
+      if (error) throw error;
+      noteSent(mail);
+      setInfo(`Nouveau code envoyé à ${mail} (regardez aussi les courriers indésirables).`);
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const signup = run(async () => {
     if (step === "form") {
@@ -79,12 +127,12 @@ export function Login({ onDone }: { onDone: () => void }) {
       const { data, error } = await sb.auth.signUp({ email: mail, password, options: { data: { console_eden_dev: true } } });
       if (error) throw error;
       if (data.session) return onDone();
+      noteSent(mail);
       setStep("code");
       setInfo(`Un code à 6 chiffres vient d'être envoyé à ${mail}.`);
       return;
     }
-    const { error } = await sb.auth.verifyOtp({ email: mail, token: digits6(code), type: "signup" });
-    if (error) throw error;
+    await verify("signup");
     onDone();
   });
 
@@ -92,13 +140,13 @@ export function Login({ onDone }: { onDone: () => void }) {
     if (step === "form") {
       const { error } = await sb.auth.resetPasswordForEmail(mail);
       if (error) throw error;
+      noteSent(mail);
       setStep("code");
       setInfo(`Si un compte existe avec ${mail}, un code à 6 chiffres vient d'y être envoyé.`);
       return;
     }
     if (step === "code") {
-      const { error } = await sb.auth.verifyOtp({ email: mail, token: digits6(code), type: "recovery" });
-      if (error) throw error;
+      await verify("recovery");
       setStep("newpass");
       setInfo("Code accepté : choisissez votre nouveau mot de passe.");
       return;
@@ -160,6 +208,7 @@ export function Login({ onDone }: { onDone: () => void }) {
         </button>
       </form>
       <div className="auth-links">
+        {step === "code" && <ResendCode login={mail} disabled={busy} onClick={() => void resend()} />}
         {mode !== "login" && <button className="link-btn" onClick={() => go("login")}>J'ai déjà un compte : me connecter</button>}
         {mode !== "signup" && <button className="link-btn" onClick={() => go("signup")}>Créer mon compte</button>}
         {mode !== "recover" && <button className="link-btn" onClick={() => go("recover")}>Mot de passe oublié</button>}
@@ -177,6 +226,8 @@ export function Login({ onDone }: { onDone: () => void }) {
 /** Vérification à 2 étapes : mise en place (code QR) puis code à 6 chiffres à chaque connexion. */
 export function Mfa({ enroll, onDone, onSignOut }: { enroll: boolean; onDone: () => void; onSignOut: () => void }) {
   const [factorId, setFactorId] = useState("");
+  const [factors, setFactors] = useState<{ id: string; name: string }[]>([]);
+  const [email, setEmail] = useState("");
   const [qr, setQr] = useState("");
   const [secret, setSecret] = useState("");
   const [code, setCode] = useState("");
@@ -189,8 +240,14 @@ export function Mfa({ enroll, onDone, onSignOut }: { enroll: boolean; onDone: ()
       try {
         const { data, error } = await sb.auth.mfa.listFactors();
         if (error) throw error;
-        const verified = data.totp.find((f) => f.status === "verified");
-        if (verified) return !stop && setFactorId(verified.id);
+        sb.auth.getUser().then(({ data: u }) => !stop && setEmail(u.user?.email ?? ""), () => undefined);
+        const verified = data.totp.filter((f) => f.status === "verified");
+        if (verified.length) {
+          if (stop) return;
+          // Téléphone principal et téléphone de secours : la personne choisit celui qu'elle a en main.
+          setFactors(verified.map((f, i) => ({ id: f.id, name: f.friendly_name?.startsWith("Téléphone de secours") ? "Téléphone de secours" : i === 0 ? "Téléphone principal" : `Téléphone ${i + 1}` })));
+          return setFactorId(verified[0].id);
+        }
         // Essai précédent pas terminé : on recommence proprement.
         for (const f of data.all.filter((x) => x.status !== "verified")) await sb.auth.mfa.unenroll({ factorId: f.id });
         const r = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: `Console Eden Dev ${new Date().toISOString().slice(0, 10)}` });
@@ -214,7 +271,10 @@ export function Mfa({ enroll, onDone, onSignOut }: { enroll: boolean; onDone: ()
     setError("");
     try {
       const { error } = await sb.auth.mfa.challengeAndVerify({ factorId, code: digits6(code) });
-      if (error) throw error;
+      if (error) {
+        if (/invalid|expired|incorrect/i.test(error.message)) reportAuthFailure(email, "code_2_etapes_faux");
+        throw error;
+      }
       onDone();
     } catch (err) {
       setError(errText(err));
@@ -247,6 +307,16 @@ export function Mfa({ enroll, onDone, onSignOut }: { enroll: boolean; onDone: ()
           « Console Eden Dev ».
         </p>
       )}
+      {factors.length > 1 && (
+        <div className="chips">
+          {factors.map((f) => (
+            <button key={f.id} type="button" className={`chip-btn${factorId === f.id ? " active" : ""}`} onClick={() => setFactorId(f.id)}>
+              {f.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <MfaHelp open={enroll && !!secret} />
       <form className="stack" onSubmit={verify}>
         <Field label="Code à 6 chiffres *">
           <input className="code-input" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(digits6(e.target.value))} autoFocus />

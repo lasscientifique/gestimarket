@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check, FileDown, RefreshCw, Search, Store, TriangleAlert, X } from "lucide-react";
 import type { Me, Nav } from "../App";
-import { rpc, saveText } from "../lib/sb";
+import { cinetpayCheck, rpc, saveText } from "../lib/sb";
 import { dateTime, METHOD, money, PAY_STATUS, toCsv } from "../lib/fmt";
 import { ActionModal, Badge, Empty, ErrorBox, Spinner, useLoad, useToast } from "../ui";
 
@@ -62,7 +62,7 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
   return (
     <div className="stack-lg">
       <div className="chips">
-        {[["declared", "À valider"], ["validated", "Validés"], ["refused", "Refusés"], ["pending", "Carte en cours"], ["", "Tous"]].map(([k, l]) => (
+        {[["declared", "À valider"], ["validated", "Validés"], ["refused", "Refusés"], ["pending", "Carte ou CinetPay en cours"], ["", "Tous"]].map(([k, l]) => (
           <button key={k} className={`chip-btn${status === k ? " active" : ""}`} onClick={() => setStatus(k)}>
             {l}
           </button>
@@ -128,6 +128,28 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
                     </div>
                   )}
                 </div>
+                {p.status === "pending" && p.method === "cinetpay" && (
+                  <div className="pay-actions">
+                    <button
+                      className="btn btn-sm"
+                      disabled={busyId === p.id}
+                      onClick={async () => {
+                        setBusyId(p.id);
+                        try {
+                          const st = await cinetpayCheck(p.id);
+                          toast.info(st === "success" ? "Payé : abonnement activé." : st === "open" ? "Pas encore payé chez CinetPay." : `État chez CinetPay : ${st}.`);
+                          reload();
+                        } catch (e) {
+                          toast.fail(e);
+                        } finally {
+                          setBusyId("");
+                        }
+                      }}
+                    >
+                      <RefreshCw size={14} /> Vérifier chez CinetPay
+                    </button>
+                  </div>
+                )}
                 {p.status === "declared" && canDecide && (
                   <div className="pay-actions">
                     <button className="btn btn-primary" disabled={busyId === p.id} onClick={() => validate(p)}>

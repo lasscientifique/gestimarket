@@ -570,7 +570,7 @@ const ALWAYS: &[&str] = &[
     "license_status", "license_sync", "license_import", "account_options", "account_signup", "account_login",
     "account_confirm_signup", "account_confirm_login", "account_resend_code", "account_otp_send",
     "account_create_store", "account_link", "account_payments", "account_redeem_voucher", "account_declare_orange_money",
-    "account_card_start", "list_sessions", "kick_session", "update_status", "report_error", "display_postes", "help_offline_files",
+    "account_card_start", "account_cinetpay_start", "list_sessions", "kick_session", "update_status", "report_error", "display_postes", "help_offline_files",
 ];
 
 /// Consultation des données.

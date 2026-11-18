@@ -1,11 +1,13 @@
-// GestiMarket — cartes de bon envoyées par WhatsApp (Console Eden Dev 1.0).
+// GestiMarket — cartes de bon et messages aux clients envoyés par WhatsApp (Console Eden Dev 1.0 et 1.1).
 //
 // POST { "action": "flush", "phone"?: "22370000000" } — sans compte : la fonction n'envoie que ce qui est dû.
 //   1. Ventes « en attente » (gm_console_card_sell) dont le client a écrit à Eden Dev dans les 24 heures :
 //      la carte est fabriquée maintenant (gm_card_sale_issue), son code part sur WhatsApp et n'est gardé nulle part.
 //      Meta refuse l'envoi : la carte fabriquée est annulée ; fenêtre de 24 heures fermée : la vente attend
 //      le prochain message du client (gm-whatsapp-webhook rappelle cette fonction).
-//   2. Cartes vendues par WhatsApp et utilisées : « Abonnement PRO actif jusqu'au … » (appel de la base, pg_net).
+//   2. Messages aux clients (Console 1.1) : carte annulée (avec la raison), lien de paiement CinetPay. Même règle :
+//      envoyés dès que le destinataire a écrit dans les 24 heures (gm_wa_notices).
+//   3. Cartes vendues par WhatsApp et utilisées : « Abonnement PRO actif jusqu'au … » (appel de la base, pg_net).
 // Appelée par la console après une vente, par gm-whatsapp-webhook quand un client écrit, et par la base.
 //
 // Secrets (déjà là pour gm-whatsapp) : WHATSAPP_TOKEN, WHATSAPP_PHONE_ID.
@@ -44,7 +46,10 @@ type Issued = {
   months: number;
   store_code: string | null;
   store_name: string | null;
+  /** « Annuler et renvoyer » : numéro de la carte annulée que celle-ci remplace. */
+  replaces: string | null;
 };
+type Notice = { id: string; phone: string; body: string };
 type Confirm = { phone: string; store_code: string; store_name: string; plan_label: string | null; ends_at: string | null };
 type Sent = { ok: true; id: string } | { ok: false; code: number; error: string; retry: boolean };
 
@@ -82,6 +87,7 @@ function cardText(c: Issued) {
     "",
     "Dans GestiMarket : Abonnement & licence → Payer ou renouveler → Carte de bon, puis tapez le code.",
     ...(c.store_code ? [`Carte réservée à la boutique ${c.store_code}${c.store_name ? ` (${c.store_name})` : ""}.`] : []),
+    ...(c.replaces ? [`Elle remplace la carte n° ${c.replaces} (annulée).`] : []),
     "",
     "Utilisable une seule fois. Ne la donnez à personne, pas même à quelqu'un qui dit venir d'Eden Dev.",
   ].join("\n");
@@ -130,12 +136,23 @@ Deno.serve(async (req) => {
         sent.push({ id, status: r.retry ? "waiting" : "failed", error: r.error });
       }
     }
+    // Messages aux clients : carte annulée, lien de paiement.
+    const notices = (await rpc<Notice[]>("gm_wa_notices_claim", { p_phone: phone.length >= 8 ? phone : null })) ?? [];
+    for (const n of notices) {
+      const r = await send(n.phone, n.body);
+      if (r.ok) {
+        await rpc("gm_wa_notice_sent", { p_id: n.id, p_message_id: r.id });
+      } else {
+        console.error("Message au client non envoyé", `${n.phone.slice(0, 3)}…${n.phone.slice(-2)}`, r.code, r.error);
+        await rpc("gm_wa_notice_failed", { p_id: n.id, p_code: r.code, p_error: r.error, p_retry: r.retry });
+      }
+    }
     const confirms = (await rpc<Confirm[]>("gm_card_confirm_claim", {})) ?? [];
     for (const c of confirms) {
       const r = await send(c.phone, confirmText(c));
       if (!r.ok) console.error("Confirmation non envoyée", r.code, r.error);
     }
-    return json({ ok: true, sent, confirmed: confirms.length });
+    return json({ ok: true, sent, notices: notices.length, confirmed: confirms.length });
   } catch (e) {
     console.error(e);
     return json({ ok: false, error: "Envoi des cartes momentanément indisponible." }, 500);

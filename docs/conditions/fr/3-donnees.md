@@ -1,6 +1,6 @@
 # Données personnelles
 
-Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com
+Version 2026-11-18 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com
 
 ## 1. Qui est responsable de quoi
 
@@ -20,16 +20,18 @@ Version 2026-11 · Éditeur : Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 
 | Version des conditions acceptée à la création du compte | Preuve de l'acceptation |
 | Adresse du poste serveur (si l'application mobile ou l'adresse Internet est activée) | Ouvrir la boutique à distance |
 | Rapports de panne : message d'erreur, écran, type d'appareil, version, sans aucune donnée commerciale (désactivable : Paramètres → Sécurité) | Corriger les erreurs |
+| Journal du compte : inscription, connexions (date, adresse IP, type d'appareil, manière de se connecter), mots de passe et e-mails changés, codes demandés, mots de passe ou codes faux tapés dans GestiMarket (jamais le mot de passe ni le code eux-mêmes) | Sécurité du compte : repérer un piratage et prévenir la boutique, aider en cas de problème de connexion |
+| Paiement direct (CinetPay) : montant, référence et état du paiement chez CinetPay (jamais le numéro de carte ni le code secret, saisis chez CinetPay) | Activer l'abonnement tout seul |
 
 Eden Dev ne reçoit jamais les ventes, les produits, les stocks, les clients, les dettes ni les codes PIN.
 
 ## 3. Où sont ces données
 
-Chez Supabase, en Irlande (Union européenne). Le trafic de l'adresse Internet de la boutique passe par Cloudflare ; les vidéos d'aide et les mises à jour sont téléchargées depuis GitHub. Les codes envoyés sur WhatsApp passent par Meta (WhatsApp Business Platform). Ces prestataires appliquent leurs propres règles de sécurité.
+Chez Supabase, en Irlande (Union européenne). Le trafic de l'adresse Internet de la boutique passe par Cloudflare ; les vidéos d'aide et les mises à jour sont téléchargées depuis GitHub. Les codes envoyés sur WhatsApp passent par Meta (WhatsApp Business Platform). Le paiement direct passe par CinetPay. Ces prestataires appliquent leurs propres règles de sécurité.
 
 ## 4. Combien de temps
 
-Les données du compte et des paiements sont gardées tant que le compte existe, puis pendant la durée exigée par la loi pour les pièces comptables. Les rapports de panne sont gardés 12 mois. Les traces des messages WhatsApp (heure du dernier message, messages non remis) sont effacées 30 jours après la dernière activité.
+Les données du compte et des paiements sont gardées tant que le compte existe, puis pendant la durée exigée par la loi pour les pièces comptables. Les rapports de panne sont gardés 12 mois. Les traces des messages WhatsApp (heure du dernier message, messages non remis) sont effacées 30 jours après la dernière activité. Le journal du compte (connexions, adresses IP, appareils) est gardé 6 mois, puis effacé tout seul.
 
 ## 5. Vos droits
 
@@ -49,5 +51,6 @@ Si vous enregistrez le nom, le téléphone ou les dettes de vos clients :
 - Sauvegardes protégeables par un mot de passe.
 - Adresse Internet de la boutique en HTTPS.
 - Chaque action importante notée dans le journal d'activité.
+- Connexions au compte surveillées : Eden Dev est alertée en cas d'essais répétés de mots de passe ou de codes, ou de changement d'e-mail suivi d'une connexion depuis un nouvel appareil, et peut vous prévenir.
 
 Sur le réseau de la boutique, utilisez un Wi-Fi protégé par un mot de passe : les échanges entre les caisses et le serveur de la boutique n'y sont pas encore chiffrés.

@@ -4,11 +4,13 @@ import type { Me } from "../App";
 import { rpc } from "../lib/sb";
 import { money } from "../lib/fmt";
 import { ActionModal, Badge, ErrorBox, Spinner, useLoad, useToast, type AskField } from "../ui";
+import { MyFactors } from "./MyFactors";
 
 type Cfg = {
   config: Record<string, string>;
   plans: { code: string; label: string; price_month: number; max_postes: number; active: boolean; description: string }[];
   whatsapp_ready: boolean;
+  cinetpay?: { orders: number; success: number; last_error: string | null };
 };
 
 const GROUPS: { title: string; hint: string; keys: [string, string, AskField["type"]?][] }[] = [
@@ -26,6 +28,11 @@ const GROUPS: { title: string; hint: string; keys: [string, string, AskField["ty
     title: "Moov Money",
     hint: "Numéro marchand Moov d'Eden Dev. Vide : Moov fermé dans GestiMarket.",
     keys: [["moov_merchant_number", "Numéro marchand"], ["moov_merchant_name", "Nom affiché"]],
+  },
+  {
+    title: "CinetPay (paiement direct)",
+    hint: "Orange Money, Moov Money et cartes, validés tout seuls. Ouvrez seulement quand le compte CinetPay existe et que ses secrets (CINETPAY_API_KEY, CINETPAY_API_PASSWORD, CINETPAY_ENV) sont dans Supabase.",
+    keys: [["cinetpay_enabled", "Paiement direct dans GestiMarket et lien de paiement des cartes", "select"]],
   },
   {
     title: "Essai et services",
@@ -53,7 +60,7 @@ export function Settings({ me }: { me: Me }) {
   const c = data.config;
   const shown = (key: string) => {
     const v = c[key] ?? "";
-    if (key === "card_enabled" || key === "whatsapp_enabled") return yesNo(v);
+    if (key === "card_enabled" || key === "whatsapp_enabled" || key === "cinetpay_enabled") return yesNo(v);
     if (key === "trial_plan") return v.toUpperCase();
     return v || <span className="muted">non réglé</span>;
   };
@@ -70,6 +77,13 @@ export function Settings({ me }: { me: Me }) {
           <RefreshCw size={15} />
         </button>
       </div>
+      <MyFactors />
+      {data.cinetpay && data.cinetpay.orders > 0 && (
+        <p className="muted small">
+          CinetPay : {data.cinetpay.orders} paiement(s) commencé(s), {data.cinetpay.success} réussi(s)
+          {data.cinetpay.last_error ? ` · dernière erreur : ${data.cinetpay.last_error}` : ""}.
+        </p>
+      )}
       <div className="grid-2">
         {GROUPS.map((g) => (
           <section key={g.title} className="card">

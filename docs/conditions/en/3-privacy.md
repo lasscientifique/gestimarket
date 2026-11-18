@@ -1,6 +1,6 @@
 # Personal data
 
-Version 2026-11 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com · Translation: the French version prevails.
+Version 2026-11-18 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 02 · edendev.gestimarket@gmail.com · Translation: the French version prevails.
 
 ## 1. Who is responsible for what
 
@@ -20,16 +20,18 @@ Version 2026-11 · Publisher: Eden Dev, Bamako (Mali) · WhatsApp +223 97 12 62 
 | Version of the terms accepted when the account was created | Proof of acceptance |
 | Server station address (if the mobile app or the Internet address is enabled) | Open the shop remotely |
 | Crash reports: error message, screen, device type, version, without any business data (can be turned off: Settings → Security) | Fix errors |
+| Account log: sign-up, sign-ins (date, IP address, device type, sign-in method), password and e-mail changes, codes requested, wrong passwords or codes typed in GestiMarket (never the password or code itself) | Account security: spot hacking and warn the shop, help with sign-in problems |
+| Direct payment (CinetPay): amount, reference and status of the payment at CinetPay (never the card number or PIN, typed at CinetPay) | Activate the subscription automatically |
 
 Eden Dev never receives sales, products, stock, customers, debts or PIN codes.
 
 ## 3. Where this data is
 
-At Supabase, in Ireland (European Union). Traffic to the shop's Internet address goes through Cloudflare; help videos and updates are downloaded from GitHub. Codes sent on WhatsApp go through Meta (WhatsApp Business Platform). These providers apply their own security rules.
+At Supabase, in Ireland (European Union). Traffic to the shop's Internet address goes through Cloudflare; help videos and updates are downloaded from GitHub. Codes sent on WhatsApp go through Meta (WhatsApp Business Platform). Direct payment goes through CinetPay. These providers apply their own security rules.
 
 ## 4. How long
 
-Account and payment data is kept while the account exists, then for the period required by law for accounting records. Crash reports are kept for 12 months. WhatsApp message records (time of the last message, messages not delivered) are erased 30 days after the last activity.
+Account and payment data is kept while the account exists, then for the period required by law for accounting records. Crash reports are kept for 12 months. WhatsApp message records (time of the last message, messages not delivered) are erased 30 days after the last activity. The account log (sign-ins, IP addresses, devices) is kept for 6 months, then erased automatically.
 
 ## 5. Your rights
 
@@ -49,5 +51,6 @@ If you record your customers' names, phone numbers or debts:
 - Backups can be protected by a password.
 - The shop's Internet address uses HTTPS.
 - Every important action is logged in the activity log.
+- Account sign-ins are monitored: Eden Dev is alerted to repeated password or code attempts, or to an e-mail change followed by a sign-in from a new device, and can warn you.
 
 On the shop network, use a password-protected Wi-Fi: exchanges between the tills and the shop server are not encrypted there yet.

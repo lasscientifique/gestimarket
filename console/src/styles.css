@@ -260,3 +260,25 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
   .toolbar:not(.wrap) { flex-wrap: wrap; }
   .modal-back { padding: 12px; }
 }
+
+/* Console 1.1 : alertes, journal des boutiques, aide de la vérification à 2 étapes */
+.row-between { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1 1 auto; min-width: 0; }
+.search.grow { flex: 1 1 260px; }
+.side nav .dot-warning { background: #d97706; }
+.side nav .dot-info { background: #1d6fb8; }
+.critical-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 26px; background: var(--danger); color: #fff; animation: gm-pulse 1.6s ease-in-out infinite; }
+.critical-banner .btn { margin-left: auto; }
+@keyframes gm-pulse { 50% { background: #9e1c22; } }
+.topbar-bell { margin-left: auto; position: relative; color: #fff; }
+.topbar-bell.danger { color: #ffb4b6; }
+.topbar-bell .dot { position: absolute; top: -2px; right: -4px; font-style: normal; background: #e5484d; color: #fff; border-radius: 999px; font-size: 10px; padding: 0 5px; font-weight: 700; }
+.alert-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0 0; border-top: 1px solid var(--line); }
+.alert-level-critique { border-left: 4px solid var(--danger); }
+.alert-level-attention { border-left: 4px solid var(--warning); }
+.alert-level-info { border-left: 4px solid var(--info); }
+.table tr.row-danger td { background: var(--danger-soft); }
+.mfa-help { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.mfa-drawing { width: 100%; max-width: 360px; align-self: center; height: auto; }
+@media (max-width: 860px) { .critical-banner { padding: 10px 12px; } }
+@media (prefers-reduced-motion: reduce) { .critical-banner { animation: none; } }

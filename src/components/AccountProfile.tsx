@@ -9,6 +9,7 @@ import { citiesOf } from "../lib/cities";
 import { countryName } from "../lib/countries";
 import type { AccountOptions } from "../types";
 import { tl } from "../lib/i18n";
+import { noteFirstSend, noteSent, resendState } from "../lib/resend";
 import { Field, Modal } from "./ui";
 
 /** Ville : champ libre, avec les principales villes du pays proposées pendant la saisie. */
@@ -86,6 +87,30 @@ export function WhatsAppWriteFirst() {
   );
 }
 
+/**
+ * « Renvoyer le code » avec compte à rebours (0.34) : 30 secondes entre deux envois, 5 renvois au plus, puis
+ * « Trop d'envois : réessayez dans 59 min ». `onClick` envoie le code et appelle noteSent si l'envoi a réussi.
+ */
+export function ResendButton({ login, onClick, disabled, label }: { login: string; onClick: () => void; disabled?: boolean; label?: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const st = resendState(login, now);
+  const text = st.blocked
+    ? tl("Trop d'envois : réessayez dans {0} min", [Math.max(1, Math.ceil(st.wait / 60_000))])
+    : st.wait > 0
+      ? tl("{0} (dans {1} s)", [label ?? tl("Renvoyer le code"), Math.ceil(st.wait / 1000)])
+      : (label ?? tl("Renvoyer le code"));
+  return (
+    <button type="button" className="link-btn small" disabled={disabled || st.wait > 0} onClick={onClick}
+      title={!st.blocked && st.left < 5 ? tl("Encore {0} renvoi(s), puis 1 heure d'attente.", [st.left]) : undefined}>
+      {text}
+    </button>
+  );
+}
+
 /** Champ du code à 6 chiffres reçu par e-mail ou sur WhatsApp. */
 function CodeInput({ value, onChange, whatsapp = false }: { value: string; onChange: (v: string) => void; whatsapp?: boolean }) {
   return (
@@ -138,6 +163,8 @@ export function ConfirmCode({ email, confirm, resend, onBack, signIn = false }: 
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const { busy, error, run } = useRun();
+  // Cet écran s'ouvre juste après l'envoi d'un code : le compte à rebours part de là.
+  useEffect(() => noteFirstSend(email), [email]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void run(() => confirm(code));
@@ -158,8 +185,8 @@ export function ConfirmCode({ email, confirm, resend, onBack, signIn = false }: 
         {busy ? tl("Vérification…") : signIn ? tl("Se connecter") : whatsapp ? tl("Confirmer le numéro") : tl("Confirmer l'adresse")}
       </button>
       <div className="row-between">
-        <button type="button" className="link-btn small" disabled={busy} onClick={() => void run(async () => { setSent(false); await resend(); setSent(true); })}>
-          {tl("Renvoyer le code")}</button>
+        <ResendButton login={email} disabled={busy}
+          onClick={() => void run(async () => { setSent(false); await resend(); noteSent(email); setSent(true); })} />
         {onBack && <button type="button" className="link-btn small" onClick={onBack}>{tl("Retour")}</button>}
       </div>
     </form>
@@ -186,6 +213,7 @@ export function ChangeEmailModal({ email, onClose, onDone }: { email: string; on
       return;
     }
     setCode("");
+    noteSent(r.other ? email : next);
     setStep(r.other ? "old" : "new");
   };
 
@@ -226,7 +254,11 @@ export function ChangeEmailModal({ email, onClose, onDone }: { email: string; on
           <CodeInput value={code} onChange={setCode} />
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? tl("Vérification…") : tl("Changer l'adresse")}</button>
-          <button type="button" className="link-btn small" onClick={() => { setStep("form"); setCode(""); }}>{tl("Renvoyer un code")}</button>
+          <div className="row-between">
+            <ResendButton login={step === "old" ? email : next} disabled={busy}
+              onClick={() => void run(async () => after(await owner.emailChangeStart(email, password, next)))} />
+            <button type="button" className="link-btn small" onClick={() => { setStep("form"); setCode(""); }}>{tl("Modifier l'adresse")}</button>
+          </div>
         </form>
       )}
     </Modal>
@@ -254,6 +286,7 @@ export function ChangePhoneModal({ login, country, onClose, onDone }: { login: s
       return;
     }
     setCode("");
+    noteSent(next);
     setStep("code");
   };
 
@@ -295,7 +328,12 @@ export function ChangePhoneModal({ login, country, onClose, onDone }: { login: s
           <CodeInput value={code} onChange={setCode} whatsapp />
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? tl("Vérification…") : tl("Confirmer le numéro")}</button>
-          <button type="button" className="link-btn small" onClick={() => { setStep("form"); setCode(""); }}>{tl("Renvoyer un code")}</button>
+          {error && <WhatsAppWriteFirst />}
+          <div className="row-between">
+            <ResendButton login={next} disabled={busy}
+              onClick={() => void run(async () => after(await owner.phoneChangeStart(login, password, next)))} />
+            <button type="button" className="link-btn small" onClick={() => { setStep("form"); setCode(""); }}>{tl("Modifier le numéro")}</button>
+          </div>
         </form>
       )}
     </Modal>

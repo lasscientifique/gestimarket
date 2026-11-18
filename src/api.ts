@@ -425,6 +425,8 @@ export const api = {
   accountDeclareOrangeMoney: (input: { plan: string; months: number; reference: string; payer_phone: string; method?: string }) =>
     call<{ payment_id: string; amount: number; plan_label: string; months: number }>("account_declare_orange_money", input),
   accountCardStart: (plan: string, months: number) => call<CardStart>("account_card_start", { plan, months }),
+  /** Paiement direct CinetPay (0.34) : la page de paiement est ensuite ouverte par l'écran (openPaymentPage). */
+  accountCinetpayStart: (plan: string, months: number) => call<CardStart>("account_cinetpay_start", { plan, months }),
 
   // Postes connectés
   listSessions: () => call<{ sessions: SessionInfo[]; max: number; used: number }>("list_sessions"),

@@ -143,6 +143,9 @@ export const owner = {
   declare: (p: { store_code: string; plan: string; months: number; method: string; reference: string; phone: string }) =>
     ownerCall<{ payment_id: string; amount: number; plan_label: string; months: number }>("declare", p),
   options: () => ownerCall<AccountOptions>("options"),
+  /** Paiement direct CinetPay (0.34) : adresse de la page de paiement, à ouvrir avec openPaymentPage. */
+  cinetpay: (store_code: string, plan: string, months: number) =>
+    ownerCall<{ payment_id: string; payment_url: string; amount: number; plan_label: string; months: number }>("cinetpay", { store_code, plan, months }),
   /** « Mot de passe oublié » : code envoyé par e-mail à l'adresse du compte. */
   recover: (email: string) => ownerCall<{ sent: boolean }>("recover", { email }),
   /** Code reçu et nouveau mot de passe ; `login` : l'Espace propriétaire reste connecté sur cet appareil. */

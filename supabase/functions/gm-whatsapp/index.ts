@@ -129,6 +129,17 @@ Deno.serve(async (req) => {
     if (open === false) return fail(400, WRITE_FIRST);
   }
 
+  // 6 codes par heure et par numéro au plus (le premier et 5 renvois), même depuis un autre appareil : chaque envoi
+  // est inscrit au journal des comptes d'Eden Dev (numéro et heure, jamais le code). Base injoignable : le code part.
+  const limit = await rpc("gm_whatsapp_code_check", { p_phone: phone }).catch((e) => {
+    console.error("Limite des codes non vérifiée", String(e).slice(0, 300));
+    return null;
+  });
+  if (limit && limit.allowed === false) {
+    const minutes = Math.max(1, Number(limit.minutes) || 60);
+    return fail(429, { message: `Trop de codes demandés pour ce numéro : réessayez dans ${minutes} min.` });
+  }
+
   const r = await fetch(`${GRAPH}/${PHONE_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },

@@ -14,8 +14,38 @@ use serde_json::{json, Value};
 use crate::license::{self, SUPABASE_KEY};
 use crate::state::AppState;
 
+/// Nom donné à Supabase (0.34) : « GestiMarket/0.34.0 (windows) ». Le journal des comptes d'Eden Dev distingue ainsi
+/// le logiciel sur PC, sur téléphone, et un simple navigateur (type d'appareil des connexions).
+pub(crate) fn user_agent() -> String {
+    format!("GestiMarket/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS)
+}
+
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(8)).timeout(Duration::from_secs(25)).build()
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(8))
+        .timeout(Duration::from_secs(25))
+        .user_agent(&user_agent())
+        .build()
+}
+
+/// Mot de passe ou code faux : signalé au journal des comptes d'Eden Dev (alertes en cas d'essais répétés), sans le
+/// mot de passe ni le code. En arrière-plan : une erreur d'envoi ne change rien pour la personne.
+fn report_failure(login: &str, kind: &'static str) {
+    let login = login.trim().to_string();
+    if login.is_empty() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let body = json!({ "p": { "login": login, "kind": kind, "app": "gestimarket",
+                                  "version": env!("CARGO_PKG_VERSION"), "platform": std::env::consts::OS } });
+        let _ = request("/rest/v1/rpc/gm_report_auth_failure", None).send_json(body);
+    });
+}
+
+/// « For security purposes, you can only request this after 27 seconds » (délai de Supabase entre deux codes).
+fn wait_seconds(message: &str) -> Option<u32> {
+    let rest = message.split("after ").nth(1)?;
+    rest.split_whitespace().next()?.parse().ok()
 }
 
 fn request(path: &str, token: Option<&str>) -> ureq::Request {
@@ -36,6 +66,12 @@ fn request_method(method: &str, path: &str, token: Option<&str>) -> ureq::Reques
 /// Message d'erreur en français à partir d'une réponse Supabase (Auth, PostgREST, fonction).
 fn error_message(code: u16, v: &Value) -> String {
     let error_code = v["error_code"].as_str().unwrap_or_default();
+    let raw = v["msg"].as_str().or(v["message"].as_str()).unwrap_or_default();
+    if raw.contains("only request this after") {
+        if let Some(n) = wait_seconds(raw) {
+            return format!("Patientez {n} secondes avant de demander un nouveau code.");
+        }
+    }
     let mapped = match error_code {
         "user_already_exists" | "email_exists" => Some("Un compte existe déjà avec cet e-mail : choisissez « J'ai déjà un compte »."),
         "phone_exists" => Some("Un compte existe déjà avec ce numéro WhatsApp : choisissez « J'ai déjà un compte »."),
@@ -180,7 +216,12 @@ fn verify_code(kind: &str, login: &Login, code: &str) -> Result<Value, String> {
     if code.len() < 6 {
         return Err("Tapez le code reçu (6 chiffres).".into());
     }
-    call(request("/auth/v1/verify", None), login.body(json!({ "type": kind, "token": code })))
+    call_full(request("/auth/v1/verify", None), login.body(json!({ "type": kind, "token": code }))).map_err(|(error_code, m)| {
+        if error_code == "otp_expired" {
+            report_failure(login.value(), "code_faux");
+        }
+        m
+    })
 }
 
 /// À confirmer avec le code reçu : « confirm_email » (code par e-mail) ou « confirm_phone » (code sur WhatsApp).
@@ -219,7 +260,11 @@ fn session() -> Result<(String, String), String> {
 /// Connexion par mot de passe, avec l'e-mail ou le numéro WhatsApp du compte.
 fn password_login_full(login: &str, password: &str) -> Result<String, (String, String)> {
     let login = Login::parse(login).map_err(|m| (String::new(), m))?;
-    let v = call_full(request("/auth/v1/token?grant_type=password", None), login.body(json!({ "password": password })))?;
+    let v = call_full(request("/auth/v1/token?grant_type=password", None), login.body(json!({ "password": password }))).inspect_err(|(code, _)| {
+        if code == "invalid_credentials" {
+            report_failure(login.value(), "mot_de_passe_faux");
+        }
+    })?;
     v["access_token"].as_str().map(String::from).ok_or_else(|| (String::new(), "Réponse de connexion invalide.".to_string()))
 }
 
@@ -669,6 +714,41 @@ pub fn card_start(plan: &str, months: i64) -> Result<Value, String> {
     }))
 }
 
+/// Paiement direct (CinetPay : Orange Money, Moov Money, carte bancaire) : la fonction « gm-cinetpay » ouvre le paiement
+/// chez CinetPay et rend l'adresse de la page sécurisée, que l'écran ouvre dans le navigateur. CinetPay prévient Eden Dev,
+/// qui vérifie le paiement auprès de CinetPay : l'abonnement s'active tout seul.
+pub fn cinetpay_start(plan: &str, months: i64) -> Result<Value, String> {
+    let v = call(
+        request("/functions/v1/gm-cinetpay", None),
+        json!({ "action": "start", "pc_id": license::pc_id(), "plan": plan, "months": months }),
+    )?;
+    cinetpay_answer(v)
+}
+
+/// Réponse de « gm-cinetpay » : adresse de paiement vérifiée (https, chez CinetPay), ou le message d'Eden Dev.
+fn cinetpay_answer(v: Value) -> Result<Value, String> {
+    if v["status"].as_str() != Some("ok") {
+        return Err(v["message"].as_str().unwrap_or("Paiement direct indisponible.").to_string());
+    }
+    let url = v["payment_url"].as_str().unwrap_or_default();
+    if !cinetpay_url_ok(url) {
+        return Err("Adresse de paiement inattendue : paiement annulé.".into());
+    }
+    sync_soon();
+    Ok(json!({
+        "payment_id": v["payment_id"], "payment_url": url, "amount": v["amount"], "currency": v["currency"],
+        "plan_label": v["plan_label"], "months": v["months"],
+    }))
+}
+
+/// Page de paiement de CinetPay : https, sur un domaine de CinetPay, sans espace ni guillemet.
+pub fn cinetpay_url_ok(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else { return false };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default().to_ascii_lowercase();
+    let domain_ok = ["cinetpay.co", "cinetpay.net", "cinetpay.com"].iter().any(|d| host == *d || host.ends_with(&format!(".{d}")));
+    domain_ok && url.len() < 600 && url.chars().all(|c| c.is_ascii_alphanumeric() || "-._~:/#?=&%+".contains(c))
+}
+
 // ───────────────────────────── Espace propriétaire (téléphone, tablette) ─────────────────────────────
 // Ce que faisait l'application FlutterFlow, dans l'application GestiMarket : le compte Eden Dev de la
 // propriétaire, ses boutiques (PC serveur allumé ou éteint, abonnement), ses paiements.
@@ -730,7 +810,12 @@ pub fn owner_login(dir: &std::path::Path, login: &str, password: &str) -> Result
     match call_full(request("/auth/v1/token?grant_type=password", None), login.body(json!({ "password": password }))) {
         Ok(v) => owner_start(dir, login.value(), &v),
         Err((code, _)) if code == "email_not_confirmed" || code == "phone_not_confirmed" => Ok(confirm_status(&login)),
-        Err((_, m)) => Err(m),
+        Err((code, m)) => {
+            if code == "invalid_credentials" {
+                report_failure(login.value(), "mot_de_passe_faux");
+            }
+            Err(m)
+        }
     }
 }
 
@@ -816,6 +901,16 @@ pub fn owner_redeem(dir: &std::path::Path, store_code: &str, code: &str) -> Resu
         return Err(r["error"].as_str().unwrap_or("Carte de bon refusée.").to_string());
     }
     Ok(r)
+}
+
+/// Paiement direct CinetPay depuis le téléphone (compte de la propriétaire).
+pub fn owner_cinetpay(dir: &std::path::Path, store_code: &str, plan: &str, months: i64) -> Result<Value, String> {
+    let token = owner_token(dir)?;
+    let v = call(
+        request("/functions/v1/gm-cinetpay", Some(&token)),
+        json!({ "action": "start", "store_code": store_code, "plan": plan, "months": months }),
+    )?;
+    cinetpay_answer(v)
 }
 
 /// Paiement mobile (Orange Money, Moov Money) déclaré avec la référence reçue par SMS : Eden Dev le valide.
@@ -1032,6 +1127,7 @@ pub fn owner_action(dir: &std::path::Path, action: &str, a: &Value) -> Result<Va
             &text("reference"),
             &text("phone"),
         ),
+        "cinetpay" => owner_cinetpay(dir, &text("store_code"), &text("plan"), a.get("months").and_then(Value::as_i64).unwrap_or(1)),
         "options" => options(),
         "recover" => password_recover(&text("email")),
         "reset_password" => password_reset(
@@ -1187,5 +1283,25 @@ mod tests {
         assert!(page.contains("value=\"Rue &quot;12&quot; &lt;ACI&gt;\""));
         assert!(card_page("https://pirate.example.com/pay", &fields).is_err());
         assert!(card_page("https://secureacceptance.cybersource.com.pirate.example/pay", &fields).is_err());
+    }
+
+    #[test]
+    fn page_de_paiement_cinetpay_seulement() {
+        assert!(cinetpay_url_ok("https://checkout.cinetpay.co/payment/abc123"));
+        assert!(cinetpay_url_ok("https://cinetpay.net/pay?token=abc&lang=fr"));
+        assert!(!cinetpay_url_ok("http://checkout.cinetpay.co/payment/abc"));
+        assert!(!cinetpay_url_ok("https://cinetpay.co.pirate.example/pay"));
+        assert!(!cinetpay_url_ok("https://pirate-cinetpay.co/pay"));
+        assert!(!cinetpay_url_ok("https://checkout.cinetpay.co/pay\" onload=\"x"));
+        assert!(!cinetpay_url_ok("https://checkout.cinetpay.co/pay x"));
+    }
+
+    #[test]
+    fn delai_entre_deux_codes() {
+        assert_eq!(wait_seconds("For security purposes, you can only request this after 27 seconds."), Some(27));
+        assert_eq!(wait_seconds("Rate limit exceeded"), None);
+        let v = json!({ "code": 429, "error_code": "over_email_send_rate_limit", "msg": "For security purposes, you can only request this after 8 seconds." });
+        assert_eq!(error_message(429, &v), "Patientez 8 secondes avant de demander un nouveau code.");
+        assert!(user_agent().starts_with("GestiMarket/"));
     }
 }

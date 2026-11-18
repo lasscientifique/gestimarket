@@ -1,14 +1,29 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { Ban, Copy, MessageCircle, PackageCheck, Plus, Printer, RefreshCw, RotateCcw, Search, Send, TriangleAlert, Undo2 } from "lucide-react";
+import { Ban, Copy, Link2, MessageCircle, PackageCheck, Plus, Printer, RefreshCw, RotateCcw, Search, Send, TriangleAlert, Undo2 } from "lucide-react";
 import type { Me, Nav } from "../App";
-import { EDEN_WHATSAPP, errText, flushCards, isAndroid, openUrl, rpc, waLink } from "../lib/sb";
-import { ago, dateOnly, dateTime, METHOD, money, SALE_STATUS, VOUCHER_STATUS } from "../lib/fmt";
-import { ActionModal, Badge, Empty, ErrorBox, Field, Modal, Spinner, Tabs, useLoad, useToast } from "../ui";
+import { cinetpaySaleLink, EDEN_WHATSAPP, errText, flushCards, isAndroid, openUrl, rpc, waLink } from "../lib/sb";
+import { ago, CLIENT_REASONS, dateOnly, dateTime, METHOD, money, NOTICE_STATUS, SALE_STATUS, VOUCHER_STATUS } from "../lib/fmt";
+import { ActionModal, Badge, Empty, ErrorBox, Field, Modal, Spinner, Tabs, useLoad, useToast, type AskField } from "../ui";
 
 const PLANS: [string, string][] = [["pro", "PRO"], ["starter", "STARTER"], ["business", "BUSINESS"]];
 const MONTHS: [string, string][] = [["1", "1 mois"], ["3", "3 mois"], ["6", "6 mois"], ["12", "12 mois (2 offerts)"]];
 const CLIENT_LINK = `https://wa.me/${EDEN_WHATSAPP}?text=${encodeURIComponent("CARTE")}`;
+
+/** Raison montrée au client sur WhatsApp (le motif du journal reste interne). */
+const CLIENT_REASON_FIELDS: AskField[] = [
+  { key: "client_reason", label: "Raison montrée au client *", type: "select", options: CLIENT_REASONS, value: "paiement_non_recu" },
+  { key: "client_text", label: "Texte pour le client (si « Autre »)", hint: "Court et poli : il est envoyé tel quel." },
+];
+
+type Notice = { kind: string; phone: string; status: string; created_at: string; sent_at: string | null; last_error: string };
+
+/** Après une annulation : qui a été prévenu, ou le sera dès qu'il écrira. */
+function noticeSummary(n: { to: string; phone: string; window_open: boolean }[] = [], unreachable = 0): string {
+  const parts = n.map((x) => `${x.to === "boutique" ? "la boutique" : "le client"} (+${x.phone}) ${x.window_open ? "est prévenu" : "sera prévenu dès qu'il écrira"}`);
+  if (unreachable) parts.push(`${unreachable} carte(s) imprimée(s) : client non joignable automatiquement`);
+  return parts.length ? `${parts.join(" ; ")}.` : "";
+}
 
 type Tab = "sell" | "sales" | "vouchers";
 
@@ -42,18 +57,29 @@ function Sell({ me, store, onSold }: { me: Me; store: string; onSold: () => void
   const [f, setF] = useState({ phone: "", name: "", plan: "pro", months: "1", method: "orange_money", reference: "", store });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<{ phone: string; status: string; error?: string } | null>(null);
+  const [result, setResult] = useState<SellDone | null>(null);
   const canSell = me.role !== "assistance";
   const needsRef = ["orange_money", "wave", "moov_money"].includes(f.method);
+  const settings = useLoad(() => rpc<{ config: Record<string, string> }>("gm_console_settings"), []);
+  const cinetpay = settings.data?.config?.cinetpay_enabled === "true";
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      const sale = await rpc<{ id: string; phone: string; amount: number; window_open: boolean }>("gm_console_card_sell", {
+      const sale = await rpc<{ id: string; phone: string; amount: number; window_open: boolean; status: string }>("gm_console_card_sell", {
         p_phone: f.phone, p_name: f.name, p_plan: f.plan, p_months: Number(f.months), p_method: f.method, p_reference: f.reference, p_store_code: f.store,
       });
+      if (sale.status === "unpaid") {
+        // Lien de paiement CinetPay : envoyé au client sur WhatsApp ; sa carte part dès qu'il a payé.
+        const link = await cinetpaySaleLink(sale.id).catch((x) => ({ error: errText(x) }) as const);
+        setResult({ phone: sale.phone, status: "unpaid", payUrl: "payment_url" in link ? link.payment_url : undefined,
+          windowOpen: "window_open" in link ? link.window_open : sale.window_open, error: "error" in link ? link.error : undefined });
+        toast.ok("Vente enregistrée : le client reçoit le lien de paiement.");
+        setF({ ...f, phone: "", name: "", reference: "" });
+        return;
+      }
       let status = "waiting";
       let err: string | undefined;
       if (sale.window_open) {
@@ -110,16 +136,23 @@ function Sell({ me, store, onSold }: { me: Me; store: string; onSold: () => void
           </Field>
           <Field label="Payé par *">
             <select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
-              {["orange_money", "wave", "moov_money", "especes", "virement", "autre", ...(me.role === "direction" ? ["offert"] : [])].map((m) => (
+              {[...(cinetpay ? ["cinetpay"] : []), "orange_money", "wave", "moov_money", "especes", "virement", "autre", ...(me.role === "direction" ? ["offert"] : [])].map((m) => (
                 <option key={m} value={m}>
                   {METHOD[m]}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label={needsRef ? "ID de la transaction *" : "Référence"} hint={needsRef ? "Reçu par SMS sur le téléphone marchand." : undefined}>
-            <input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} autoComplete="off" />
-          </Field>
+          {f.method === "cinetpay" ? (
+            <div className="alert alert-info small">
+              <Link2 size={16} /> Le client reçoit un lien de paiement (Orange Money, Moov Money, carte). Sa carte part toute seule dès que CinetPay
+              confirme le paiement.
+            </div>
+          ) : (
+            <Field label={needsRef ? "ID de la transaction *" : "Référence"} hint={needsRef ? "Reçu par SMS sur le téléphone marchand." : undefined}>
+              <input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} autoComplete="off" />
+            </Field>
+          )}
           <Field label="Code de la boutique" hint="Facultatif : seule cette boutique pourra utiliser la carte.">
             <input value={f.store} onChange={(e) => setF({ ...f, store: e.target.value.toUpperCase() })} placeholder="GM-000123" />
           </Field>
@@ -127,7 +160,7 @@ function Sell({ me, store, onSold }: { me: Me; store: string; onSold: () => void
         {error && <ErrorBox error={error} />}
         <div className="row-end">
           <button className="btn btn-primary" disabled={busy || f.phone.replace(/\D/g, "").length < 8 || (needsRef && f.reference.trim().length < 4)}>
-            <Send size={16} /> {busy ? "Envoi…" : "Vendre et envoyer"}
+            <Send size={16} /> {busy ? "Envoi…" : f.method === "cinetpay" ? "Vendre et envoyer le lien" : "Vendre et envoyer"}
           </button>
         </div>
       </form>
@@ -153,8 +186,50 @@ function Sell({ me, store, onSold }: { me: Me; store: string; onSold: () => void
   );
 }
 
-function SellResult({ result, onSales }: { result: { phone: string; status: string; error?: string }; onSales: () => void }) {
+type SellDone = { phone: string; status: string; error?: string; payUrl?: string; windowOpen?: boolean };
+
+/** Lien de paiement CinetPay : copier, ou l'envoyer soi-même sur WhatsApp (client qui n'a pas écrit depuis 24 h). */
+function PayLink({ phone, url }: { phone: string; url: string }) {
+  const text = `Bonjour, c'est Eden Dev. Voici le lien pour payer votre carte GestiMarket (Orange Money, Moov Money ou carte) : ${url}`;
+  return (
+    <div className="row wrap">
+      <span className="mono break small">{url}</span>
+      <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(url)}>
+        <Copy size={14} /> Copier
+      </button>
+      <button type="button" className="btn btn-sm" onClick={() => openUrl(waLink(phone, text))}>
+        <MessageCircle size={14} /> Envoyer sur WhatsApp
+      </button>
+    </div>
+  );
+}
+
+function SellResult({ result, onSales }: { result: SellDone; onSales: () => void }) {
   const ask = `Bonjour, c'est Eden Dev. Pour recevoir votre carte GestiMarket sur WhatsApp, touchez ce lien et envoyez le message : ${CLIENT_LINK}`;
+  if (result.status === "unpaid") {
+    return (
+      <section className={`card ${result.payUrl ? "card-success" : "card-warning"}`}>
+        <h3 className="card-title">
+          <Link2 size={18} /> Paiement attendu (+{result.phone})
+        </h3>
+        {result.payUrl ? (
+          <>
+            <p className="muted">
+              {result.windowOpen
+                ? "Le lien de paiement part sur le WhatsApp du client. Sa carte part toute seule dès qu'il a payé."
+                : "Le client n'a pas écrit depuis 24 heures : le lien partira dès qu'il écrira. Vous pouvez aussi le lui envoyer vous-même."}
+            </p>
+            <PayLink phone={result.phone} url={result.payUrl} />
+          </>
+        ) : (
+          <p className="muted">Lien de paiement non créé : {result.error}. Réessayez depuis « Ventes WhatsApp » (« Nouveau lien de paiement »).</p>
+        )}
+        <button className="link-btn" onClick={onSales}>
+          Voir les ventes
+        </button>
+      </section>
+    );
+  }
   return (
     <section className={`card ${result.status === "sent" ? "card-success" : "card-warning"}`}>
       {result.status === "sent" ? (
@@ -193,7 +268,7 @@ type Sale = {
   id: string; created_at: string; seller_email: string; phone: string; client_name: string; plan: string; plan_label: string; months: number; amount: number;
   method: string; reference: string; status: string; last_error: string; sent_at: string | null; delivered_at: string | null; read_at: string | null;
   used_at: string | null; confirmed_at: string | null; serial: string | null; store_code: string | null; used_by_code: string | null; window_open: boolean;
-  last_inbound_at: string | null;
+  last_inbound_at: string | null; replaces_serial: string; pay_url: string; cancel_reason: string; notices: Notice[];
 };
 
 function Sales({ me }: { me: Me; nav: Nav }) {
@@ -203,6 +278,7 @@ function Sales({ me }: { me: Me; nav: Nav }) {
   const [search, setSearch] = useState("");
   const [act, setAct] = useState<{ sale: Sale; action: "resend" | "cancel" } | null>(null);
   const [flushing, setFlushing] = useState(false);
+  const [linking, setLinking] = useState("");
   const { data, error, busy, reload } = useLoad(() => rpc<Sale[]>("gm_console_card_sales", { p_status: status, p_search: search }), [status, search]);
   const canAct = me.role !== "assistance";
 
@@ -218,6 +294,19 @@ function Sales({ me }: { me: Me; nav: Nav }) {
       toast.fail(e);
     } finally {
       setFlushing(false);
+    }
+  };
+
+  const newLink = async (s: Sale) => {
+    setLinking(s.id);
+    try {
+      const r = await cinetpaySaleLink(s.id);
+      toast.ok(r.window_open ? "Nouveau lien envoyé au client." : "Nouveau lien prêt : il partira dès que le client écrira.");
+      reload();
+    } catch (e) {
+      toast.fail(e);
+    } finally {
+      setLinking("");
     }
   };
 
@@ -266,6 +355,7 @@ function Sales({ me }: { me: Me; nav: Nav }) {
                   Vendue {dateTime(s.created_at)} par {s.seller_email}
                   {s.reference && ` · réf. ${s.reference}`}
                   {s.serial && ` · carte ${s.serial}`}
+                  {s.replaces_serial && ` · remplace ${s.replaces_serial}`}
                 </div>
                 <div className="muted small">
                   {s.sent_at && `envoyée ${ago(s.sent_at)}`}
@@ -279,6 +369,16 @@ function Sales({ me }: { me: Me; nav: Nav }) {
                     {s.window_open ? "Le client a écrit : envoi au prochain passage." : `Dernier message du client : ${ago(s.last_inbound_at)}. En attente qu'il écrive.`}
                   </div>
                 )}
+                {s.status === "unpaid" && s.pay_url && <PayLink phone={s.phone} url={s.pay_url} />}
+                {s.notices?.map((n, i) => (
+                  <div key={i} className="muted small">
+                    {n.kind === "annulation" ? "Message d'annulation" : "Lien de paiement"} à +{n.phone} :{" "}
+                    <Badge tone={NOTICE_STATUS[n.status]?.[1]}>{NOTICE_STATUS[n.status]?.[0] ?? n.status}</Badge>
+                    {n.sent_at && ` ${ago(n.sent_at)}`}
+                    {n.last_error && n.status !== "sent" && ` — ${n.last_error}`}
+                  </div>
+                ))}
+                {s.cancel_reason && <div className="muted small">Raison donnée au client : {s.cancel_reason}</div>}
                 {s.last_error && <div className="small danger-text">{s.last_error}</div>}
               </div>
               {canAct && !["used", "cancelled"].includes(s.status) && (
@@ -288,7 +388,12 @@ function Sales({ me }: { me: Me; nav: Nav }) {
                       <MessageCircle size={14} /> Demander d'écrire
                     </button>
                   )}
-                  {s.status !== "waiting" && (
+                  {s.status === "unpaid" && (
+                    <button className="btn btn-sm" onClick={() => newLink(s)} disabled={linking === s.id}>
+                      <Link2 size={14} /> {linking === s.id ? "Création…" : "Nouveau lien de paiement"}
+                    </button>
+                  )}
+                  {s.status !== "waiting" && s.status !== "unpaid" && (
                     <button className="btn btn-sm" onClick={() => setAct({ sale: s, action: "resend" })}>
                       <RotateCcw size={14} /> Annuler et renvoyer
                     </button>
@@ -307,16 +412,24 @@ function Sales({ me }: { me: Me; nav: Nav }) {
           title={act.action === "resend" ? "Annuler et renvoyer la carte" : "Annuler la vente"}
           intro={
             act.action === "resend"
-              ? "L'ancienne carte devient inutilisable ; une nouvelle carte part dès que possible."
-              : "La carte devient inutilisable. Pensez à rembourser le client si besoin."
+              ? `L'ancienne carte devient inutilisable ; une nouvelle carte part dès que possible et dit qu'elle remplace ${act.sale.serial ?? "l'ancienne"}.`
+              : `La carte devient inutilisable. Le client (+${act.sale.phone})${act.sale.store_code ? ` et la boutique ${act.sale.store_code}` : ""} sont prévenus sur WhatsApp avec la raison choisie. Pensez à rembourser le client si besoin.`
           }
+          fields={act.action === "cancel" ? CLIENT_REASON_FIELDS : []}
+          reasonLabel="Motif interne (journal, jamais montré au client) *"
           confirm={act.action === "resend" ? "Renvoyer" : "Annuler la vente"}
           danger={act.action === "cancel"}
           onClose={() => setAct(null)}
-          onSubmit={async (_v, reason) => {
-            await rpc("gm_console_card_sale_action", { p_sale_id: act.sale.id, p_action: act.action, p_reason: reason });
+          onSubmit={async (v, reason) => {
+            if (act.action === "cancel" && v.client_reason === "autre" && (v.client_text ?? "").trim().length < 3) {
+              throw new Error("Écrivez le texte montré au client (raison « Autre »).");
+            }
+            const r = await rpc<{ notices?: { to: string; phone: string; window_open: boolean }[] }>("gm_console_card_sale_action", {
+              p_sale_id: act.sale.id, p_action: act.action, p_reason: reason,
+              p_client_reason: v.client_reason ?? "", p_client_text: v.client_text ?? "", p_notify: true,
+            });
             if (act.action === "resend") await flushCards(act.sale.phone).catch(() => undefined);
-            toast.ok(act.action === "resend" ? "Nouvelle carte en route." : "Vente annulée.");
+            toast.ok(act.action === "resend" ? "Nouvelle carte en route." : `Vente annulée : ${noticeSummary(r.notices)}`);
             reload();
           }}
         />
@@ -505,14 +618,25 @@ function Vouchers({ me }: { me: Me }) {
       {act && (
         <ActionModal
           title={act === "sold" ? "Cartes remises" : act === "new" ? "Remettre en stock" : "Annuler les cartes"}
-          intro={act === "cancel" ? "Les cartes annulées ne pourront plus être utilisées." : undefined}
-          fields={act === "sold" ? [{ key: "note", label: "Remises à (revendeur, client) *", value: "" }] : []}
+          intro={
+            act === "cancel"
+              ? "Les cartes annulées ne pourront plus être utilisées. Cartes vendues par WhatsApp : le client est prévenu avec la raison choisie. Cartes imprimées remises à un revendeur : personne n'est connu, prévenez le revendeur vous-même."
+              : undefined
+          }
+          fields={act === "sold" ? [{ key: "note", label: "Remises à (revendeur, client) *", value: "" }] : act === "cancel" ? CLIENT_REASON_FIELDS : []}
+          reasonLabel={act === "cancel" ? "Motif interne (journal, jamais montré au client) *" : undefined}
           confirm={act === "sold" ? "Enregistrer" : act === "new" ? "Remettre en stock" : "Annuler les cartes"}
           danger={act === "cancel"}
           onClose={() => setAct(null)}
           onSubmit={async (v, reason) => {
-            await rpc("gm_console_voucher_set", { p_ids: [...sel], p_action: act, p_note: v.note ?? "", p_reason: reason });
-            toast.ok("Cartes mises à jour.");
+            if (act === "cancel" && v.client_reason === "autre" && (v.client_text ?? "").trim().length < 3) {
+              throw new Error("Écrivez le texte montré au client (raison « Autre »).");
+            }
+            const r = await rpc<{ notices?: { to: string; phone: string; window_open: boolean }[]; unreachable?: number }>("gm_console_voucher_set", {
+              p_ids: [...sel], p_action: act, p_note: v.note ?? "", p_reason: reason,
+              p_client_reason: v.client_reason ?? "", p_client_text: v.client_text ?? "",
+            });
+            toast.ok(act === "cancel" ? `Cartes annulées. ${noticeSummary(r.notices, r.unreachable)}` : "Cartes mises à jour.");
             reload();
           }}
         />

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Check, MonitorSmartphone, RefreshCw, ShieldCheck, ShieldOff, UserPlus, Users } from "lucide-react";
+import { Check, KeyRound, MonitorSmartphone, RefreshCw, ShieldCheck, ShieldOff, UserPlus, Users } from "lucide-react";
 import type { Me } from "../App";
 import { rpc } from "../lib/sb";
 import { ago, dateOnly, ROLE } from "../lib/fmt";
 import { ActionModal, Badge, Empty, ErrorBox, Spinner, useLoad, useToast, type AskField } from "../ui";
 
-type Admin = { user_id: string; email: string; name: string; role: string; role_label: string; active: boolean; created_at: string; me: boolean; devices: number; mfa: boolean };
+type Admin = { user_id: string; email: string; name: string; role: string; role_label: string; active: boolean; created_at: string; me: boolean; devices: number; mfa: boolean; mfa_count?: number };
 type Device = {
   id: string; email: string; name: string; role: string; label: string; platform: string; app_version: string; status: string;
   created_at: string; approved_at: string | null; last_seen: string | null; mine: boolean;
@@ -24,6 +24,7 @@ export function Team({ me }: { me: Me }) {
   const devices = useLoad(() => rpc<Device[]>("gm_console_devices"), []);
   const [edit, setEdit] = useState<{ title: string; fields: AskField[]; active: boolean } | null>(null);
   const [dev, setDev] = useState<{ d: Device; status: "approved" | "revoked" } | null>(null);
+  const [reset, setReset] = useState<Admin | null>(null);
 
   const memberFields = (a?: Admin): AskField[] => [
     { key: "email", label: "E-mail du compte *", value: a?.email ?? "", hint: a ? undefined : "La personne crée d'abord son compte dans la console (« Créer mon compte »)." },
@@ -73,7 +74,10 @@ export function Team({ me }: { me: Me }) {
                         </div>
                       </td>
                       <td>{a.role_label}</td>
-                      <td>{a.mfa ? <Badge tone="success">activée</Badge> : <Badge tone="warning">à la 1re connexion</Badge>}</td>
+                      <td>
+                        {a.mfa ? <Badge tone="success">activée</Badge> : <Badge tone="warning">à la 1re connexion</Badge>}
+                        {(a.mfa_count ?? 0) > 0 && <div className="muted small">{a.mfa_count === 1 ? "1 téléphone" : `${a.mfa_count} téléphones`}</div>}
+                      </td>
                       <td className="num">{a.devices}</td>
                       <td className="row-end">
                         {!a.me && (
@@ -81,6 +85,11 @@ export function Team({ me }: { me: Me }) {
                             <button className="btn btn-sm" onClick={() => setEdit({ title: `Modifier ${a.email}`, fields: memberFields(a), active: a.active })}>
                               Rôle
                             </button>
+                            {a.mfa && (
+                              <button className="btn btn-sm" onClick={() => setReset(a)} title="Téléphone perdu : nouveau code QR à la prochaine connexion">
+                                <KeyRound size={14} /> Réinitialiser 2 étapes
+                              </button>
+                            )}
                             <button
                               className={`btn btn-sm ${a.active ? "btn-danger-outline" : ""}`}
                               onClick={() => setEdit({ title: a.active ? `Désactiver ${a.email}` : `Réactiver ${a.email}`, fields: memberFields(a), active: !a.active })}
@@ -193,6 +202,20 @@ export function Team({ me }: { me: Me }) {
             toast.ok("Équipe mise à jour.");
             admins.reload();
             devices.reload();
+          }}
+        />
+      )}
+      {reset && (
+        <ActionModal
+          title={`Réinitialiser la vérification à 2 étapes de ${reset.email}`}
+          intro="À faire seulement si cette personne a perdu son téléphone et vous l'a demandé de vive voix. Ses téléphones sont retirés et ses sessions fermées : à sa prochaine connexion, elle scanne un nouveau code QR."
+          confirm="Réinitialiser"
+          danger
+          onClose={() => setReset(null)}
+          onSubmit={async (_v, reason) => {
+            await rpc("gm_console_admin_mfa_reset", { p_user_id: reset.user_id, p_reason: reason });
+            toast.ok("Vérification à 2 étapes réinitialisée.");
+            admins.reload();
           }}
         />
       )}

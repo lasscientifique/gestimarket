@@ -51,6 +51,14 @@ pub async fn open_contact(app: AppHandle, kind: String, number: Option<String>) 
             }
             format!("https://wa.me/{digits}?text=GestiMarket")
         }
+        // Paiement direct (0.34) : page sécurisée de CinetPay rendue par Eden Dev (domaine de CinetPay seulement).
+        "cinetpay" => {
+            let url = number.unwrap_or_default();
+            if !crate::account::cinetpay_url_ok(&url) {
+                return invalid("Adresse de paiement inattendue : paiement annulé.");
+            }
+            url
+        }
         // Sugu Eden : la page de la boutique, remise par Eden Dev à la publication (https://…/#/b/<boutique>).
         "sugu" => {
             let url = number.unwrap_or_default();
@@ -94,8 +102,18 @@ fn open_url(_app: &AppHandle, url: &str) -> AppResult<()> {
     let mut cmd = {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", "start", "", url]).creation_flags(CREATE_NO_WINDOW);
+        // « start » de cmd couperait l'adresse au « & » (page de paiement avec des paramètres) : le programme du
+        // système pour les adresses Internet la reçoit alors entière.
+        let mut c = if url.contains('&') {
+            let mut c = std::process::Command::new("rundll32.exe");
+            c.args(["url.dll,FileProtocolHandler", url]);
+            c
+        } else {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", "start", "", url]);
+            c
+        };
+        c.creation_flags(CREATE_NO_WINDOW);
         c
     };
     #[cfg(target_os = "macos")]

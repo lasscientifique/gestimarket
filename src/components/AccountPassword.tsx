@@ -4,7 +4,8 @@ import { errorMessage, useApp } from "../context/AppContext";
 import { owner } from "../lib/owner";
 import { tl } from "../lib/i18n";
 import { loginId, looksLikePhone, showPhone } from "../lib/phone";
-import { WhatsAppWriteFirst } from "./AccountProfile";
+import { ResendButton, WhatsAppWriteFirst } from "./AccountProfile";
+import { noteSent } from "../lib/resend";
 import { Field, Modal } from "./ui";
 
 /** Même règle que le moteur (account.rs) : 8 caractères au moins, lettres et chiffres. */
@@ -61,6 +62,7 @@ export function ForgotPasswordModal({ email: initial = "", login: stay = false, 
     e.preventDefault();
     void run(async () => {
       await owner.recover(login);
+      noteSent(login);
       setStep("code");
     });
   };
@@ -104,7 +106,11 @@ export function ForgotPasswordModal({ email: initial = "", login: stay = false, 
           <NewPassword value={password} confirm={confirm} onValue={setPassword} onConfirm={setConfirm} />
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? tl("Enregistrement…") : tl("Enregistrer le nouveau mot de passe")}</button>
-          <button type="button" className="link-btn small" onClick={() => { setStep("email"); setCode(""); }}>{tl("Renvoyer un code")}</button>
+          <div className="row-between">
+            <ResendButton login={login} disabled={busy}
+              onClick={() => void run(async () => { await owner.recover(login); noteSent(login); toast.success(tl("Nouveau code envoyé.")); })} />
+            <button type="button" className="link-btn small" onClick={() => { setStep("email"); setCode(""); }}>{tl("Modifier l'identifiant")}</button>
+          </div>
         </form>
       )}
     </Modal>

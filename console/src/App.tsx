@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  BadgeCheck, CreditCard, FileKey2, LayoutDashboard, LogOut, Menu, ScrollText, Settings as SettingsIcon, Store, Ticket, Users, X, Download,
+  BadgeCheck, Bell, CreditCard, FileKey2, FileSearch, LayoutDashboard, LogOut, Menu, ScrollText, Settings as SettingsIcon, ShieldAlert, Store, Ticket,
+  Users, X, Download,
 } from "lucide-react";
 import { APP_VERSION, deviceLabel, deviceToken, errText, isDesktopApp, platform, rpc, sb } from "./lib/sb";
 import { ROLE } from "./lib/fmt";
@@ -15,6 +16,9 @@ import { Licences } from "./pages/Licences";
 import { Team } from "./pages/Team";
 import { Settings } from "./pages/Settings";
 import { Journal } from "./pages/Journal";
+import { Alerts } from "./pages/Alerts";
+import { ShopJournal } from "./pages/ShopJournal";
+import { AlertsProvider, useAlerts } from "./lib/alerts";
 
 export type Me = {
   admin: boolean;
@@ -29,7 +33,7 @@ export type Me = {
   disabled?: boolean;
 };
 
-export type Page = "dashboard" | "stores" | "payments" | "cards" | "licences" | "team" | "settings" | "journal";
+export type Page = "dashboard" | "alerts" | "shops" | "stores" | "payments" | "cards" | "licences" | "team" | "settings" | "journal";
 export type Nav = (page: Page, arg?: string) => void;
 
 type Stage =
@@ -118,12 +122,18 @@ export default function App() {
     case "device":
       return <DeviceWait label={stage.label} revoked={stage.revoked} onRetry={refresh} onSignOut={signOut} />;
     case "ready":
-      return <Shell me={stage.me} onSignOut={signOut} />;
+      return (
+        <AlertsProvider>
+          <Shell me={stage.me} onSignOut={signOut} />
+        </AlertsProvider>
+      );
   }
 }
 
 const NAV: { page: Page; label: string; icon: typeof Store; direction?: boolean }[] = [
   { page: "dashboard", label: "Tableau de bord", icon: LayoutDashboard },
+  { page: "alerts", label: "Alertes", icon: Bell },
+  { page: "shops", label: "Journal des boutiques", icon: FileSearch },
   { page: "stores", label: "Boutiques", icon: Store },
   { page: "payments", label: "Paiements", icon: CreditCard },
   { page: "cards", label: "Cartes de bon", icon: Ticket },
@@ -137,6 +147,9 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [page, setPage] = useState<Page>("dashboard");
   const [arg, setArg] = useState<string | undefined>();
   const [menu, setMenu] = useState(false);
+  const alerts = useAlerts();
+  const critical = alerts.open.filter((a) => a.level === "critique");
+  const warnings = alerts.open.filter((a) => a.level !== "info").length;
   const nav: Nav = useCallback((p, a) => {
     setPage(p);
     setArg(a);
@@ -163,6 +176,9 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
               <Icon size={18} />
               <span>{label}</span>
               {p === "team" && me.role === "direction" && (me.devices_pending ?? 0) > 0 && <em className="dot">{me.devices_pending}</em>}
+              {p === "alerts" && alerts.open.length > 0 && (
+                <em className={`dot${critical.length ? " dot-danger" : warnings ? " dot-warning" : " dot-info"}`}>{alerts.open.length}</em>
+              )}
             </button>
           ))}
         </nav>
@@ -187,10 +203,29 @@ function Shell({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
             <Menu size={22} />
           </button>
           <strong>{NAV.find((n) => n.page === page)?.label}</strong>
+          {alerts.open.length > 0 && (
+            <button className={`icon-btn topbar-bell${critical.length ? " danger" : ""}`} aria-label="Alertes" onClick={() => nav("alerts")}>
+              <Bell size={20} />
+              <em className="dot">{alerts.open.length}</em>
+            </button>
+          )}
         </header>
+        {critical.length > 0 && (
+          <div className="critical-banner" role="alert">
+            <ShieldAlert size={18} />
+            <span>
+              <strong>{critical.length > 1 ? `${critical.length} alertes critiques` : "Alerte critique"}</strong> : {critical[0].title}
+            </span>
+            <button className="btn btn-sm" onClick={() => nav("alerts")}>
+              Voir
+            </button>
+          </div>
+        )}
         <UpdateBanner />
         <div className="content">
           {page === "dashboard" && <Dashboard me={me} nav={nav} />}
+          {page === "alerts" && <Alerts me={me} nav={nav} />}
+          {page === "shops" && <ShopJournal me={me} nav={nav} query={arg} />}
           {page === "stores" && <Stores me={me} nav={nav} storeId={arg} />}
           {page === "payments" && <Payments me={me} nav={nav} />}
           {page === "cards" && <Cards me={me} nav={nav} tab={arg} />}

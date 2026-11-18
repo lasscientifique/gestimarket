@@ -88,6 +88,40 @@ export async function flushCards(phone?: string): Promise<{ ok: boolean; sent?: 
   return r.json().catch(() => ({ ok: false, error: `Réponse ${r.status}` }));
 }
 
+/** Lien de paiement CinetPay d'une carte vendue (fonction « gm-cinetpay », au nom de l'administrateur connecté). */
+export async function cinetpaySaleLink(saleId: string): Promise<{ payment_url: string; window_open: boolean }> {
+  const { data } = await sb.auth.getSession();
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/gm-cinetpay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+    body: JSON.stringify({ action: "sale_link", sale_id: saleId, device: deviceToken() }),
+  });
+  const v = await r.json().catch(() => ({}));
+  if (v?.status !== "ok") throw new Error(v?.message ?? `Réponse ${r.status}`);
+  return v;
+}
+
+/** Paiement CinetPay relu chez CinetPay (notification perdue). */
+export async function cinetpayCheck(paymentId: string): Promise<string> {
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/gm-cinetpay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "check", payment_id: paymentId }),
+  });
+  const v = await r.json().catch(() => ({}));
+  if (v?.status !== "ok") throw new Error(v?.message ?? `Réponse ${r.status}`);
+  return String(v.state ?? "");
+}
+
+/** Mot de passe ou code faux à la console : signalé au journal des comptes (alertes en cas d'essais répétés). */
+export function reportAuthFailure(login: string, kind: "mot_de_passe_faux" | "code_faux" | "code_2_etapes_faux") {
+  if (!login.trim()) return;
+  void sb.rpc("gm_report_auth_failure", { p: { login: login.trim().toLowerCase(), kind, app: "console", version: APP_VERSION, platform: platform() } }).then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
 /** Ouvre une adresse (WhatsApp, site) dans l'application du système. */
 export async function openUrl(url: string) {
   if (isTauri) {

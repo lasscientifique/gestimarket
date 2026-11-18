@@ -1250,10 +1250,12 @@ export interface AccountOptions {
     /** Devise par défaut de la carte Visa, et devises acceptées par le profil Cybersource. */
     card_currency?: string;
     card_currencies?: string[];
+    /** Paiement direct par CinetPay (0.34) : Orange Money, Moov Money, carte bancaire ; validé tout seul. */
+    cinetpay_enabled?: boolean;
   };
 }
 
-export type SubscriptionMethod = "carte_bon" | "orange_money" | "wave" | "moov_money" | "carte_visa";
+export type SubscriptionMethod = "carte_bon" | "orange_money" | "wave" | "moov_money" | "carte_visa" | "cinetpay";
 /** Paiements mobiles déclarés par la boutique et validés par Eden Dev. */
 export type MobileMoneyMethod = "orange_money" | "wave" | "moov_money";
 
@@ -1286,6 +1288,8 @@ export interface CardStart {
   currency: string;
   plan_label: string;
   months: number;
+  /** Paiement direct CinetPay : page de paiement à ouvrir (la carte Visa ouvre la sienne toute seule). */
+  payment_url?: string;
 }
 
 export interface StoreInput {

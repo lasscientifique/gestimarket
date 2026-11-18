@@ -1117,6 +1117,16 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
             }
             out(r)
         }
+        // Paiement direct CinetPay (0.34) : l'écran ouvre ensuite la page de paiement rendue ici.
+        "account_cinetpay_start" => {
+            account_access(state, origin)?;
+            let r = crate::account::cinetpay_start(&arg::<String>(&a, "plan")?, arg(&a, "months")?).map_err(AppError::Validation)?;
+            if let Some(u) = state.user(origin) {
+                let detail = format!("CinetPay — {} {} mois, {} FCFA", r["plan_label"].as_str().unwrap_or_default(), r["months"], r["amount"]);
+                audit::log(&state.conn(), &u, "Paiement direct commencé", "settings", None, detail)?;
+            }
+            out(r)
+        }
         "list_sessions" => {
             state.require(origin, Admin)?;
             out(json!({ "sessions": state.sessions(), "max": crate::license::max_postes(), "used": state.active_sessions() }))

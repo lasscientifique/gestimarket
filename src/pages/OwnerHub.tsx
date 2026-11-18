@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft, AtSign, BadgeCheck, CircleOff, Gift, KeyRound, LogIn, LogOut, Mail, MessageCircle, Pencil, Phone, Power, RefreshCw, Smartphone, Store,
-  UserCog, WifiOff,
+  UserCog, WifiOff, Zap,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { LanguageSwitch } from "../components/LanguageSwitch";
@@ -16,6 +16,7 @@ import { isTauri, remoteShop, setRemoteShop } from "../lib/transport";
 import { dateOnly, dateTime } from "../lib/format";
 import { tl, tm } from "../lib/i18n";
 import type { AccountOptions } from "../types";
+import { openPaymentPage } from "../components/SubscriptionPay";
 
 type Tab = "shops" | "subscriptions" | "contact";
 
@@ -354,7 +355,8 @@ function ShopsTab({ data, busy, reload, onSubscription }: { data: OwnerStores | 
 }
 
 const METHOD_LABEL = (m: string) =>
-  ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), wave: tl("Wave"), carte_visa: tl("Carte Visa") } as Record<string, string>)[m] ?? m;
+  ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), wave: tl("Wave"), carte_visa: tl("Carte Visa"),
+     cinetpay: tl("Paiement direct (CinetPay)") } as Record<string, string>)[m] ?? m;
 
 const STATUS = (p: OwnerPayment): [string, "success" | "warning" | "danger" | "default"] => {
   if (p.status === "validated") return [tl("Validé"), "success"];
@@ -390,6 +392,20 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
       setVoucher("");
       toast.success(tl("Carte de bon acceptée : l'abonnement est activé. Le PC de la boutique reçoit sa licence à sa prochaine connexion."));
       loadPayments();
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Paiement direct (CinetPay) : la page de paiement s'ouvre dans le navigateur ; l'abonnement s'active tout seul.
+  const direct = async () => {
+    setBusy(true);
+    try {
+      const r = await owner.cinetpay(code, om.plan, om.months);
+      await openPaymentPage(r.payment_url);
+      toast.success(tl("Page de paiement ouverte : payez {0} FCFA, puis revenez ici. L'abonnement s'active dès que CinetPay confirme le paiement.", [r.amount.toLocaleString()]));
+      window.setTimeout(loadPayments, 60_000);
     } catch (err) {
       toast.error(err);
     } finally {
@@ -451,6 +467,26 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
               })}
             </div>
           )}
+        </div>
+      )}
+      {store && options?.payment?.cinetpay_enabled && (
+        <div className="card">
+          <h3 className="card-title"><Zap size={18} />  {tl("Paiement direct")}</h3>
+          <p className="muted small">{tl("Orange Money, Moov Money ou carte bancaire, sur la page sécurisée de CinetPay. L'abonnement s'active tout seul, sans attendre Eden Dev.")}</p>
+          <div className="form-grid">
+            <Field label={tl("Formule")}>
+              <select value={om.plan} onChange={(e) => setOm({ ...om, plan: e.target.value })}>
+                {plans.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+              </select>
+            </Field>
+            <Field label={tl("Durée")}>
+              <select value={om.months} onChange={(e) => setOm({ ...om, months: Number(e.target.value) })}>
+                {[1, 3, 6, 12].map((m) => <option key={m} value={m}>{tl("{0} mois", [m])}</option>)}
+              </select>
+            </Field>
+          </div>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void direct()}>
+            <Zap size={16} />  {busy ? tl("Ouverture…") : tl("Payer maintenant")}</button>
         </div>
       )}
       {store && (

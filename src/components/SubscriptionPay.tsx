@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
-import { ArrowLeft, CircleCheck, Copy, CreditCard, Hourglass, Smartphone, Ticket } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { ArrowLeft, CircleCheck, Copy, CreditCard, ExternalLink, Hourglass, Smartphone, Ticket, Zap } from "lucide-react";
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
 import { Badge } from "./ui";
 import { fcfa, isoDateTime, planPrice, price, setLicense } from "../lib/license";
 import type { AccountOptions, CardStart, LicenseStatus, SubscriptionMethod, PlanCode, PlanInfo, SubscriptionPayment } from "../types";
 import { tl } from "../lib/i18n";
+import { isTauri } from "../lib/transport";
 
 export const METHOD_LABELS: Record<string, string> = {
   carte_bon: tl("Carte de bon"),
@@ -14,6 +16,7 @@ export const METHOD_LABELS: Record<string, string> = {
   carte_visa: tl("Carte Visa"),
   moov_money: tl("Moov Money"),
   wave: tl("Wave"),
+  cinetpay: tl("Paiement direct (CinetPay)"),
   virement: tl("Virement"),
   especes: tl("Espèces"),
   autre: tl("Autre"),
@@ -34,6 +37,15 @@ async function refreshAfterPayment(): Promise<string | null> {
   }
 }
 
+/** Page de paiement de CinetPay : navigateur du système (PC, téléphone), ou nouvel onglet (poste du réseau). */
+export async function openPaymentPage(url: string): Promise<void> {
+  if (isTauri) {
+    await invoke("open_contact", { kind: "cinetpay", number: url });
+  } else {
+    window.open(url, "_blank", "noopener");
+  }
+}
+
 /**
  * Paiement de l'abonnement en 2 étapes : moyen de paiement, puis formule et instructions.
  * Carte de bon : activation immédiate. Orange Money : validé par Eden Dev. Carte Visa : automatique.
@@ -50,6 +62,13 @@ export function SubscriptionPay({ options, lic, onChange }: { options: AccountOp
         <>
           <p className="muted">{tl("Choisissez le moyen de paiement.")}</p>
           <div className="pay-methods">
+            {pay?.cinetpay_enabled && (
+              <button type="button" className="pay-method" onClick={() => choose("cinetpay")}>
+                <Zap size={26} />
+                <strong>{tl("Paiement direct")}</strong>
+                <span className="small muted">{tl("Orange Money, Moov Money ou carte bancaire, sur la page sécurisée de CinetPay. Activation automatique.")}</span>
+              </button>
+            )}
             <button type="button" className="pay-method" onClick={() => choose("carte_bon")}>
               <Ticket size={26} />
               <strong>{tl("Carte de bon")}</strong>
@@ -90,6 +109,7 @@ export function SubscriptionPay({ options, lic, onChange }: { options: AccountOp
           {method === "orange_money" && <OrangeMoneyForm options={options} lic={lic} onChange={onChange} />}
           {(method === "wave" || method === "moov_money") && <MobileMoneyForm key={method} method={method} options={options} lic={lic} onChange={onChange} />}
           {method === "carte_visa" && <CardForm options={options} lic={lic} onChange={onChange} />}
+          {method === "cinetpay" && <CardForm direct options={options} lic={lic} onChange={onChange} />}
         </>
       )}
     </div>
@@ -379,10 +399,13 @@ function MobileMoneyForm({ method, options, lic, onChange }: { method: "wave" | 
   );
 }
 
-function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
+/** Page de paiement hébergée : carte Visa (Cybersource) ou, `direct`, CinetPay (Orange Money, Moov Money, carte). */
+function CardForm({ options, lic, onChange, direct = false }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void; direct?: boolean }) {
   const { toast, settings } = useApp();
   const shopCurrency = settings.currency_code ?? "XOF";
-  const cardCurrency = options.payment?.card_currencies?.includes(shopCurrency) ? shopCurrency : (options.payment?.card_currency ?? "XOF");
+  const cardCurrency = direct
+    ? "XOF"
+    : options.payment?.card_currencies?.includes(shopCurrency) ? shopCurrency : (options.payment?.card_currency ?? "XOF");
   const choice = usePlanChoice(options, lic, cardCurrency);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState<CardStart | null>(null);
@@ -413,12 +436,12 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
         onChange();
         if (p.status === "validated") {
           const syncError = await refreshAfterPayment();
-          setDone(tl("Paiement par carte accepté : {0}, {1} mois, jusqu'au {2}.", [p.plan_label, p.months, isoDateTime(p.ends_at)]) + (syncError ? tl(" Licence pas encore téléchargée ({0}).", [syncError]) : tl(" La licence de ce PC est à jour.")));
-          toast.success(tl("Paiement par carte accepté."));
+          setDone(tl("Paiement accepté : {0}, {1} mois, jusqu'au {2}.", [p.plan_label, p.months, isoDateTime(p.ends_at)]) + (syncError ? tl(" Licence pas encore téléchargée ({0}).", [syncError]) : tl(" La licence de ce PC est à jour.")));
+          toast.success(tl("Paiement accepté."));
         } else if (p.status === "declared") {
           setDone(tl("Paiement reçu, en vérification par Eden Dev. La licence se mettra à jour dès la validation."));
         } else {
-          setError(p.note || tl("Paiement par carte refusé ou annulé."));
+          setError(p.note || tl("Paiement refusé ou annulé."));
         }
       } catch {
         // Internet coupé un instant : on réessaie au prochain tour.
@@ -435,7 +458,13 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
     setError("");
     setDone("");
     try {
-      setWaiting(await api.accountCardStart(choice.plan, choice.months));
+      if (direct) {
+        const r = await api.accountCinetpayStart(choice.plan, choice.months);
+        setWaiting(r);
+        if (r.payment_url) await openPaymentPage(r.payment_url).catch(() => undefined);
+      } else {
+        setWaiting(await api.accountCardStart(choice.plan, choice.months));
+      }
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -448,8 +477,18 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
       <div className="pay-step pay-waiting">
         <Hourglass size={30} />
         <strong>{tl("Page de paiement ouverte dans votre navigateur")}</strong>
-        <p className="muted">
-          {tl("Payez")} {price(waiting.amount, waiting.currency)} ({waiting.plan_label}, {waiting.months}  {tl("mois) sur la page sécurisée de Visa, puis revenez ici : la licence se met à jour dès que le paiement est accepté.")}</p>
+        {direct ? (
+          <p className="muted">
+            {tl("Payez {0} ({1}, {2} mois) sur la page sécurisée de CinetPay, avec Orange Money, Moov Money ou une carte bancaire, puis revenez ici : la licence se met à jour dès que CinetPay confirme le paiement à Eden Dev.", [price(waiting.amount, waiting.currency), waiting.plan_label, waiting.months])}</p>
+        ) : (
+          <p className="muted">
+            {tl("Payez")} {price(waiting.amount, waiting.currency)} ({waiting.plan_label}, {waiting.months}  {tl("mois) sur la page sécurisée de Visa, puis revenez ici : la licence se met à jour dès que le paiement est accepté.")}</p>
+        )}
+        {waiting.payment_url && (
+          <a className="btn" href={waiting.payment_url} target="_blank" rel="noreferrer"
+            onClick={(e) => { if (isTauri) { e.preventDefault(); void openPaymentPage(waiting.payment_url ?? ""); } }}>
+            <ExternalLink size={15} />  {tl("Rouvrir la page de paiement")}</a>
+        )}
         <button type="button" className="btn" onClick={() => setWaiting(null)}>{tl("Arrêter d'attendre")}</button>
       </div>
     );
@@ -459,12 +498,15 @@ function CardForm({ options, lic, onChange }: { options: AccountOptions; lic: Li
     <div className="pay-step">
       <PlanPicker options={options} lic={lic} {...choice} />
       <p className="muted small">
-        {tl("Le paiement se fait sur la page sécurisée de Visa (Cybersource) dans votre navigateur, avec la vérification de votre banque (code par SMS). Le numéro de carte ne passe jamais par GestiMarket.")}</p>
+        {direct
+          ? tl("Le paiement se fait sur la page sécurisée de CinetPay dans votre navigateur : Orange Money, Moov Money ou carte bancaire. Eden Dev vérifie le paiement auprès de CinetPay, puis l'abonnement s'active tout seul. Votre code secret et votre numéro de carte ne passent jamais par GestiMarket.")
+          : tl("Le paiement se fait sur la page sécurisée de Visa (Cybersource) dans votre navigateur, avec la vérification de votre banque (code par SMS). Le numéro de carte ne passe jamais par GestiMarket.")}</p>
       {error && <div className="alert alert-danger">{error}</div>}
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
         <button type="button" className="btn btn-primary" disabled={busy || choice.amount <= 0} onClick={start}>
-          <CreditCard size={16} /> {busy ? tl("Ouverture…") : tl("Payer {0} par carte Visa", [price(choice.amount, choice.currency)])}
+          {direct ? <Zap size={16} /> : <CreditCard size={16} />}{" "}
+          {busy ? tl("Ouverture…") : direct ? tl("Payer {0}", [price(choice.amount, choice.currency)]) : tl("Payer {0} par carte Visa", [price(choice.amount, choice.currency)])}
         </button>
       </div>
     </div>
