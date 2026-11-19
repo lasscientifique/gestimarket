@@ -2806,4 +2806,15 @@ export const EN: Record<string, string> = {
   "Page de paiement ouverte : payez {0} FCFA, puis revenez ici. L'abonnement s'active dès que CinetPay confirme le paiement.": "Payment page opened: pay {0} FCFA, then come back here. The subscription activates as soon as CinetPay confirms the payment.",
   "Orange Money, Moov Money ou carte bancaire, sur la page sécurisée de CinetPay. L'abonnement s'active tout seul, sans attendre Eden Dev.": "Orange Money, Moov Money or bank card, on CinetPay's secure page. The subscription activates by itself, without waiting for Eden Dev.",
   "Payer maintenant": "Pay now",
+  // 0.34.2 : Orange Money, Wave et Moov Money sans ID de transaction.
+  "Appuyez sur « J'ai payé ». Pas besoin de l'ID de la transaction : Orange envoie la confirmation à Eden Dev.": "Tap “I have paid”. No transaction ID needed: Orange sends the confirmation to Eden Dev.",
+  "J'ai payé": "I have paid",
+  "Numéro qui a payé *": "Number that paid *",
+  "Eden Dev retrouve votre paiement grâce à ce numéro.": "Eden Dev finds your payment with this number.",
+  "Appuyez sur « J'ai payé ». Pas besoin de l'ID de la transaction : l'opérateur envoie la confirmation à Eden Dev.": "Tap “I have paid”. No transaction ID needed: the operator sends the confirmation to Eden Dev.",
+  "Payez au code marchand Orange Money {0} ({1}), puis appuyez sur « J'ai payé ».": "Pay to the Orange Money merchant code {0} ({1}), then tap “I have paid”.",
+  "Envoyez le paiement Wave au numéro marchand {0} ({1}), puis appuyez sur « J'ai payé ».": "Send the Wave payment to the merchant number {0} ({1}), then tap “I have paid”.",
+  "Envoyez le paiement Moov Money au numéro marchand {0} ({1}), puis appuyez sur « J'ai payé ».": "Send the Moov Money payment to the merchant number {0} ({1}), then tap “I have paid”.",
+  "Payez Eden Dev, puis appuyez sur « J'ai payé ».": "Pay Eden Dev, then tap “I have paid”.",
+  "Pas besoin de l'ID de la transaction : l'opérateur envoie la confirmation à Eden Dev, qui valide le paiement.": "No transaction ID needed: the operator sends the confirmation to Eden Dev, who validates the payment.",
 };

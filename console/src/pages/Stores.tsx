@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Ban, CalendarPlus, Gift, MessageCircle, Monitor, Pencil, RefreshCw, RotateCcw, Search, Shuffle, Unplug } from "lucide-react";
+import { ArrowLeft, Ban, Banknote, CalendarPlus, Gift, MessageCircle, Monitor, Pencil, RefreshCw, RotateCcw, Search, Shuffle, Unplug } from "lucide-react";
 import type { Me, Nav } from "../App";
 import { openUrl, rpc, waLink } from "../lib/sb";
 import { ago, dateOnly, dateTime, daysLeft, EVENT, METHOD, money, PAY_STATUS, SALE_STATUS, SOURCE } from "../lib/fmt";
@@ -125,9 +125,15 @@ function StoreDetail({ me, id, back, nav }: { me: Me; id: string; back: () => vo
   const canHelp = me.role !== "paiements";
   const plans: [string, string][] = [["starter", "STARTER"], ["pro", "PRO"], ["business", "BUSINESS"]];
 
+  const canPay = me.role !== "assistance";
+
   const run = async (a: Action, values: Record<string, string>, reason: string) => {
-    await rpc("gm_console_store_action", { p_store_id: s.id, p_action: a.action, p_args: a.args ? a.args(values) : {}, p_reason: reason });
-    toast.ok(`${a.title} : fait.`);
+    const r = await rpc<{ ok: boolean; amount?: number | null; plan?: string | null; months?: number | null }>("gm_console_store_action", {
+      p_store_id: s.id, p_action: a.action, p_args: a.args ? a.args(values) : {}, p_reason: reason,
+    });
+    toast.ok(a.action === "record_payment" && r.amount != null
+      ? `Paiement enregistré : ${money(r.amount)}, ${r.plan} ${r.months} mois. La licence part toute seule.`
+      : `${a.title} : fait.`);
     reload();
   };
 
@@ -233,6 +239,34 @@ function StoreDetail({ me, id, back, nav }: { me: Me; id: string; back: () => vo
             }
           >
             <Pencil size={16} /> Coordonnées
+          </button>
+        )}
+        {canPay && (
+          <button
+            className="btn"
+            onClick={() =>
+              setAct({
+                title: "Enregistrer un paiement reçu",
+                action: "record_payment",
+                confirm: "Enregistrer",
+                intro:
+                  "Paiement reçu hors de GestiMarket (« c'est payé » sur WhatsApp, espèces…). Vérifiez d'abord le SMS de l'opérateur. " +
+                  "Le montant est le prix de la formule ; l'abonnement s'active tout de suite et compte dans les recettes.",
+                fields: [
+                  { key: "plan", label: "Formule *", type: "select", options: plans, value: d.current?.plan && d.current.plan !== "free" ? d.current.plan : "pro" },
+                  { key: "months", label: "Durée *", type: "select", options: [["1", "1 mois"], ["3", "3 mois"], ["6", "6 mois"], ["12", "12 mois (2 offerts)"]], value: "1" },
+                  {
+                    key: "method", label: "Payé par *", type: "select", value: "orange_money",
+                    options: [["orange_money", "Orange Money"], ["moov_money", "Moov Money"], ["wave", "Wave"], ["especes", "Espèces"], ["virement", "Virement"], ["autre", "Autre"]],
+                  },
+                  { key: "payer_phone", label: "Numéro qui a payé", value: s.phone ?? "" },
+                  { key: "reference", label: "ID de la transaction (facultatif)", hint: "Copié du SMS de l'opérateur : jamais deux fois le même." },
+                ],
+                args: (v) => ({ plan: v.plan, months: Number(v.months), method: v.method, payer_phone: v.payer_phone, reference: v.reference }),
+              })
+            }
+          >
+            <Banknote size={16} /> Paiement reçu
           </button>
         )}
         <button className="btn" onClick={() => nav("cards", `sell:${s.code}`)}>

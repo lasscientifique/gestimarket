@@ -250,14 +250,20 @@ function usePlanChoice(options: AccountOptions, lic: LicenseStatus, wanted = "XO
   return { plan, setPlan, months, setMonths, amount: unit.amount * billedMonths(months), currency: unit.currency };
 }
 
+/** Chiffres d'un numéro de téléphone : il en faut 8 au moins pour qu'Eden Dev retrouve le SMS de l'opérateur. */
+const phoneOk = (s: string) => s.replace(/\D/g, "").length >= 8;
+
+/**
+ * Orange Money (0.34.2) : la boutique paie au code marchand ou au QR code, puis appuie sur « J'ai payé ».
+ * Pas d'ID de transaction : Eden Dev reçoit le SMS d'Orange (montant, numéro, ID) et valide dans la console.
+ */
 function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
-  const { toast } = useApp();
+  const { toast, settings } = useApp();
   const choice = usePlanChoice(options, lic);
   const pay = options.payment;
   const merchant = pay?.om_merchant_code?.trim() ?? "";
   const [qr, setQr] = useState<string | null>(null);
-  const [reference, setReference] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(settings.shop_phone ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
@@ -273,11 +279,10 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
     setBusy(true);
     setError("");
     try {
-      const r = await api.accountDeclareOrangeMoney({ plan: choice.plan, months: choice.months, reference, payer_phone: phone });
+      const r = await api.accountDeclareOrangeMoney({ plan: choice.plan, months: choice.months, reference: "", payer_phone: phone });
       setDone(
         tl("Paiement envoyé à Eden Dev : {0}, {1} mois, {2}. Dès sa validation, la licence de ce PC se met à jour toute seule (vérification toutes les 2 minutes).", [r.plan_label, r.months, fcfa(r.amount)]),
       );
-      setReference("");
       toast.success(tl("Paiement Orange Money envoyé à Eden Dev."));
       onChange();
     } catch (err) {
@@ -301,7 +306,7 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
               </button>
               {pay?.om_merchant_name ? ` (${pay.om_merchant_name})` : ""}{qr ? tl(", ou scannez le QR code") : ""}.
             </li>
-            <li>{tl("Saisissez ci-dessous l'ID de la transaction reçu par SMS.")}</li>
+            <li>{tl("Appuyez sur « J'ai payé ». Pas besoin de l'ID de la transaction : Orange envoie la confirmation à Eden Dev.")}</li>
             <li>{tl("Eden Dev vérifie le paiement et le valide : la licence se met à jour toute seule.")}</li>
           </ol>
           {qr && <img className="om-pay-qr" src={qr} alt={tl("QR code marchand Orange Money d'Eden Dev")} />}
@@ -309,37 +314,40 @@ function OrangeMoneyForm({ options, lic, onChange }: { options: AccountOptions; 
       ) : (
         <div className="alert alert-warning">{tl("Le code marchand Orange Money d'Eden Dev n'est pas encore configuré : contactez Eden Dev ou utilisez une carte de bon.")}</div>
       )}
-      <div className="form-grid">
-        <label className="field">
-          <span className="field-label">{tl("ID de la transaction *")}</span>
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={tl("Reçu par SMS")} autoComplete="off" spellCheck={false} />
-        </label>
-        <label className="field">
-          <span className="field-label">{tl("Numéro qui a payé")}</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
-        </label>
-      </div>
+      <PayerPhone phone={phone} setPhone={setPhone} />
       {error && <div className="alert alert-danger">{error}</div>}
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
-        <button className="btn btn-primary" disabled={busy || !merchant || reference.trim().length < 6}>
-          {busy ? tl("Envoi…") : tl("J'ai payé : envoyer l'ID de transaction")}
+        <button className="btn btn-primary" disabled={busy || !merchant || !phoneOk(phone)}>
+          {busy ? tl("Envoi…") : tl("J'ai payé")}
         </button>
       </div>
     </form>
   );
 }
 
-/** Wave ou Moov Money (0.33) : paiement au numéro marchand d'Eden Dev, ID de transaction validé par Eden Dev. */
+/** Numéro qui a payé : Eden Dev le retrouve dans le SMS de l'opérateur. */
+function PayerPhone({ phone, setPhone }: { phone: string; setPhone: (s: string) => void }) {
+  return (
+    <div className="form-grid">
+      <label className="field">
+        <span className="field-label">{tl("Numéro qui a payé *")}</span>
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" />
+        <span className="small muted">{tl("Eden Dev retrouve votre paiement grâce à ce numéro.")}</span>
+      </label>
+    </div>
+  );
+}
+
+/** Wave ou Moov Money (0.33) : paiement au numéro marchand d'Eden Dev, puis « J'ai payé » (sans ID depuis 0.34.2). */
 function MobileMoneyForm({ method, options, lic, onChange }: { method: "wave" | "moov_money"; options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
-  const { toast } = useApp();
+  const { toast, settings } = useApp();
   const choice = usePlanChoice(options, lic);
   const pay = options.payment;
   const name = method === "wave" ? tl("Wave") : tl("Moov Money");
   const number = (method === "wave" ? pay?.wave_merchant_number : pay?.moov_merchant_number)?.trim() ?? "";
   const holder = (method === "wave" ? pay?.wave_merchant_name : pay?.moov_merchant_name)?.trim() ?? "";
-  const [reference, setReference] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(settings.shop_phone ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
@@ -349,11 +357,10 @@ function MobileMoneyForm({ method, options, lic, onChange }: { method: "wave" | 
     setBusy(true);
     setError("");
     try {
-      const r = await api.accountDeclareOrangeMoney({ plan: choice.plan, months: choice.months, reference, payer_phone: phone, method });
+      const r = await api.accountDeclareOrangeMoney({ plan: choice.plan, months: choice.months, reference: "", payer_phone: phone, method });
       setDone(
         tl("Paiement envoyé à Eden Dev : {0}, {1} mois, {2}. Dès sa validation, la licence de ce PC se met à jour toute seule (vérification toutes les 2 minutes).", [r.plan_label, r.months, fcfa(r.amount)]),
       );
-      setReference("");
       toast.success(tl("Paiement {0} envoyé à Eden Dev.", [name]));
       onChange();
     } catch (err) {
@@ -376,25 +383,16 @@ function MobileMoneyForm({ method, options, lic, onChange }: { method: "wave" | 
             </button>
             {holder ? ` (${holder})` : ""}.
           </li>
-          <li>{tl("Saisissez ci-dessous l'ID de la transaction reçu par SMS.")}</li>
+          <li>{tl("Appuyez sur « J'ai payé ». Pas besoin de l'ID de la transaction : l'opérateur envoie la confirmation à Eden Dev.")}</li>
           <li>{tl("Eden Dev vérifie le paiement et le valide : la licence se met à jour toute seule.")}</li>
         </ol>
       </div>
-      <div className="form-grid">
-        <label className="field">
-          <span className="field-label">{tl("ID de la transaction *")}</span>
-          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={tl("Reçu par SMS")} autoComplete="off" spellCheck={false} />
-        </label>
-        <label className="field">
-          <span className="field-label">{tl("Numéro qui a payé")}</span>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
-        </label>
-      </div>
+      <PayerPhone phone={phone} setPhone={setPhone} />
       {error && <div className="alert alert-danger">{error}</div>}
       {done && <div className="alert alert-success">{done}</div>}
       <div className="row-end">
-        <button className="btn btn-primary" disabled={busy || !number || reference.trim().length < 4}>
-          {busy ? tl("Envoi…") : tl("J'ai payé : envoyer l'ID de transaction")}
+        <button className="btn btn-primary" disabled={busy || !number || !phoneOk(phone)}>
+          {busy ? tl("Envoi…") : tl("J'ai payé")}
         </button>
       </div>
     </form>

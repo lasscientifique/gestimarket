@@ -17,6 +17,7 @@ import { dateOnly, dateTime } from "../lib/format";
 import { tl, tm } from "../lib/i18n";
 import type { AccountOptions } from "../types";
 import { openPaymentPage } from "../components/SubscriptionPay";
+import { fcfa, planPrice } from "../lib/license";
 
 type Tab = "shops" | "subscriptions" | "contact";
 
@@ -372,7 +373,7 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
   const [payments, setPayments] = useState<OwnerPayment[] | null>(null);
   const [options, setOptions] = useState<AccountOptions | null>(null);
   const [voucher, setVoucher] = useState("");
-  const [om, setOm] = useState({ plan: "pro", months: 1, method: "orange_money", reference: "", phone: "" });
+  const [om, setOm] = useState({ plan: "pro", months: 1, method: "orange_money", phone: store?.phone ?? "" });
   const [busy, setBusy] = useState(false);
 
   const loadPayments = useCallback(() => {
@@ -416,8 +417,8 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
     e.preventDefault();
     setBusy(true);
     try {
-      const r = await owner.declare({ store_code: code, ...om });
-      setOm({ ...om, reference: "" });
+      // 0.34.2 : pas d'ID de transaction, Eden Dev retrouve le paiement dans le SMS de l'opérateur grâce au numéro.
+      const r = await owner.declare({ store_code: code, ...om, reference: "" });
       toast.success(tl("Paiement déclaré ({0}, {1} mois) : Eden Dev le valide, puis l'abonnement est activé.", [r.plan_label, r.months]));
       loadPayments();
     } catch (err) {
@@ -428,6 +429,9 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
   };
 
   const plans = (options?.plans ?? []).filter((p) => p.code !== "free");
+  const chosen = plans.find((p) => p.code === om.plan);
+  // 12 mois = 10 mois payés (2 mois offerts), comme sur le PC.
+  const amount = chosen ? planPrice(chosen, "XOF").amount * (om.months === 12 ? 10 : om.months) : 0;
   return (
     <>
       <h2 className="owner-h2">{tl("Abonnements")}</h2>
@@ -504,12 +508,13 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
           <h3 className="card-title"><Smartphone size={18} />  {tl("Orange Money, Wave ou Moov Money")}</h3>
           <p className="muted small">
             {om.method === "orange_money" && options?.payment?.om_merchant_code
-              ? tl("Payez au code marchand {0} ({1}), puis saisissez la référence reçue par SMS.", [options.payment.om_merchant_code, options.payment.om_merchant_name])
+              ? tl("Payez au code marchand Orange Money {0} ({1}), puis appuyez sur « J'ai payé ».", [options.payment.om_merchant_code, options.payment.om_merchant_name])
               : om.method === "wave" && options?.payment?.wave_merchant_number
-                ? tl("Envoyez le paiement Wave au numéro marchand {0} ({1}), puis saisissez la référence reçue par SMS.", [options.payment.wave_merchant_number, options.payment.wave_merchant_name ?? ""])
+                ? tl("Envoyez le paiement Wave au numéro marchand {0} ({1}), puis appuyez sur « J'ai payé ».", [options.payment.wave_merchant_number, options.payment.wave_merchant_name ?? ""])
                 : om.method === "moov_money" && options?.payment?.moov_merchant_number
-                  ? tl("Envoyez le paiement Moov Money au numéro marchand {0} ({1}), puis saisissez la référence reçue par SMS.", [options.payment.moov_merchant_number, options.payment.moov_merchant_name ?? ""])
-                  : tl("Payez Eden Dev, puis saisissez la référence de la transaction reçue par SMS.")}
+                  ? tl("Envoyez le paiement Moov Money au numéro marchand {0} ({1}), puis appuyez sur « J'ai payé ».", [options.payment.moov_merchant_number, options.payment.moov_merchant_name ?? ""])
+                  : tl("Payez Eden Dev, puis appuyez sur « J'ai payé ».")}
+            {" "}{tl("Pas besoin de l'ID de la transaction : l'opérateur envoie la confirmation à Eden Dev, qui valide le paiement.")}
           </p>
           <div className="form-grid">
             <Field label={tl("Formule")}>
@@ -529,14 +534,12 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
                 <option value="moov_money">{tl("Moov Money")}</option>
               </select>
             </Field>
-            <Field label={tl("Référence de la transaction (SMS)")}>
-              <input value={om.reference} onChange={(e) => setOm({ ...om, reference: e.target.value })} />
-            </Field>
-            <Field label={tl("Numéro qui a payé")}>
-              <input inputMode="tel" value={om.phone} onChange={(e) => setOm({ ...om, phone: e.target.value })} />
+            <Field label={tl("Numéro qui a payé *")} hint={tl("Eden Dev retrouve votre paiement grâce à ce numéro.")}>
+              <input inputMode="tel" autoComplete="tel" value={om.phone} onChange={(e) => setOm({ ...om, phone: e.target.value })} />
             </Field>
           </div>
-          <button className="btn btn-primary" disabled={busy || om.reference.trim().length < 4}>{tl("Déclarer le paiement")}</button>
+          {amount > 0 && <p><span className="muted small">{tl("Montant à payer")}</span> <strong>{fcfa(amount)}</strong></p>}
+          <button className="btn btn-primary" disabled={busy || om.phone.replace(/\D/g, "").length < 8}>{tl("J'ai payé")}</button>
           <p className="muted small">{tl("Carte Visa ou Mastercard : depuis le PC de la boutique (Abonnement & licence).")}</p>
         </form>
       )}

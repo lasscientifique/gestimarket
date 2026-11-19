@@ -847,4 +847,6 @@ export const EN_MESSAGES: Record<string, string> = {
   "Trop de codes demandés pour ce numéro : réessayez dans {} min.": "Too many codes requested for this number: try again in {} min.",
   "CinetPay n'a pas pu ouvrir le paiement ({}) : réessayez plus tard, ou utilisez une carte de bon.": "CinetPay could not open the payment ({}): try again later, or use a voucher card.",
   "Paiement CinetPay non ouvert : ": "CinetPay payment not opened: ",
+  "ID de transaction trop court : recopiez-le du SMS, ou laissez la case vide.": "Transaction ID too short: copy it from the SMS, or leave the box empty.",
+  "Saisissez le numéro qui a payé : Eden Dev retrouve votre paiement grâce à ce numéro.": "Enter the number that paid: Eden Dev finds your payment with this number.",
 };

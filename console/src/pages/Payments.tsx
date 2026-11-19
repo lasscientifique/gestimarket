@@ -20,26 +20,13 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [refuse, setRefuse] = useState<PaymentRow | null>(null);
+  const [accept, setAccept] = useState<PaymentRow | null>(null);
   const [busyId, setBusyId] = useState("");
   const { data, error, busy, reload } = useLoad(
     () => rpc<PaymentRow[]>("gm_console_payments", { p_status: status, p_method: method, p_search: search, p_from: from || null, p_to: to || null }),
     [status, method, search, from, to],
   );
   const canDecide = me.role !== "assistance";
-
-  const validate = async (p: PaymentRow) => {
-    if (!window.confirm(`Valider ${money(p.amount)} ${METHOD[p.method] ?? p.method} (réf. ${p.reference}) de ${p.store_name} ?\n\nVérifiez d'abord que l'argent est bien arrivé (SMS de l'opérateur).`)) return;
-    setBusyId(p.id);
-    try {
-      await rpc("gm_console_payment_decide", { p_payment_id: p.id, p_decision: "validate", p_reason: "" });
-      toast.ok(`Paiement de ${p.store_name} validé : la licence part toute seule.`);
-      reload();
-    } catch (e) {
-      toast.fail(e);
-    } finally {
-      setBusyId("");
-    }
-  };
 
   const exportCsv = async () => {
     if (!data?.length) return;
@@ -93,8 +80,9 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
       </form>
       {status === "declared" && (
         <p className="muted small">
-          Avant de valider : vérifiez sur le téléphone marchand (SMS Orange Money, Wave ou Moov) que le montant est bien arrivé avec cette
-          référence. La validation envoie la licence toute seule.
+          Avant de valider : vérifiez sur le téléphone marchand (SMS Orange Money, Wave ou Moov) que le montant est bien arrivé, du
+          numéro indiqué. Depuis GestiMarket 0.34.2, la boutique n'envoie plus d'ID de transaction : vous pouvez coller celui du SMS en
+          validant. La validation envoie la licence toute seule.
         </p>
       )}
       {error && <ErrorBox error={error} retry={reload} />}
@@ -117,8 +105,8 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
                     {p.plan_label} · {p.months} mois — <button className="link-btn" onClick={() => nav("stores", p.store_id)}><Store size={13} /> {p.store_name} ({p.store_code})</button>
                   </div>
                   <div className="muted small">
-                    Réf. <span className="mono">{p.reference || "—"}</span>
-                    {p.payer_phone && ` · payé par ${p.payer_phone}`} · {dateTime(p.created_at)}
+                    {p.payer_phone && <>Payé par <strong>{p.payer_phone}</strong> · </>}
+                    Réf. <span className="mono">{p.reference || "sans ID"}</span> · {dateTime(p.created_at)}
                     {p.validated_at && ` · validé ${dateTime(p.validated_at)}`}
                   </div>
                   {p.note && <div className="muted small">{p.note}</div>}
@@ -152,7 +140,7 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
                 )}
                 {p.status === "declared" && canDecide && (
                   <div className="pay-actions">
-                    <button className="btn btn-primary" disabled={busyId === p.id} onClick={() => validate(p)}>
+                    <button className="btn btn-primary" disabled={busyId === p.id} onClick={() => setAccept(p)}>
                       <Check size={16} /> Valider
                     </button>
                     <button className="btn btn-danger-outline" disabled={busyId === p.id} onClick={() => setRefuse(p)}>
@@ -165,10 +153,32 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
           </div>
         </>
       )}
+      {accept && (
+        <ActionModal
+          title={`Valider le paiement de ${accept.store_name}`}
+          intro={
+            <>
+              <strong>{money(accept.amount, accept.currency)}</strong> {METHOD[accept.method] ?? accept.method}
+              {accept.payer_phone ? `, payé par ${accept.payer_phone}` : ""}, le {dateTime(accept.created_at)} ({accept.plan_label}, {accept.months} mois).
+              <br />
+              Vérifiez d'abord le SMS de l'opérateur sur le téléphone marchand : même montant, même numéro. La licence part toute seule.
+            </>
+          }
+          fields={[{ key: "reference", label: "ID de la transaction (facultatif)", value: accept.reference, hint: "Copié du SMS de l'opérateur : gardé sur le paiement, jamais deux fois le même." }]}
+          reason={false}
+          confirm="Valider"
+          onClose={() => setAccept(null)}
+          onSubmit={async (v) => {
+            await rpc("gm_console_payment_decide", { p_payment_id: accept.id, p_decision: "validate", p_reason: "", p_reference: v.reference ?? "" });
+            toast.ok(`Paiement de ${accept.store_name} validé : la licence part toute seule.`);
+            reload();
+          }}
+        />
+      )}
       {refuse && (
         <ActionModal
           title={`Refuser le paiement de ${refuse.store_name}`}
-          intro={`${money(refuse.amount)} ${METHOD[refuse.method] ?? refuse.method}, réf. ${refuse.reference}. Le motif est affiché à la boutique dans « Mes paiements ».`}
+          intro={`${money(refuse.amount)} ${METHOD[refuse.method] ?? refuse.method}${refuse.payer_phone ? `, payé par ${refuse.payer_phone}` : ""}${refuse.reference ? `, réf. ${refuse.reference}` : ""}. Le motif est affiché à la boutique dans « Mes paiements ».`}
           reasonLabel="Motif visible par la boutique *"
           confirm="Refuser"
           danger
