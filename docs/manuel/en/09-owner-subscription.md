@@ -6,7 +6,7 @@ With the shop's Eden Dev account (e-mail and password), on any phone:
 
 - **My shops**: each shop, its **server on or off**, its plan and end date. The list stays readable without Internet.
 - **Open** a shop remotely: the app screen opens, only the data goes over the Internet. Then sign in with your username and PIN. “Change shop” goes back to the list.
-- **Subscriptions**: the latest payments, activation with a **voucher card**, payment with **Orange Money**, **Wave** or **Moov Money** (pay Eden Dev's merchant number, then “I have paid”).
+- **Subscriptions**: the latest payments, activation with a **voucher card**, payment with **Orange Money**, **Wave**, **Moov Money** or **PI-SPI** (pay Eden Dev, then “I have paid”).
 - **Details** (under each shop): the owner's full name, **phone**, **country**, city and address, saved with Eden Dev. The country is the same everywhere: the shop's software takes it on its own (the currency does not change, it is set in Settings → Sales & receipt). The shop name and type do not change: ask Eden Dev.
 - **Contact Eden Dev**: WhatsApp, call, e-mail.
 
@@ -30,6 +30,7 @@ Subscription & licence shows the plan, the end date and the stations in use. To 
 
 - **Voucher card**: code printed on the card bought from a reseller, the subscription is activated right away;
 - **Orange Money**: pay the merchant code or scan the QR code, then tap **I have paid**. No transaction ID needed: Orange sends the confirmation to Eden Dev, who validates. Enter the number that paid, so Eden Dev can find your payment. The licence updates by itself;
+- **PI-SPI (BCEAO)**: from the app of **any bank or wallet** in the WAEMU, scan Eden Dev's QR code: the exact amount and a reference are already in it. Then tap **I have paid**; Eden Dev validates and the licence updates by itself;
 - **Visa or Mastercard card**: secure payment page.
 
 Without an account, the shop runs for **14 days as a free trial** (PRO plan, 3 stations): Subscription & licence shows the days left and offers to create the account.

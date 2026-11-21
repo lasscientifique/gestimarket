@@ -136,7 +136,7 @@ function Sell({ me, store, onSold }: { me: Me; store: string; onSold: () => void
           </Field>
           <Field label="Payé par *">
             <select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>
-              {[...(cinetpay ? ["cinetpay"] : []), "orange_money", "wave", "moov_money", "especes", "virement", "autre", ...(me.role === "direction" ? ["offert"] : [])].map((m) => (
+              {[...(cinetpay ? ["cinetpay"] : []), "orange_money", "pispi", "wave", "moov_money", "especes", "virement", "autre", ...(me.role === "direction" ? ["offert"] : [])].map((m) => (
                 <option key={m} value={m}>
                   {METHOD[m]}
                 </option>

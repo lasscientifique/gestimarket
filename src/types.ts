@@ -1255,10 +1255,14 @@ export interface AccountOptions {
     card_currencies?: string[];
     /** Paiement direct par CinetPay (0.34) : Orange Money, Moov Money, carte bancaire ; validé tout seul. */
     cinetpay_enabled?: boolean;
+    /** PI-SPI de la BCEAO (0.35) : alias du compte d'Eden Dev (vide : fermé), nom affiché, numéro facultatif. */
+    pispi_alias?: string;
+    pispi_name?: string;
+    pispi_phone?: string;
   };
 }
 
-export type SubscriptionMethod = "carte_bon" | "orange_money" | "wave" | "moov_money" | "carte_visa" | "cinetpay";
+export type SubscriptionMethod = "carte_bon" | "orange_money" | "wave" | "moov_money" | "carte_visa" | "cinetpay" | "pispi";
 /** Paiements mobiles déclarés par la boutique et validés par Eden Dev. */
 export type MobileMoneyMethod = "orange_money" | "wave" | "moov_money";
 

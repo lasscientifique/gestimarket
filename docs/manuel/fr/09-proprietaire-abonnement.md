@@ -6,7 +6,7 @@ Avec le compte Eden Dev de la boutique (e-mail et mot de passe), sur n'importe q
 
 - **Mes boutiques** : chaque boutique, son **serveur allumé ou éteint**, sa formule et sa date de fin. La liste reste lisible sans Internet.
 - **Ouvrir** une boutique à distance : l'écran de l'application s'ouvre, seules les données passent par Internet. Connectez-vous ensuite avec votre identifiant et votre code PIN. « Changer de boutique » revient à la liste.
-- **Abonnements** : les derniers paiements, l'activation par **carte de bon**, le paiement **Orange Money**, **Wave** ou **Moov Money** (payez au numéro marchand d'Eden Dev, puis « J'ai payé »).
+- **Abonnements** : les derniers paiements, l'activation par **carte de bon**, le paiement **Orange Money**, **Wave**, **Moov Money** ou **PI-SPI** (payez Eden Dev, puis « J'ai payé »).
 - **Informations** (sous chaque boutique) : nom complet de la propriétaire, **téléphone**, **pays**, ville et adresse, enregistrés chez Eden Dev. Le pays est le même partout : le logiciel de la boutique le reprend tout seul (la monnaie ne change pas, elle se règle dans Paramètres → Ventes & ticket). Le nom de la boutique et le type ne changent pas : demandez à Eden Dev.
 - **Contact Eden Dev** : WhatsApp, appel, e-mail.
 
@@ -30,6 +30,7 @@ Abonnement & licence montre la formule, la date de fin et les postes utilisés. 
 
 - **Carte de bon** : code imprimé sur la carte achetée chez un revendeur, l'abonnement est activé tout de suite ;
 - **Orange Money** : payez au code marchand ou scannez le QR code, puis appuyez sur **J'ai payé**. Pas besoin de l'ID de la transaction : Orange envoie la confirmation à Eden Dev, qui valide. Indiquez le numéro qui a payé, Eden Dev retrouve ainsi votre paiement. La licence se met à jour toute seule ;
+- **PI-SPI (BCEAO)** : depuis l'application de **n'importe quelle banque ou portefeuille** de l'UEMOA, scannez le QR d'Eden Dev : le montant exact et une référence sont déjà dedans. Appuyez ensuite sur **J'ai payé** ; Eden Dev valide et la licence se met à jour toute seule ;
 - **Carte Visa ou Mastercard** : page de paiement sécurisée.
 
 Sans compte, la boutique fonctionne **14 jours en essai gratuit** (formule PRO, 3 postes) : Abonnement & licence montre les jours restants et propose de créer le compte.

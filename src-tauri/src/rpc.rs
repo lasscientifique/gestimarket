@@ -1089,7 +1089,7 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
         }
         "account_declare_orange_money" => {
             account_access(state, origin)?;
-            // 0.33 : Orange Money (par défaut), Wave ou Moov Money.
+            // 0.33 : Orange Money (par défaut), Wave ou Moov Money ; 0.35 : PI-SPI de la BCEAO.
             let method = arg::<Option<String>>(&a, "method")?.unwrap_or_else(|| "orange_money".to_string());
             let r = crate::account::declare_mobile_money(
                 &method,
@@ -1103,6 +1103,7 @@ pub fn dispatch(state: &AppState, origin: &Origin, cmd: &str, a: Value) -> AppRe
                 let name = match method.as_str() {
                     "wave" => "Wave",
                     "moov_money" => "Moov Money",
+                    "pispi" => "PI-SPI",
                     _ => "Orange Money",
                 };
                 let detail = format!("{name} — {} {} mois, {} FCFA", r["plan_label"].as_str().unwrap_or_default(), r["months"], r["amount"]);

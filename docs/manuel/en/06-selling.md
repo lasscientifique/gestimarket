@@ -25,6 +25,13 @@
 
 Orange Money, Moov Money, Sarali, Wave… are set up in Settings → Payments. The merchant QR code is shown on the customer display: the customer scans and pays, the cashier enters the reference received by SMS.
 
+**PI-SPI (BCEAO)**: the instant payment system of every bank and every wallet in the WAEMU (Orange Money, Moov Money, Sama Money, banks…).
+- In Settings → Payments → Other operators, add **PI-SPI (toutes banques)** and enter the shop's **PI-SPI alias** (36 characters). It is in your bank or wallet app: PI-SPI → Account details. You can also paste the text of your PI-SPI QR code.
+- At the till, GestiMarket shows a **QR code with the exact amount and the sale reference**, also on the customer display. The customer scans it with their app, and the amount is already filled in.
+- Check that the payment has arrived on the shop's phone, then confirm the sale. The sale reference is kept with the payment.
+- **Print the counter QR code** gives a fixed QR code: the customer enters the amount themselves.
+- PI-SPI works in CFA francs (XOF).
+
 ## Discounts and controls
 
 - A discount above the threshold (5% by default) is approved with a **manager's PIN**.

@@ -257,7 +257,7 @@ function StoreDetail({ me, id, back, nav }: { me: Me; id: string; back: () => vo
                   { key: "months", label: "Durée *", type: "select", options: [["1", "1 mois"], ["3", "3 mois"], ["6", "6 mois"], ["12", "12 mois (2 offerts)"]], value: "1" },
                   {
                     key: "method", label: "Payé par *", type: "select", value: "orange_money",
-                    options: [["orange_money", "Orange Money"], ["moov_money", "Moov Money"], ["wave", "Wave"], ["especes", "Espèces"], ["virement", "Virement"], ["autre", "Autre"]],
+                    options: [["orange_money", "Orange Money"], ["pispi", "PI-SPI (BCEAO)"], ["moov_money", "Moov Money"], ["wave", "Wave"], ["especes", "Espèces"], ["virement", "Virement"], ["autre", "Autre"]],
                   },
                   { key: "payer_phone", label: "Numéro qui a payé", value: s.phone ?? "" },
                   { key: "reference", label: "ID de la transaction (facultatif)", hint: "Copié du SMS de l'opérateur : jamais deux fois le même." },

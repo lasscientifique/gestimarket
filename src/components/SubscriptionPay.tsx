@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, CircleCheck, Copy, CreditCard, ExternalLink, Hourglass, Smartphone, Ticket, Zap } from "lucide-react";
+import { ArrowLeft, CircleCheck, Copy, CreditCard, ExternalLink, Hourglass, Landmark, Smartphone, Ticket, Zap } from "lucide-react";
 import { api } from "../api";
 import { errorMessage, useApp } from "../context/AppContext";
 import { Badge } from "./ui";
@@ -9,6 +9,7 @@ import { fcfa, isoDateTime, planPrice, price, setLicense } from "../lib/license"
 import type { AccountOptions, CardStart, LicenseStatus, SubscriptionMethod, PlanCode, PlanInfo, SubscriptionPayment } from "../types";
 import { tl } from "../lib/i18n";
 import { isTauri } from "../lib/transport";
+import { isPispiAlias, pispiPayload, pispiReference } from "../lib/pispi";
 
 export const METHOD_LABELS: Record<string, string> = {
   carte_bon: tl("Carte de bon"),
@@ -17,6 +18,7 @@ export const METHOD_LABELS: Record<string, string> = {
   moov_money: tl("Moov Money"),
   wave: tl("Wave"),
   cinetpay: tl("Paiement direct (CinetPay)"),
+  pispi: tl("PI-SPI (banque ou portefeuille)"),
   virement: tl("Virement"),
   especes: tl("Espèces"),
   autre: tl("Autre"),
@@ -79,6 +81,13 @@ export function SubscriptionPay({ options, lic, onChange }: { options: AccountOp
               <strong>{tl("Orange Money")}</strong>
               <span className="small muted">{tl("Code marchand Sarali ou QR code. Validé par Eden Dev.")}</span>
             </button>
+            {isPispiAlias(pay?.pispi_alias) && (
+              <button type="button" className="pay-method" onClick={() => choose("pispi")}>
+                <Landmark size={26} />
+                <strong>{tl("PI-SPI (BCEAO)")}</strong>
+                <span className="small muted">{tl("Depuis n'importe quelle banque ou portefeuille de l'UEMOA : QR avec le montant exact. Validé par Eden Dev.")}</span>
+              </button>
+            )}
             <button type="button" className="pay-method" onClick={() => choose("wave")} disabled={!pay?.wave_merchant_number?.trim()}>
               <Smartphone size={26} />
               <strong>{tl("Wave")}</strong>
@@ -109,6 +118,7 @@ export function SubscriptionPay({ options, lic, onChange }: { options: AccountOp
           <button type="button" className="link-btn" onClick={() => setMethod(null)}><ArrowLeft size={15} />  {tl("Changer de moyen de paiement")}</button>
           {method === "carte_bon" && <VoucherForm onChange={onChange} />}
           {method === "orange_money" && <OrangeMoneyForm options={options} lic={lic} onChange={onChange} />}
+          {method === "pispi" && <PispiForm options={options} lic={lic} onChange={onChange} />}
           {(method === "wave" || method === "moov_money") && <MobileMoneyForm key={method} method={method} options={options} lic={lic} onChange={onChange} />}
           {method === "carte_visa" && <CardForm options={options} lic={lic} onChange={onChange} />}
           {method === "cinetpay" && <CardForm direct options={options} lic={lic} onChange={onChange} />}
@@ -336,6 +346,84 @@ function PayerPhone({ phone, setPhone }: { phone: string; setPhone: (s: string) 
         <span className="small muted">{tl("Eden Dev retrouve votre paiement grâce à ce numéro.")}</span>
       </label>
     </div>
+  );
+}
+
+/**
+ * PI-SPI de la BCEAO (0.35) : la boutique paie l'alias PI-SPI d'Eden Dev depuis n'importe quelle banque ou portefeuille
+ * de l'UEMOA, en scannant un QR qui porte le montant exact et une référence, puis « J'ai payé » ; Eden Dev valide.
+ */
+function PispiForm({ options, lic, onChange }: { options: AccountOptions; lic: LicenseStatus; onChange: () => void }) {
+  const { toast, settings } = useApp();
+  const choice = usePlanChoice(options, lic);
+  const pay = options.payment;
+  const alias = pay?.pispi_alias?.trim() ?? "";
+  const holder = pay?.pispi_name?.trim() || "Eden Dev";
+  const number = pay?.pispi_phone?.trim() ?? "";
+  const [reference, setReference] = useState(() => pispiReference());
+  const [qr, setQr] = useState<string | null>(null);
+  const [phone, setPhone] = useState(settings.shop_phone ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+
+  useEffect(() => {
+    if (!isPispiAlias(alias) || choice.amount <= 0) return setQr(null);
+    const text = pispiPayload({ alias, amount: choice.amount, reference, country: "ML" });
+    QRCode.toDataURL(text, { margin: 1, width: 360, errorCorrectionLevel: "M" }).then(setQr).catch(() => setQr(null));
+  }, [alias, choice.amount, reference]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const r = await api.accountDeclareOrangeMoney({ plan: choice.plan, months: choice.months, reference, payer_phone: phone, method: "pispi" });
+      setDone(
+        tl("Paiement envoyé à Eden Dev : {0}, {1} mois, {2}. Dès sa validation, la licence de ce PC se met à jour toute seule (vérification toutes les 2 minutes).", [r.plan_label, r.months, fcfa(r.amount)]),
+      );
+      toast.success(tl("Paiement PI-SPI envoyé à Eden Dev."));
+      setReference(pispiReference());
+      onChange();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="pay-step">
+      <PlanPicker options={options} lic={lic} {...choice} />
+      <div className="om-pay">
+        <ol className="om-pay-steps">
+          <li>
+            {tl("Ouvrez l'application de votre banque ou de votre portefeuille (Orange Money, Moov Money, Sama Money, banques…), choisissez PI-SPI ou « Scanner », puis scannez ce QR : le montant")}{" "}
+            <strong>{fcfa(choice.amount)}</strong> {tl("est déjà rempli. Bénéficiaire :")} <strong>{holder}</strong>.
+          </li>
+          {number && (
+            <li>
+              {tl("Sans QR : envoyez")} <strong>{fcfa(choice.amount)}</strong> {tl("par PI-SPI au numéro")} <strong className="mono">{number}</strong>
+              <button type="button" className="icon-btn" aria-label={tl("Copier le numéro")} onClick={() => navigator.clipboard?.writeText(number).then(() => toast.info(tl("Numéro copié.")))}>
+                <Copy size={14} />
+              </button>
+              .
+            </li>
+          )}
+          <li>{tl("Appuyez sur « J'ai payé » : Eden Dev vérifie le paiement et le valide, puis la licence se met à jour toute seule.")}</li>
+        </ol>
+        {qr && <img className="om-pay-qr" src={qr} alt={tl("QR code PI-SPI d'Eden Dev")} />}
+      </div>
+      <p className="muted small">{tl("Référence du paiement : {0}", [reference])}</p>
+      <PayerPhone phone={phone} setPhone={setPhone} />
+      {error && <div className="alert alert-danger">{error}</div>}
+      {done && <div className="alert alert-success">{done}</div>}
+      <div className="row-end">
+        <button className="btn btn-primary" disabled={busy || !isPispiAlias(alias) || !phoneOk(phone)}>
+          {busy ? tl("Envoi…") : tl("J'ai payé")}
+        </button>
+      </div>
+    </form>
   );
 }
 

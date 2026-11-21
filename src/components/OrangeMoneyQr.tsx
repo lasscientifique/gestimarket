@@ -4,7 +4,9 @@ import { QrCode } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { mediaUrl } from "../lib/media";
 import { tl } from "../lib/i18n";
-import { operatorOf, parseOperators } from "../lib/mobile";
+import { isPispi, operatorOf, parseOperators, type MobileOperator } from "../lib/mobile";
+import { isPispiAlias, pispiPayload } from "../lib/pispi";
+import { fromMinor } from "../lib/format";
 
 /**
  * QR code marchand affiché au client pour qu'il paie en scannant.
@@ -47,10 +49,14 @@ export function MerchantQr({
           <span className="small">{hint}</span>
         </div>
       )}
-      {merchant && (
+      {(merchant || merchantName) && (
         <div className="om-merchant">
-          <span>{tl("N° marchand")}</span>
-          <strong>{merchant}</strong>
+          {merchant && (
+            <>
+              <span>{tl("N° marchand")}</span>
+              <strong>{merchant}</strong>
+            </>
+          )}
           {merchantName && <span className="small">{merchantName}</span>}
         </div>
       )}
@@ -73,12 +79,38 @@ export function OrangeMoneyQr({ size = 190 }: { size?: number }) {
   );
 }
 
-/** QR code du moyen de paiement choisi : Orange Money ou un opérateur configuré (« mm:<id> »). */
-export function PaymentQr({ method, size = 190 }: { method: string; size?: number }) {
+/**
+ * Texte du QR PI-SPI d'un opérateur « pispi » : avec le montant (en FCFA seulement) et la référence de la vente,
+ * ou QR fixe sans montant. Vide si l'alias n'est pas valable.
+ */
+export function pispiQrText(op: MobileOperator, settings: Record<string, string | undefined>, amountMinor?: number | null, reference?: string | null): string {
+  if (!isPispiAlias(op.merchant)) return "";
+  const xof = (settings.currency_code ?? "XOF").toUpperCase() === "XOF";
+  const amount = xof && amountMinor && amountMinor > 0 ? Math.round(fromMinor(amountMinor)) : null;
+  return pispiPayload({ alias: op.merchant, amount, reference: amount ? reference : null, country: settings.country ?? "ML" });
+}
+
+/**
+ * QR code du moyen de paiement choisi : Orange Money ou un opérateur configuré (« mm:<id> »).
+ * PI-SPI (0.35) : QR fabriqué avec le montant `amount` (unité mineure) et la référence `reference` de la vente.
+ */
+export function PaymentQr({ method, size = 190, amount, reference }: { method: string; size?: number; amount?: number | null; reference?: string | null }) {
   const { settings } = useApp();
   if (method === "orange_money") return <OrangeMoneyQr size={size} />;
   const op = operatorOf(method, parseOperators(settings.mobile_operators));
   if (!op) return null;
+  if (isPispi(op)) {
+    return (
+      <MerchantQr
+        size={size}
+        imageId={null}
+        payload={pispiQrText(op, settings, amount, reference)}
+        merchant=""
+        merchantName={op.merchant_name || op.name}
+        hint={tl("Paramètres → Paiements : alias PI-SPI")}
+      />
+    );
+  }
   return (
     <MerchantQr
       size={size}

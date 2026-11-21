@@ -25,6 +25,13 @@
 
 Orange Money, Moov Money, Sarali, Wave… se règlent dans Paramètres → Paiements. Le QR code marchand s'affiche sur l'écran client : le client scanne et paie, la caissière saisit la référence reçue par SMS.
 
+**PI-SPI (BCEAO)** : le paiement instantané de toutes les banques et de tous les portefeuilles de l'UEMOA (Orange Money, Moov Money, Sama Money, banques…).
+- Dans Paramètres → Paiements → Autres opérateurs, ajoutez **PI-SPI (toutes banques)** et saisissez l'**alias PI-SPI** de la boutique (36 caractères). Il se trouve dans l'application de votre banque ou de votre portefeuille : PI-SPI → Détails du compte. Vous pouvez aussi coller le texte de votre QR PI-SPI.
+- En caisse, GestiMarket affiche un **QR avec le montant exact et la référence de la vente**, aussi sur l'écran client. Le client le scanne avec son application, le montant est déjà rempli.
+- Vérifiez l'arrivée du paiement sur le téléphone de la boutique, puis validez la vente. La référence de la vente est gardée avec le paiement.
+- **Imprimer le QR du comptoir** donne un QR fixe : le client saisit lui-même le montant.
+- PI-SPI fonctionne en francs CFA (XOF).
+
 ## Remises et contrôles
 
 - Une remise au-delà du seuil (5 % par défaut) est validée par le **code PIN d'un responsable**.

@@ -80,7 +80,7 @@ export function Payments({ me, nav }: { me: Me; nav: Nav }) {
       </form>
       {status === "declared" && (
         <p className="muted small">
-          Avant de valider : vérifiez sur le téléphone marchand (SMS Orange Money, Wave ou Moov) que le montant est bien arrivé, du
+          Avant de valider : vérifiez sur le téléphone marchand (SMS Orange Money, Wave ou Moov, ou notification PI-SPI) que le montant est bien arrivé, du
           numéro indiqué. Depuis GestiMarket 0.34.2, la boutique n'envoie plus d'ID de transaction : vous pouvez coller celui du SMS en
           validant. La validation envoie la licence toute seule.
         </p>

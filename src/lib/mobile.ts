@@ -15,10 +15,16 @@ export interface MobileOperator {
   require_ref: boolean;
   enabled: boolean;
   color: string;
+  /**
+   * « pispi » (0.35) : PI-SPI de la BCEAO, toutes banques et portefeuilles de l'UEMOA. `merchant` contient l'alias
+   * du compte (36 caractères) ; le QR est fabriqué par GestiMarket, avec le montant et la référence de la vente.
+   */
+  kind?: "pispi";
 }
 
 /** Opérateurs courants (Afrique de l'Ouest, centrale et de l'Est) proposés à l'ajout. */
-export const OPERATOR_PRESETS: { id: string; name: string; color: string }[] = [
+export const OPERATOR_PRESETS: { id: string; name: string; color: string; kind?: "pispi" }[] = [
+  { id: "pispi", name: "PI-SPI (toutes banques)", color: "#f5a800", kind: "pispi" },
   { id: "wave", name: "Wave", color: "#1dc8f2" },
   { id: "moov", name: "Moov Money", color: "#0063b0" },
   { id: "mtn", name: "MTN MoMo", color: "#f5b800" },
@@ -32,8 +38,13 @@ export const OPERATOR_PRESETS: { id: string; name: string; color: string }[] = [
   { id: "telecel", name: "Telecel Money", color: "#d9232e" },
 ];
 
-export function newOperator(id: string, name: string, color = "#6366f1"): MobileOperator {
-  return { id, name, merchant: "", merchant_name: "", qr_payload: "", qr_image_id: null, require_ref: true, enabled: true, color };
+export function newOperator(id: string, name: string, color = "#6366f1", kind?: "pispi"): MobileOperator {
+  return { id, name, merchant: "", merchant_name: "", qr_payload: "", qr_image_id: null, require_ref: !kind, enabled: true, color, ...(kind ? { kind } : {}) };
+}
+
+/** Opérateur PI-SPI (QR interopérable de la BCEAO, fabriqué avec le montant). */
+export function isPispi(o: MobileOperator | null | undefined): boolean {
+  return o?.kind === "pispi";
 }
 
 /** Liste des opérateurs enregistrés (valeurs manquantes complétées). */
@@ -44,7 +55,13 @@ export function parseOperators(setting: string | undefined): MobileOperator[] {
     if (!Array.isArray(list)) return [];
     return list
       .filter((o) => o && typeof o.id === "string" && typeof o.name === "string")
-      .map((o) => ({ ...newOperator(o.id, o.name), ...o, enabled: o.enabled !== false, require_ref: !!o.require_ref }));
+      .map((o) => ({
+        ...newOperator(o.id, o.name),
+        ...o,
+        enabled: o.enabled !== false,
+        require_ref: !!o.require_ref,
+        kind: o.kind === "pispi" ? ("pispi" as const) : undefined,
+      }));
   } catch {
     return [];
   }

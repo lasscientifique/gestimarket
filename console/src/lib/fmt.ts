@@ -37,6 +37,7 @@ export const METHOD: Record<string, string> = {
   especes: "Espèces",
   offert: "Offerte",
   cinetpay: "CinetPay (lien de paiement)",
+  pispi: "PI-SPI (BCEAO)",
   autre: "Autre",
 };
 

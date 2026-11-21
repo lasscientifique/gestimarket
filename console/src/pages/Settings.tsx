@@ -13,6 +13,7 @@ type Cfg = {
   whatsapp_ready: boolean;
   cinetpay?: { orders: number; success: number; last_error: string | null };
   card?: { test_payments: number; test_accepted: number; real_accepted: number };
+  pispi?: { declared: number; validated: number };
 };
 
 const GROUPS: { title: string; hint: string; keys: [string, string, AskField["type"]?][] }[] = [
@@ -20,6 +21,12 @@ const GROUPS: { title: string; hint: string; keys: [string, string, AskField["ty
     title: "Orange Money (Sarali)",
     hint: "Affiché dans GestiMarket au moment de payer. Vide : Orange Money fermé.",
     keys: [["om_merchant_code", "Code marchand"], ["om_merchant_name", "Nom affiché"], ["om_qr_payload", "Contenu du QR marchand", "textarea"]],
+  },
+  {
+    title: "PI-SPI (BCEAO)",
+    hint:
+      "Compte PI-SPI d'Eden Dev (Orange Money, banque…) : PI-SPI → Détails du compte. Les boutiques paient depuis n'importe quelle banque ou portefeuille de l'UEMOA (QR avec le montant exact), puis « J'ai payé » ; vous validez dans Paiements. Alias vide : PI-SPI fermé.",
+    keys: [["pispi_alias", "Alias PI-SPI (36 caractères)"], ["pispi_name", "Nom affiché"], ["pispi_phone", "Numéro PI-SPI (facultatif)"]],
   },
   {
     title: "Wave",
@@ -117,6 +124,11 @@ function EdenSettings({ me }: { me: Me }) {
           <RefreshCw size={15} />
         </button>
       </div>
+      {data.pispi && data.pispi.declared + data.pispi.validated > 0 && (
+        <p className="muted small">
+          PI-SPI : {data.pispi.declared} paiement(s) à valider, {data.pispi.validated} validé(s).
+        </p>
+      )}
       {data.cinetpay && data.cinetpay.orders > 0 && (
         <p className="muted small">
           CinetPay : {data.cinetpay.orders} paiement(s) commencé(s), {data.cinetpay.success} réussi(s)

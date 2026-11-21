@@ -28,6 +28,9 @@ export interface DisplayState {
   show_om_qr?: boolean;
   /** Moyen de paiement dont le QR marchand est affiché (orange_money ou « mm:<id> »). */
   qr_method?: string | null;
+  /** PI-SPI (0.35) : montant (unité mineure) et référence du QR fabriqué pour ce paiement. */
+  qr_amount?: number | null;
+  qr_ref?: string | null;
   /** Vente terminée */
   sale_number?: string;
   at: number;

@@ -145,7 +145,7 @@ export default function CustomerDisplayPage() {
                 {qrMethod && (
                   <div className="cd-om">
                     <span>{ts("Payez avec")} {paymentLabelShop(qrMethod)}</span>
-                    <PaymentQr method={qrMethod} size={210} />
+                    <PaymentQr method={qrMethod} size={210} amount={state.qr_amount} reference={state.qr_ref} />
                   </div>
                 )}
               </div>

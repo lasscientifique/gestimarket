@@ -1,7 +1,7 @@
 {
   "name": "console-eden-dev",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.2.0",
   "type": "module",
   "description": "Console Eden Dev — administration de GestiMarket (comptes, licences, cartes de bon, paiements), réservée à Eden Dev",
   "scripts": {

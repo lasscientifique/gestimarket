@@ -38,7 +38,8 @@ import { useApp } from "../context/AppContext";
 import { Badge, Field, LocationBadge, Modal, Thumb } from "../components/ui";
 import { OpenSessionModal } from "../components/CashModals";
 import { operatorTheme, PaymentQr } from "../components/OrangeMoneyQr";
-import { operatorOf, parseOperators } from "../lib/mobile";
+import { isPispi, operatorOf, parseOperators } from "../lib/mobile";
+import { pispiReference } from "../lib/pispi";
 import { HelpTip, PageHelpButton } from "../components/Help";
 import { NumPad } from "../components/PinPad";
 import { CameraScanner } from "../components/CameraScanner";
@@ -1078,7 +1079,16 @@ function PaymentModal({
   customer: Customer | null;
   onClose: () => void;
   onPay: (payments: PaymentInput[], note: string | null) => Promise<boolean>;
-  onLive?: (info: { method: string | null; paid: number; remaining: number; change: number; show_om_qr: boolean; qr_method: string | null }) => void;
+  onLive?: (info: {
+    method: string | null;
+    paid: number;
+    remaining: number;
+    change: number;
+    show_om_qr: boolean;
+    qr_method: string | null;
+    qr_amount: number | null;
+    qr_ref: string | null;
+  }) => void;
 }) {
   const { settings } = useApp();
   const loyalty = useLoyaltyActive();
@@ -1104,6 +1114,8 @@ function PaymentModal({
   const [method, setMethod] = useState<PaymentMethod | "credit">("cash");
   const [amount, setAmount] = useState(minorToInput(total));
   const [reference, setReference] = useState("");
+  // PI-SPI (0.35) : référence unique du QR de ce paiement, enregistrée comme référence du paiement.
+  const [pispiRef, setPispiRef] = useState(() => pispiReference());
   const [refScan, setRefScan] = useState(false);
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
@@ -1138,6 +1150,7 @@ function PaymentModal({
   const bonusUsed = all.filter((p) => p.method === "loyalty").reduce((s, p) => s + p.amount, 0);
   // Orange Money et opérateurs configurés : QR marchand + ID de transaction.
   const operator = operatorOf(method, operators);
+  const pispi = isPispi(operator);
   const qrPanel = method === "orange_money" || !!operator;
   const refRequired = (m: string) => (m === "credit_note" ? true : m === "orange_money" ? omRequireRef : !!operatorOf(m, operators)?.require_ref);
   const missingRef = all.find((p) => refRequired(p.method) && !p.reference);
@@ -1151,9 +1164,11 @@ function PaymentModal({
       change,
       show_om_qr: method === "orange_money",
       qr_method: qrPanel ? method : null,
+      qr_amount: pispi ? toMinor(amount || "0") : null,
+      qr_ref: pispi ? pispiRef : null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method, nonCash, cash, remaining, change]);
+  }, [method, nonCash, cash, remaining, change, amount, pispiRef]);
 
   const problem =
     nonCash > total
@@ -1183,7 +1198,8 @@ function PaymentModal({
   const selectMethod = (m: PaymentMethod | "credit") => {
     touched.current = false;
     setMethod(m);
-    setReference("");
+    // PI-SPI : la référence du QR est déjà la référence du paiement (la caissière peut la remplacer).
+    setReference(isPispi(operatorOf(m, operators)) ? pispiRef : "");
     setPhone("");
     setNote_(null);
     setNoteError("");
@@ -1199,6 +1215,8 @@ function PaymentModal({
     if (!current) return;
     setAdded((a) => [...a, current]);
     const rest = Math.max(0, dueNow - current.amount);
+    // Un QR PI-SPI ne sert qu'une fois : nouvelle référence pour un autre paiement PI-SPI.
+    if (pispi) setPispiRef(pispiReference());
     setReference("");
     setPhone("");
     setMethod("cash");
@@ -1334,12 +1352,19 @@ function PaymentModal({
         </div>
       ) : qrPanel ? (
         <div className="om-pay" style={operatorTheme(operator?.color)}>
-          <PaymentQr method={method} size={180} />
+          <PaymentQr method={method} size={180} amount={pispi ? toMinor(amount || "0") : null} reference={pispi ? pispiRef : null} />
           <div className="om-fields">
-            <div className="om-steps">
-              <span><b className="om-step-n">1</b>  {tl("Le client scanne le QR code ou paie au numéro marchand.")}</span>
-              <span><b className="om-step-n">2</b>  {tl("Il montre la confirmation ; saisissez ou scannez l'")}<strong>{tl("ID de transaction")}</strong>.</span>
-            </div>
+            {pispi ? (
+              <div className="om-steps">
+                <span><b className="om-step-n">1</b>  {tl("Le client scanne le QR avec l'application de sa banque ou de son portefeuille : le montant est déjà rempli.")}</span>
+                <span><b className="om-step-n">2</b>  {tl("Vérifiez l'arrivée du paiement sur le téléphone de la boutique, puis validez la vente.")}</span>
+              </div>
+            ) : (
+              <div className="om-steps">
+                <span><b className="om-step-n">1</b>  {tl("Le client scanne le QR code ou paie au numéro marchand.")}</span>
+                <span><b className="om-step-n">2</b>  {tl("Il montre la confirmation ; saisissez ou scannez l'")}<strong>{tl("ID de transaction")}</strong>.</span>
+              </div>
+            )}
             <Field label={tl("Montant payé ({0})", [currencySymbol()])}>
               <input ref={amountRef} className="input-lg" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </Field>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import QRCode from "qrcode";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft, AtSign, BadgeCheck, CircleOff, Gift, KeyRound, LogIn, LogOut, Mail, MessageCircle, Pencil, Phone, Power, RefreshCw, Smartphone, Store,
@@ -18,6 +19,7 @@ import { tl, tm } from "../lib/i18n";
 import type { AccountOptions } from "../types";
 import { openPaymentPage } from "../components/SubscriptionPay";
 import { fcfa, planPrice } from "../lib/license";
+import { isPispiAlias, pispiPayload, pispiReference } from "../lib/pispi";
 
 type Tab = "shops" | "subscriptions" | "contact";
 
@@ -357,7 +359,7 @@ function ShopsTab({ data, busy, reload, onSubscription }: { data: OwnerStores | 
 
 const METHOD_LABEL = (m: string) =>
   ({ carte_bon: tl("Carte de bon"), orange_money: tl("Orange Money"), moov_money: tl("Moov Money"), wave: tl("Wave"), carte_visa: tl("Carte Visa ou Mastercard"),
-     cinetpay: tl("Paiement direct (CinetPay)") } as Record<string, string>)[m] ?? m;
+     cinetpay: tl("Paiement direct (CinetPay)"), pispi: tl("PI-SPI (banque ou portefeuille)") } as Record<string, string>)[m] ?? m;
 
 const STATUS = (p: OwnerPayment): [string, "success" | "warning" | "danger" | "default"] => {
   if (p.status === "validated") return [tl("Validé"), "success"];
@@ -375,6 +377,9 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
   const [voucher, setVoucher] = useState("");
   const [om, setOm] = useState({ plan: "pro", months: 1, method: "orange_money", phone: store?.phone ?? "" });
   const [busy, setBusy] = useState(false);
+  // PI-SPI (0.35) : référence du paiement, mise dans le QR et envoyée à Eden Dev.
+  const [pispiRef, setPispiRef] = useState(() => pispiReference());
+  const [pispiQr, setPispiQr] = useState<string | null>(null);
 
   const loadPayments = useCallback(() => {
     if (!code) return;
@@ -418,7 +423,8 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
     setBusy(true);
     try {
       // 0.34.2 : pas d'ID de transaction, Eden Dev retrouve le paiement dans le SMS de l'opérateur grâce au numéro.
-      const r = await owner.declare({ store_code: code, ...om, reference: "" });
+      const r = await owner.declare({ store_code: code, ...om, reference: om.method === "pispi" ? pispiRef : "" });
+      if (om.method === "pispi") setPispiRef(pispiReference());
       toast.success(tl("Paiement déclaré ({0}, {1} mois) : Eden Dev le valide, puis l'abonnement est activé.", [r.plan_label, r.months]));
       loadPayments();
     } catch (err) {
@@ -432,6 +438,13 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
   const chosen = plans.find((p) => p.code === om.plan);
   // 12 mois = 10 mois payés (2 mois offerts), comme sur le PC.
   const amount = chosen ? planPrice(chosen, "XOF").amount * (om.months === 12 ? 10 : om.months) : 0;
+  const pispiAlias = options?.payment?.pispi_alias?.trim() ?? "";
+  useEffect(() => {
+    if (om.method !== "pispi" || !isPispiAlias(pispiAlias) || amount <= 0) return setPispiQr(null);
+    QRCode.toDataURL(pispiPayload({ alias: pispiAlias, amount, reference: pispiRef, country: "ML" }), { margin: 1, width: 360, errorCorrectionLevel: "M" })
+      .then(setPispiQr)
+      .catch(() => setPispiQr(null));
+  }, [om.method, pispiAlias, amount, pispiRef]);
   return (
     <>
       <h2 className="owner-h2">{tl("Abonnements")}</h2>
@@ -505,9 +518,13 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
       )}
       {store && (
         <form className="card" onSubmit={declare}>
-          <h3 className="card-title"><Smartphone size={18} />  {tl("Orange Money, Wave ou Moov Money")}</h3>
+          <h3 className="card-title"><Smartphone size={18} />  {tl("Orange Money, Wave, Moov Money ou PI-SPI")}</h3>
           <p className="muted small">
-            {om.method === "orange_money" && options?.payment?.om_merchant_code
+            {om.method === "pispi"
+              ? options?.payment?.pispi_phone
+                ? tl("Payez par PI-SPI depuis l'application de votre banque ou de votre portefeuille : envoyez le montant au numéro {0} ({1}), ou scannez le QR depuis un autre téléphone, puis appuyez sur « J'ai payé ».", [options.payment.pispi_phone, options.payment.pispi_name || "Eden Dev"])
+                : tl("Payez par PI-SPI depuis l'application de votre banque ou de votre portefeuille : scannez le QR depuis un autre téléphone ({0}), puis appuyez sur « J'ai payé ».", [options?.payment?.pispi_name || "Eden Dev"])
+              : om.method === "orange_money" && options?.payment?.om_merchant_code
               ? tl("Payez au code marchand Orange Money {0} ({1}), puis appuyez sur « J'ai payé ».", [options.payment.om_merchant_code, options.payment.om_merchant_name])
               : om.method === "wave" && options?.payment?.wave_merchant_number
                 ? tl("Envoyez le paiement Wave au numéro marchand {0} ({1}), puis appuyez sur « J'ai payé ».", [options.payment.wave_merchant_number, options.payment.wave_merchant_name ?? ""])
@@ -532,6 +549,7 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
                 <option value="orange_money">{tl("Orange Money")}</option>
                 <option value="wave">{tl("Wave")}</option>
                 <option value="moov_money">{tl("Moov Money")}</option>
+                {isPispiAlias(pispiAlias) && <option value="pispi">{tl("PI-SPI (banque ou portefeuille)")}</option>}
               </select>
             </Field>
             <Field label={tl("Numéro qui a payé *")} hint={tl("Eden Dev retrouve votre paiement grâce à ce numéro.")}>
@@ -539,6 +557,12 @@ function SubscriptionsTab({ data, selected, setSelected }: { data: OwnerStores; 
             </Field>
           </div>
           {amount > 0 && <p><span className="muted small">{tl("Montant à payer")}</span> <strong>{fcfa(amount)}</strong></p>}
+          {om.method === "pispi" && pispiQr && (
+            <div className="om-pay">
+              <img className="om-pay-qr" src={pispiQr} alt={tl("QR code PI-SPI d'Eden Dev")} />
+              <p className="muted small">{tl("Référence du paiement : {0}", [pispiRef])}</p>
+            </div>
+          )}
           <button className="btn btn-primary" disabled={busy || om.phone.replace(/\D/g, "").length < 8}>{tl("J'ai payé")}</button>
           <p className="muted small">{tl("Carte Visa ou Mastercard : depuis le PC de la boutique (Abonnement & licence).")}</p>
         </form>

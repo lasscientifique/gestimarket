@@ -646,10 +646,10 @@ pub fn redeem_voucher(state: &AppState, code: &str) -> Result<Value, String> {
     Ok(json!({ "voucher": v, "sync_error": synced.err() }))
 }
 
-/// Orange Money (Sarali), Wave ou Moov Money : l'ID de transaction est envoyé à Eden Dev, qui valide le
-/// paiement dans la Console Eden Dev.
+/// Orange Money (Sarali), Wave, Moov Money ou PI-SPI de la BCEAO (0.35) : la boutique a payé Eden Dev, puis « J'ai payé » ;
+/// Eden Dev valide le paiement dans la Console Eden Dev.
 pub fn declare_mobile_money(method: &str, plan: &str, months: i64, reference: &str, payer_phone: &str) -> Result<Value, String> {
-    if !matches!(method, "orange_money" | "wave" | "moov_money") {
+    if !matches!(method, "orange_money" | "wave" | "moov_money" | "pispi") {
         return Err("Moyen de paiement inconnu.".into());
     }
     let r = pc_rpc(
