@@ -849,4 +849,5 @@ export const EN_MESSAGES: Record<string, string> = {
   "Paiement CinetPay non ouvert : ": "CinetPay payment not opened: ",
   "ID de transaction trop court : recopiez-le du SMS, ou laissez la case vide.": "Transaction ID too short: copy it from the SMS, or leave the box empty.",
   "Saisissez le numéro qui a payé : Eden Dev retrouve votre paiement grâce à ce numéro.": "Enter the number that paid: Eden Dev finds your payment with this number.",
+  "Écrivez d'abord à Eden Dev sur WhatsApp (bouton « Écrire … sur WhatsApp » de votre application), puis redemandez le code.": "First write to Eden Dev on WhatsApp (the “Write … on WhatsApp” button of your app), then ask for the code again.",
 };

@@ -1,5 +1,10 @@
 // GestiMarket — codes du compte de la boutique envoyés sur WhatsApp (crochet « Send SMS » de Supabase Auth).
 //
+// Base commune avec Sugu Eden (22 novembre 2026) : le même numéro d'Eden Dev envoie les codes des deux applications.
+// Le texte suit l'application de la personne : user_metadata.app = "sugu" (inscription Sugu Eden), sinon le mot
+// « Sugu Eden » ou « GestiMarket » de son dernier message WhatsApp (gm_whatsapp_app, noté par gm-whatsapp-webhook) ;
+// inconnue : textes neutres au nom d'Eden Dev. Les statuts HTTP ne changent pas.
+//
 // Supabase Auth (fournisseur « Phone » : inscription, connexion par code, numéro changé) appelle cette fonction
 // avec { user: { phone, new_phone }, sms: { otp } }, signé selon Standard Webhooks. Elle envoie le code par la WhatsApp
 // Cloud API de Meta :
@@ -52,12 +57,32 @@ function fail(http_code: number, e: { message: string }) {
   });
 }
 
-const NOT_READY = { message: "L'envoi des codes sur WhatsApp n'est pas encore prêt chez Eden Dev : utilisez votre e-mail." };
-const NO_WHATSAPP = { message: "Ce numéro ne reçoit pas les messages WhatsApp : vérifiez-le, ou utilisez votre e-mail." };
-const WRITE_FIRST = {
-  message: "Écrivez d'abord « GestiMarket » à GestiMarket sur WhatsApp (bouton « Écrire à GestiMarket »), puis redemandez le code.",
+type App = "gestimarket" | "sugu" | "";
+
+/** Textes par application : code envoyé et erreurs rendues à l'application (mêmes statuts HTTP pour toutes). */
+const TEXTS: Record<App, { code: (otp: string) => string; notReady: string; writeFirst: string }> = {
+  gestimarket: {
+    code: (otp) =>
+      `GestiMarket : votre code est ${otp}\n\nTapez-le dans GestiMarket. Il est valable 10 minutes.\nNe le donnez à personne, pas même à quelqu'un qui dit venir d'Eden Dev.`,
+    notReady: "L'envoi des codes sur WhatsApp n'est pas encore prêt chez Eden Dev : utilisez votre e-mail.",
+    writeFirst: "Écrivez d'abord « GestiMarket » à GestiMarket sur WhatsApp (bouton « Écrire à GestiMarket »), puis redemandez le code.",
+  },
+  sugu: {
+    code: (otp) =>
+      `Votre code Sugu Eden : ${otp}\n\nTapez-le dans Sugu Eden. Il est valable 10 minutes.\nNe le donnez à personne, pas même à quelqu'un qui dit venir de Sugu Eden.`,
+    notReady: "L'envoi des codes sur WhatsApp n'est pas encore prêt chez Sugu Eden : utilisez votre e-mail.",
+    writeFirst: "Écrivez d'abord à Sugu Eden sur WhatsApp (bouton « Écrire à Sugu Eden sur WhatsApp »), puis redemandez le code.",
+  },
+  "": {
+    code: (otp) =>
+      `Eden Dev : votre code est ${otp}\n\nTapez-le dans l'application. Il est valable 10 minutes.\nNe le donnez à personne, pas même à quelqu'un qui dit venir d'Eden Dev.`,
+    notReady: "L'envoi des codes sur WhatsApp n'est pas encore prêt chez Eden Dev : utilisez votre e-mail.",
+    writeFirst: "Écrivez d'abord à Eden Dev sur WhatsApp (bouton « Écrire … sur WhatsApp » de votre application), puis redemandez le code.",
+  },
 };
+const NO_WHATSAPP = { message: "Ce numéro ne reçoit pas les messages WhatsApp : vérifiez-le, ou utilisez votre e-mail." };
 const SEND_FAILED = { message: "Envoi du code sur WhatsApp impossible pour le moment : réessayez dans quelques minutes, ou utilisez votre e-mail." };
+const NOT_READY = { message: TEXTS.gestimarket.notReady };
 
 /** Erreurs de Meta qui désignent le destinataire : message non livrable (pas de WhatsApp…), numéro non autorisé
  *  (numéro de test), destinataire égal à l'expéditeur. */
@@ -66,7 +91,7 @@ const RECIPIENT_ERRORS = new Set([131026, 131030, 131021]);
 const WINDOW_CLOSED = 131047;
 
 /** Message envoyé : modèle d'authentification (entreprise vérifiée) ou message simple dans la fenêtre de 24 h. */
-function message(to: string, otp: string) {
+function message(to: string, otp: string, app: App) {
   if (TEMPLATE) {
     return {
       messaging_product: "whatsapp",
@@ -91,7 +116,7 @@ function message(to: string, otp: string) {
     type: "text",
     text: {
       preview_url: false,
-      body: `GestiMarket : votre code est ${otp}\n\nTapez-le dans GestiMarket. Il est valable 10 minutes.\nNe le donnez à personne, pas même à quelqu'un qui dit venir d'Eden Dev.`,
+      body: TEXTS[app].code(otp),
     },
   };
 }
@@ -100,7 +125,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return fail(405, NOT_READY);
   const payload = await req.text();
   if (!HOOK_SECRET) return fail(503, NOT_READY);
-  let data: { user?: { phone?: string; new_phone?: string; phone_change?: string }; sms?: { otp?: string } };
+  let data: {
+    user?: { phone?: string; new_phone?: string; phone_change?: string; user_metadata?: { app?: string } };
+    sms?: { otp?: string };
+  };
   try {
     data = new Webhook(HOOK_SECRET).verify(payload, Object.fromEntries(req.headers)) as typeof data;
   } catch {
@@ -117,7 +145,15 @@ Deno.serve(async (req) => {
     console.error("Numéro absent de l'appel", Object.keys(data.user ?? {}).join(","), otp ? "code présent" : "code absent");
     return fail(400, NO_WHATSAPP);
   }
-  if (!TOKEN || !PHONE_ID) return fail(503, NOT_READY);
+  // Application de la personne : inscription Sugu Eden (user_metadata.app), sinon mot-clé de son dernier message.
+  let app: App = data.user?.user_metadata?.app === "sugu" ? "sugu" : "";
+  if (!app) {
+    const known = await rpc("gm_whatsapp_app", { p_phone: phone }).catch(() => "");
+    app = known === "sugu" || known === "gestimarket" ? known : "";
+  }
+  const t = TEXTS[app];
+
+  if (!TOKEN || !PHONE_ID) return fail(503, { message: t.notReady });
 
   // Message simple : seulement si la personne a écrit dans les 24 heures (notifications de Meta). Si la base
   // ne répond pas, le code part quand même : Meta le remettra si la fenêtre est ouverte.
@@ -126,7 +162,7 @@ Deno.serve(async (req) => {
       console.error("Fenêtre WhatsApp non vérifiée", String(e).slice(0, 300));
       return true;
     });
-    if (open === false) return fail(400, WRITE_FIRST);
+    if (open === false) return fail(400, { message: t.writeFirst });
   }
 
   // 6 codes par heure et par numéro au plus (le premier et 5 renvois), même depuis un autre appareil : chaque envoi
@@ -143,7 +179,7 @@ Deno.serve(async (req) => {
   const r = await fetch(`${GRAPH}/${PHONE_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify(message(phone, otp)),
+    body: JSON.stringify(message(phone, otp, app)),
   }).catch(() => null);
   if (r?.ok) return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
 
@@ -153,7 +189,7 @@ Deno.serve(async (req) => {
   const why = String(err?.error?.message ?? "").slice(0, 300);
   console.error("WhatsApp refusé", r?.status ?? "réseau", code, why);
   if (code) await rpc("gm_whatsapp_failed", { p_phone: phone, p_code: code, p_error: why }).catch(() => null);
-  if (code === WINDOW_CLOSED) return fail(400, WRITE_FIRST);
+  if (code === WINDOW_CLOSED) return fail(400, { message: t.writeFirst });
   if (RECIPIENT_ERRORS.has(code)) return fail(400, NO_WHATSAPP);
   return fail(502, SEND_FAILED);
 });

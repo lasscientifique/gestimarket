@@ -8,7 +8,8 @@
 //   - note les messages non remis et leur code d'erreur (gm_whatsapp_failed, et journal de la fonction) ;
 //   - cartes de bon vendues par WhatsApp (Console Eden Dev) : accusés « remis », « lu », « non remis »
 //     (gm_card_sale_wa_status), et envoi des cartes en attente dès que le client écrit (fonction gm-cartes).
-// Aucun texte de message n'est gardé : seulement le numéro et l'heure.
+// Aucun texte de message n'est gardé : seulement le numéro, l'heure et, si le message le dit, l'application d'où
+// vient la personne (« Sugu Eden » ou « GestiMarket ») pour que gm-whatsapp écrive le code au nom de la bonne application.
 //
 // Réglages :
 //   - App Meta → WhatsApp → Configuration → Webhook : URL de rappel …/functions/v1/gm-whatsapp-webhook,
@@ -63,10 +64,19 @@ const when = (v: unknown) => {
 type Status = { id?: string; status?: string; recipient_id?: string; errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[] };
 type Value = {
   metadata?: { phone_number_id?: string };
-  messages?: { from?: string; timestamp?: string }[];
+  messages?: { from?: string; timestamp?: string; type?: string; text?: { body?: string } }[];
   statuses?: Status[];
 };
 type MetaEvent = { object?: string; entry?: { changes?: { field?: string; value?: Value }[] }[] };
+
+/** Application nommée dans le message (texte prérempli des boutons « Écrire à … sur WhatsApp ») ; le texte lui-même
+ *  n'est jamais gardé. */
+function appOf(body: string | undefined): string {
+  const t = (body ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/sugu\s*eden/.test(t)) return "sugu";
+  if (/gesti\s*market/.test(t)) return "gestimarket";
+  return "";
+}
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
@@ -124,7 +134,7 @@ Deno.serve(async (req) => {
       for (const m of v.messages ?? []) {
         const phone = digits(m.from);
         if (phone.length >= 8 && phone.length <= 15) {
-          tasks.push(rpc("gm_whatsapp_inbound", { p_phone: phone, p_at: when(m.timestamp) }));
+          tasks.push(rpc("gm_whatsapp_inbound", { p_phone: phone, p_at: when(m.timestamp), p_app: appOf(m.text?.body) }));
           writers.add(phone);
         }
       }
